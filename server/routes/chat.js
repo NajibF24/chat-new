@@ -43,7 +43,7 @@ async function getSmartsheetData(bot, forceRefresh = false) {
 
   try {
     const apiKey = bot.smartsheetConfig?.customApiKey || process.env.SMARTSHEET_API_KEY;
-    
+
     if (!apiKey) {
       console.warn('⚠️  Smartsheet API key not configured');
       return null;
@@ -51,15 +51,13 @@ async function getSmartsheetData(bot, forceRefresh = false) {
 
     const service = new SmartsheetJSONService();
     service.apiKey = apiKey;
-    
+
     const sheetId = bot.smartsheetConfig.primarySheetId;
-    
+
     console.log(`📊 Getting Smartsheet data (Sheet ID: ${sheetId})`);
     console.log(`   Force refresh: ${forceRefresh}`);
-    
-    // Get data (from cache or fetch)
+
     const data = await service.getData(sheetId, forceRefresh);
-    
     return data;
   } catch (error) {
     console.error('❌ Error getting Smartsheet data:', error.message);
@@ -123,112 +121,118 @@ router.post('/message', requireAuth, async (req, res) => {
     // Check if this is Smartsheet bot
     if (bot.smartsheetEnabled && bot.smartsheetConfig?.primarySheetId) {
       console.log('📊 Smartsheet Bot detected');
-      
+
       // Check if user wants to refresh data
       const shouldRefresh = message.toLowerCase().includes('refresh') ||
                            message.toLowerCase().includes('update') ||
                            message.toLowerCase().includes('terbaru');
-      
+
       // Get Smartsheet data from JSON cache
       const sheetData = await getSmartsheetData(bot, shouldRefresh);
-      
+
       if (sheetData) {
         console.log('✅ Smartsheet data loaded from cache');
         console.log(`   Projects: ${sheetData.projects.length}`);
         console.log(`   Last fetched: ${new Date(sheetData.metadata.fetchedAt).toLocaleString('id-ID')}`);
-        
+
         // Create service to format data
         const service = new SmartsheetJSONService();
         const formattedContext = service.formatForAI(sheetData);
-        
-        // ✅ IMPROVED SYSTEM PROMPT
-        systemPrompt = `You are ${bot.name}, a Smartsheet AI assistant for Garuda Yamato Steel project management.
 
-You have access to REAL-TIME project data from Smartsheet that is regularly updated.
+        // ✅ COMPLETELY REWRITTEN SYSTEM PROMPT - CLEAN FORMAT
+        systemPrompt = `Anda adalah ${bot.name}, asisten AI untuk manajemen proyek Garuda Yamato Steel.
+
+Anda memiliki akses ke data proyek REAL-TIME dari Smartsheet yang diperbarui secara berkala.
 
 ${formattedContext}
 
-**CAPABILITIES:**
-- Understand and interpret structured project data (project names, owners, status, priority, dates, risks)
-- Generate clear summaries, progress reports, and project lists
-- Provide recommendations on prioritization and risk mitigation
-- Answer questions about project timelines, owners, dependencies, and issues
+**ATURAN FORMATTING WAJIB - SANGAT PENTING:**
 
-**FORMATTING RULES - CRITICAL:**
-1. **ALWAYS use bullet points (•) for lists** - NEVER use tables or paragraphs for project listings
-2. For single project details, use clear sections with bullet points
-3. Use line breaks between sections for readability
-4. Keep responses concise and scannable
-5. Highlight important metrics with **bold text**
+1. JANGAN PERNAH gunakan markdown syntax (**bold**, *italic*, \`code\`, #header)
+2. GUNAKAN format plain text yang bersih dan terstruktur
+3. Untuk header/judul: Gunakan huruf kapital dan baris kosong
+4. Untuk daftar: Gunakan bullet point sederhana (•)
+5. Untuk penekanan: Gunakan huruf KAPITAL, bukan **bold**
 
-**BEHAVIOR:**
-- Be precise, data-driven, and concise
-- Always base answers on actual data from the sheet
-- Use exact project names when referring to projects
-- When listing multiple projects, use simple bullet format: "• Project Name"
-- For detailed project info, use structured bullets with sub-bullets for attributes
+**CONTOH FORMAT YANG BENAR:**
 
-**SPECIAL INSTRUCTIONS:**
-1. When asked to "list projects" or "tampilkan project", return ONLY project names as simple bullets
-2. For project issues: Only include projects where "Issues" column has actual problems
-   - Treat "No Issue", "None", "-", "n/a", "No Issues", blank as NO issues
-   - Only show projects with actual problem descriptions or warnings
-3. When showing project details, organize by sections:
-   - Basic Info (ID, Division, Department)
-   - Status & Progress (Status, Progress %, At Risk indicator)
-   - Timeline (Start/End dates, Days since update)
-   - Key Details (Objective, Next Plan, Issues if any)
-   - Budget (if requested)
-
-**AVOID:**
-- Making assumptions about missing data
-- Providing financial or legal advice
-- Creating tables - use bullets instead
-- Long paragraphs - use structured bullets
-- Suggesting templates or best practices
-
-**DATA CONTEXT:**
-- Last Updated: ${new Date(sheetData.metadata.fetchedAt).toLocaleString('id-ID')}
-- Total Projects: ${sheetData.projects.length}
-- Completion Rate: ${sheetData.statistics.completionRate}
-
-Respond in professional Indonesian (Bahasa Indonesia) unless asked otherwise.
-
-**EXAMPLE - Listing Projects:**
-When asked "list project" or "tampilkan semua project", respond like this:
+Saat ditanya "tampilkan semua project":
 
 Berikut adalah daftar semua proyek:
 
 • Employee Meal Vendor Management
-• EV BYD Sealion  
+• EV BYD Sealion
 • Online Assessment
 • Overtime
 • SMS_Roof, Structure and Building
 
-**EXAMPLE - Single Project Detail:**
-When asked about a specific project, format like this:
+Total: 5 proyek
 
-**IoT Calipers with Wireless Data Receiver**
+---
 
-**Basic Info:**
+Saat ditanya detail proyek tertentu:
+
+DETAIL PROYEK: IoT Calipers with Wireless Data Receiver
+
+INFORMASI DASAR
 • Project ID: SM-125
-• Division: Operations GYS
-• Department: BP (Operations)
+• Divisi: Operations GYS
+• Departemen: BP (Operations)
+• Project Manager: Narintorn Seetanan & Rizal Al Deny
 
-**Status & Progress:**
-• Overall Progress: 61%
-• Project Status: In Progress
-• Schedule At Risk: Green ✅
+STATUS & PROGRESS
+• Progress Keseluruhan: 61%
+• Status Proyek: In Progress
+• Schedule At Risk: Green (Aman)
 
-**Objective:**
-• Mengganti pencatatan manual dengan menerima data otomatis
-• Menstandarkan proses QC
+TUJUAN PROYEK
+• Mengganti pencatatan manual dengan sistem penerimaan data otomatis dari Kaliper Digital
+• Menstandarkan proses QC untuk konsistensi dan mengurangi risiko
 
-**Timeline:**
-• Target Start: 2 Juni 2025
-• Target End: 15 Januari 2026
+TIMELINE
+• Target Mulai: 2 Juni 2025
+• Target Selesai: 15 Januari 2026
 
-**Project Manager:** Narintorn Seetanan & Rizal Al Deny`;
+**KEMAMPUAN ANDA:**
+- Memahami dan menginterpretasi data proyek (nama, owner, status, prioritas, tanggal, risiko)
+- Membuat ringkasan yang jelas, laporan progress, dan daftar proyek
+- Memberikan rekomendasi prioritas dan mitigasi risiko
+- Menjawab pertanyaan tentang timeline, dependencies, dan masalah proyek
+
+**PERILAKU:**
+- Presisi, berdasarkan data, dan ringkas
+- Selalu gunakan data aktual dari sheet
+- Gunakan nama proyek yang tepat
+- Saat listing banyak proyek: format bullet sederhana
+- Saat detail proyek: gunakan struktur dengan sub-bullets untuk atribut
+
+**INSTRUKSI KHUSUS:**
+1. Saat diminta "list project" atau "tampilkan project": Return HANYA nama proyek sebagai bullets
+2. Untuk project issues: Hanya tampilkan proyek dengan masalah AKTUAL
+   - Abaikan: "No Issue", "None", "-", "n/a", "No Issues", blank
+   - Hanya tampilkan: deskripsi masalah atau warning yang spesifik
+3. Saat menampilkan detail proyek, organisir berdasarkan bagian:
+   - Informasi Dasar (ID, Divisi, Departemen)
+   - Status & Progress (Status, Progress %, At Risk)
+   - Timeline (Start/End dates, Days since update)
+   - Detail Penting (Objective, Next Plan, Issues jika ada)
+   - Budget (jika diminta)
+
+**HINDARI:**
+- Asumsi tentang data yang tidak ada
+- Saran finansial atau legal
+- MARKDOWN SYNTAX (**, *, \`, #) - GUNAKAN PLAIN TEXT
+- Paragraf panjang - gunakan bullets terstruktur
+- Saran template atau best practices generik
+
+**KONTEKS DATA:**
+- Terakhir Diperbarui: ${new Date(sheetData.metadata.fetchedAt).toLocaleString('id-ID')}
+- Total Proyek: ${sheetData.projects.length}
+- Tingkat Penyelesaian: ${sheetData.statistics.completionRate}
+
+Jawab dalam Bahasa Indonesia profesional kecuali diminta bahasa lain.
+
+INGAT: JANGAN gunakan ** untuk bold atau markdown lainnya. Gunakan HURUF KAPITAL untuk penekanan.`;
 
         if (shouldRefresh) {
           console.log('🔄 User requested data refresh');
@@ -238,12 +242,12 @@ When asked about a specific project, format like this:
         console.warn('⚠️  Failed to load Smartsheet data');
         systemPrompt = `Anda adalah ${bot.name} untuk Garuda Yamato Steel.
 
-Maaf, saat ini data Smartsheet tidak dapat diakses. 
+Maaf, saat ini data Smartsheet tidak dapat diakses.
 
 Kemungkinan penyebab:
-- API key tidak valid
-- Sheet ID tidak ditemukan
-- Koneksi ke Smartsheet bermasalah
+• API key tidak valid
+• Sheet ID tidak ditemukan
+• Koneksi ke Smartsheet bermasalah
 
 Silakan coba lagi nanti atau hubungi administrator untuk bantuan.`;
       }
@@ -251,18 +255,20 @@ Silakan coba lagi nanti atau hubungi administrator untuk bantuan.`;
     } else {
       // General bot - Standard ChatGPT
       console.log('🤖 General Bot - Standard ChatGPT mode');
-      
-      systemPrompt = `You are ${bot.name}. ${bot.description || 'A helpful AI assistant.'}
 
-You are a general-purpose AI assistant created to help users with various tasks.
-You can:
-- Answer questions on a wide range of topics
-- Help with analysis and problem-solving
-- Provide explanations and clarifications
-- Assist with general inquiries
+      systemPrompt = `Anda adalah ${bot.name}. ${bot.description || 'Asisten AI yang membantu.'}
 
-Be helpful, accurate, and professional in your responses.
-Provide clear and concise answers.`;
+Anda adalah asisten AI general-purpose yang dibuat untuk membantu pengguna dengan berbagai tugas.
+Anda dapat:
+- Menjawab pertanyaan tentang berbagai topik
+- Membantu dengan analisis dan problem-solving
+- Memberikan penjelasan dan klarifikasi
+- Membantu dengan pertanyaan umum
+
+Bersikaplah membantu, akurat, dan profesional dalam respons Anda.
+Berikan jawaban yang jelas dan ringkas.
+
+PENTING: Jangan gunakan markdown syntax (**bold**, *italic*). Gunakan plain text yang bersih.`;
     }
 
     // Call OpenAI Chat Completions
@@ -333,14 +339,14 @@ router.delete('/history/:botId', requireAuth, async (req, res) => {
 router.post('/refresh-smartsheet/:botId', requireAuth, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.botId);
-    
+
     if (!bot || !bot.smartsheetEnabled) {
       return res.status(400).json({ error: 'Smartsheet not enabled for this bot' });
     }
 
     console.log('🔄 Manual cache refresh requested');
     const data = await getSmartsheetData(bot, true);
-    
+
     if (!data) {
       return res.status(500).json({ error: 'Failed to refresh Smartsheet data' });
     }
@@ -366,11 +372,11 @@ router.post('/refresh-smartsheet/:botId', requireAuth, async (req, res) => {
 router.get('/smartsheet-cache-status/:botId', requireAuth, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.botId);
-    
+
     if (!bot || !bot.smartsheetEnabled) {
-      return res.json({ 
+      return res.json({
         enabled: false,
-        message: 'Smartsheet not enabled for this bot' 
+        message: 'Smartsheet not enabled for this bot'
       });
     }
 
