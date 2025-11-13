@@ -33,7 +33,7 @@ router.post('/users', requireAdmin, async (req, res) => {
   try {
     const { username, password, isAdmin, assignedBots } = req.body;
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcryptjs.hash(password, 10);
     const user = new User({
       username,
       password: hashedPassword,
@@ -64,7 +64,7 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
     const updateData = { username, isAdmin, assignedBots };
 
     if (password) {
-      updateData.password = await bcrypt.hash(password, 10);
+      updateData.password = await bcryptjs.hash(password, 10);
     }
 
     const user = await User.findByIdAndUpdate(

@@ -9,11 +9,26 @@ const botSchema = new mongoose.Schema({
   description: String,
   promptId: {
     type: String,
-    required: true
+    required: false
   },
   vectorStoreId: {
     type: String,
-    required: true
+    required: false
+  },
+  smartsheetEnabled: {
+    type: Boolean,
+    default: false
+  },
+  smartsheetConfig: {
+    useGlobalApiKey: {
+      type: Boolean,
+      default: true
+    },
+    customApiKey: String,
+    primarySheetId: String, // ✅ NEW: Sheet ID utama
+    workspaces: [String],
+    sheets: [String],
+    dashboards: [String]
   },
   createdAt: {
     type: Date,

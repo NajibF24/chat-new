@@ -1,0 +1,319 @@
+import axios from 'axios';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+class SmartsheetService {
+  constructor() {
+    this.apiKey = process.env.SMARTSHEET_API_KEY;
+    this.baseURL = 'https://api.smartsheet.com/2.0';
+    this.dashboardId = process.env.SMARTSHEET_DASHBOARD_ID;
+    this.tempDir = path.join(__dirname, '..', 'temp');
+    
+    this.axiosInstance = axios.create({
+      baseURL: this.baseURL,
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+  }
+
+  async ensureTempDir() {
+    try {
+      await fs.mkdir(this.tempDir, { recursive: true });
+    } catch (error) {
+      console.error('Error creating temp directory:', error);
+    }
+  }
+
+  /**
+   * Get dashboard details
+   */
+  async getDashboard(dashboardId = null) {
+    try {
+      const id = dashboardId || this.dashboardId;
+      console.log('📊 Fetching dashboard:', id);
+      
+      const response = await this.axiosInstance.get(`/sights/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching dashboard:', error.message);
+      throw new Error(`Failed to fetch dashboard: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get all widgets from dashboard
+   */
+  async getDashboardWidgets(dashboardId = null) {
+    try {
+      const dashboard = await this.getDashboard(dashboardId);
+      return dashboard.widgets || [];
+    } catch (error) {
+      console.error('❌ Error fetching widgets:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get image widgets from dashboard
+   */
+  async getImageWidgets(dashboardId = null) {
+    try {
+      const widgets = await this.getDashboardWidgets(dashboardId);
+      const imageWidgets = widgets.filter(widget => 
+        widget.type === 'IMAGE' || 
+        widget.type === 'WEBCONTENT' ||
+        (widget.contents && widget.contents.widgetHyperlink)
+      );
+      
+      console.log(`📸 Found ${imageWidgets.length} image widgets`);
+      return imageWidgets;
+    } catch (error) {
+      console.error('❌ Error fetching image widgets:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get latest uploaded image from dashboard
+   */
+  async getLatestImage(dashboardId = null) {
+    try {
+      const imageWidgets = await this.getImageWidgets(dashboardId);
+      
+      if (imageWidgets.length === 0) {
+        throw new Error('No images found in dashboard');
+      }
+
+      // Sort by modification date (newest first)
+      const sortedWidgets = imageWidgets.sort((a, b) => {
+        const dateA = new Date(a.modifiedAt || a.createdAt);
+        const dateB = new Date(b.modifiedAt || b.createdAt);
+        return dateB - dateA;
+      });
+
+      const latestWidget = sortedWidgets[0];
+      console.log('📸 Latest image widget:', latestWidget.title || 'Untitled');
+
+      return {
+        widget: latestWidget,
+        url: this.getImageUrl(latestWidget),
+        title: latestWidget.title || 'Untitled Image',
+        modifiedAt: latestWidget.modifiedAt || latestWidget.createdAt
+      };
+    } catch (error) {
+      console.error('❌ Error getting latest image:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Extract image URL from widget
+   */
+  getImageUrl(widget) {
+    if (widget.type === 'IMAGE' && widget.contents) {
+      return widget.contents.privateId 
+        ? `${this.baseURL}/sights/${this.dashboardId}/widgets/${widget.id}/content`
+        : widget.contents.hyperlink;
+    }
+    
+    if (widget.type === 'WEBCONTENT' && widget.contents) {
+      return widget.contents.url;
+    }
+    
+    if (widget.contents && widget.contents.widgetHyperlink) {
+      return widget.contents.widgetHyperlink;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Download image from Smartsheet
+   */
+  async downloadImage(widget) {
+    try {
+      await this.ensureTempDir();
+      
+      const imageUrl = this.getImageUrl(widget);
+      if (!imageUrl) {
+        throw new Error('No image URL found in widget');
+      }
+
+      console.log('⬇️  Downloading image from:', imageUrl);
+
+      // Download image
+      const response = await this.axiosInstance.get(imageUrl, {
+        responseType: 'arraybuffer',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`
+        }
+      });
+
+      // Generate filename
+      const timestamp = Date.now();
+      const filename = `smartsheet-image-${timestamp}.png`;
+      const filepath = path.join(this.tempDir, filename);
+
+      // Save to temp directory
+      await fs.writeFile(filepath, response.data);
+      console.log('✅ Image saved to:', filepath);
+
+      return {
+        filepath,
+        filename,
+        buffer: response.data,
+        contentType: response.headers['content-type'] || 'image/png'
+      };
+    } catch (error) {
+      console.error('❌ Error downloading image:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get sheets from workspace
+   */
+  async getSheets() {
+    try {
+      console.log('📋 Fetching sheets...');
+      const response = await this.axiosInstance.get('/sheets');
+      return response.data.data || [];
+    } catch (error) {
+      console.error('❌ Error fetching sheets:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get sheet data by ID
+   */
+  async getSheet(sheetId) {
+    try {
+      console.log('📄 Fetching sheet:', sheetId);
+      const response = await this.axiosInstance.get(`/sheets/${sheetId}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching sheet:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Search sheets by keyword
+   */
+  async searchSheets(keyword) {
+    try {
+      console.log('🔍 Searching sheets for:', keyword);
+      const response = await this.axiosInstance.get('/search', {
+        params: { query: keyword }
+      });
+      
+      // Filter only sheets
+      const sheets = response.data.results.filter(r => r.objectType === 'sheet');
+      return sheets;
+    } catch (error) {
+      console.error('❌ Error searching sheets:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get projects (filtered sheets with "project" in name)
+   */
+  async getProjects() {
+    try {
+      const sheets = await this.getSheets();
+      const projects = sheets.filter(sheet => 
+        sheet.name.toLowerCase().includes('project') ||
+        sheet.name.toLowerCase().includes('proyek')
+      );
+      
+      console.log(`📊 Found ${projects.length} projects`);
+      return projects;
+    } catch (error) {
+      console.error('❌ Error fetching projects:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get sheet as CSV export
+   */
+  async exportSheetAsCSV(sheetId) {
+    try {
+      console.log('📥 Exporting sheet as CSV:', sheetId);
+      const response = await this.axiosInstance.get(`/sheets/${sheetId}`, {
+        headers: {
+          'Accept': 'text/csv'
+        }
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error exporting sheet:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up temp files older than 1 hour
+   */
+  async cleanupTempFiles() {
+    try {
+      await this.ensureTempDir();
+      const files = await fs.readdir(this.tempDir);
+      const now = Date.now();
+      const oneHour = 60 * 60 * 1000;
+
+      for (const file of files) {
+        const filepath = path.join(this.tempDir, file);
+        const stats = await fs.stat(filepath);
+        
+        if (now - stats.mtimeMs > oneHour) {
+          await fs.unlink(filepath);
+          console.log('🗑️  Cleaned up old file:', file);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error cleaning temp files:', error.message);
+    }
+  }
+
+  /**
+   * Format sheet data for AI consumption
+   */
+  formatSheetForAI(sheet) {
+    try {
+      const columns = sheet.columns.map(col => col.title).join(', ');
+      const rowCount = sheet.rows ? sheet.rows.length : 0;
+      
+      let formatted = `Sheet: ${sheet.name}\n`;
+      formatted += `Columns: ${columns}\n`;
+      formatted += `Total Rows: ${rowCount}\n\n`;
+
+      if (sheet.rows && sheet.rows.length > 0) {
+        formatted += 'Data Preview (first 10 rows):\n';
+        const previewRows = sheet.rows.slice(0, 10);
+        
+        previewRows.forEach((row, idx) => {
+          formatted += `Row ${idx + 1}: `;
+          const cells = row.cells.map(cell => cell.displayValue || cell.value || '').join(' | ');
+          formatted += cells + '\n';
+        });
+      }
+
+      return formatted;
+    } catch (error) {
+      console.error('❌ Error formatting sheet:', error.message);
+      return `Error formatting sheet: ${error.message}`;
+    }
+  }
+}
+
+export default new SmartsheetService();

@@ -1,0 +1,455 @@
+import express from 'express';
+import OpenAI from 'openai';
+import Chat from '../models/Chat.js';
+import User from '../models/User.js';
+import Bot from '../models/Bot.js';
+import { requireAuth } from '../middleware/auth.js';
+
+const router = express.Router();
+
+// ✅ Initialize OpenAI with API key from environment
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Get user's accessible bots
+router.get('/bots', requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId).populate('assignedBots');
+    res.json({ bots: user.assignedBots });
+  } catch (error) {
+    console.error('❌ Error fetching bots:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get chat history
+router.get('/history/:botId', requireAuth, async (req, res) => {
+  try {
+    const chat = await Chat.findOne({
+      userId: req.session.userId,
+      botId: req.params.botId
+    });
+
+    res.json({ messages: chat ? chat.messages : [] });
+  } catch (error) {
+    console.error('❌ Error fetching history:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ NEW: Send message with Responses API (for bots with vector stores)
+router.post('/message', requireAuth, async (req, res) => {
+  try {
+    console.log('📨 Received message request');
+    console.log('🔑 API Key present:', !!process.env.OPENAI_API_KEY);
+    
+    const { botId, message } = req.body;
+
+    // Validate input
+    if (!message || !message.trim()) {
+      console.log('❌ Empty message received');
+      return res.status(400).json({ error: 'Message cannot be empty' });
+    }
+
+    if (!botId) {
+      console.log('❌ No botId provided');
+      return res.status(400).json({ error: 'Bot ID is required' });
+    }
+
+    // Verify OpenAI API key exists
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('❌ OPENAI_API_KEY not found in environment');
+      return res.status(500).json({ error: 'OpenAI API key not configured' });
+    }
+
+    // Verify user has access to this bot
+    console.log('🔍 Checking user access to bot...');
+    const user = await User.findById(req.session.userId);
+    if (!user.assignedBots.includes(botId)) {
+      console.log('❌ User does not have access to bot:', botId);
+      return res.status(403).json({ error: 'Access denied to this bot' });
+    }
+
+    const bot = await Bot.findById(botId);
+    if (!bot) {
+      console.log('❌ Bot not found:', botId);
+      return res.status(404).json({ error: 'Bot not found' });
+    }
+
+    console.log('✅ Bot found:', bot.name);
+    console.log('📝 Prompt ID:', bot.promptId);
+    console.log('📝 Vector Store ID:', bot.vectorStoreId);
+
+    // ✅ SPECIAL HANDLING: Smartsheet Bot - Strict scope enforcement
+    const isSmartsheetBot = bot.name.toLowerCase().includes('smartsheet');
+    if (isSmartsheetBot) {
+      console.log('🔒 Smartsheet Bot detected - Enforcing strict scope');
+    }
+
+    // Get or create chat
+    let chat = await Chat.findOne({
+      userId: req.session.userId,
+      botId: botId
+    });
+
+    if (!chat) {
+      console.log('📝 Creating new chat session');
+      chat = new Chat({
+        userId: req.session.userId,
+        botId: botId,
+        messages: []
+      });
+    } else {
+      console.log('📝 Using existing chat session with', chat.messages.length, 'messages');
+    }
+
+    // Add user message
+    chat.messages.push({
+      role: 'user',
+      content: message
+    });
+
+    // Build conversation history for input
+    // Format: array of messages [{ role, content }]
+    const conversationHistory = chat.messages.map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+
+    console.log('🤖 Calling OpenAI Responses API...');
+    console.log('📊 Sending', conversationHistory.length, 'messages');
+
+    // ✅ CRITICAL: Use Responses API for vector store access
+    let assistantMessage = '';
+    
+    try {
+      // Check if bot has valid prompt ID and vector store ID
+      const hasVectorStore = bot.vectorStoreId && 
+                            bot.vectorStoreId !== 'vs_sap_xxx' && 
+                            bot.vectorStoreId !== 'vs_mekarisign_xxx' && 
+                            bot.vectorStoreId !== 'vs_globalservices_xxx';
+      
+      const hasPromptId = bot.promptId && 
+                         bot.promptId !== 'pmpt_sap_xxx' && 
+                         bot.promptId !== 'pmpt_mekarisign_xxx' && 
+                         bot.promptId !== 'pmpt_globalservices_xxx';
+
+      if (hasVectorStore && hasPromptId) {
+        console.log('🔍 Using Responses API with vector store');
+        
+        // ✅ SMARTSHEET BOT: Enhanced system message with strict boundaries
+        let systemMessage = '';
+        if (isSmartsheetBot) {
+          systemMessage = `You are Smartsheet Bot for Garuda Yamato Steel company. Your SOLE purpose is to help users retrieve and analyze information from Smartsheet project management data.
+
+STRICT RULES:
+1. ONLY answer questions about:
+   - Smartsheet projects and their status
+   - Project timelines, milestones, and deadlines
+   - Team members and assignments in Smartsheet
+   - Project budgets and resources tracked in Smartsheet
+   - Smartsheet reports and analytics
+   - Any data stored in the Smartsheet system
+
+2. For ANY question outside Smartsheet scope, respond with:
+   "Maaf, saya adalah Smartsheet Bot yang khusus membantu informasi terkait project management di Smartsheet Garuda Yamato Steel. Saya tidak dapat menjawab pertanyaan di luar konteks Smartsheet. Silakan tanyakan tentang project, timeline, status, atau data lain yang tersimpan di Smartsheet."
+
+3. Examples of OUT OF SCOPE questions to REJECT:
+   - General knowledge questions (history, science, geography, etc)
+   - Current events or news
+   - Coding or technical help unrelated to Smartsheet
+   - Personal advice or opinions
+   - Any topic not directly related to Smartsheet data
+
+4. Always respond in Bahasa Indonesia for professional communication
+5. Be concise and data-driven in your responses
+6. If data is not available in Smartsheet, clearly state that
+
+Your priority is maintaining strict boundaries and only providing Smartsheet-related information.`;
+        }
+        
+        // Build enhanced input with system context for Smartsheet
+        const enhancedInput = isSmartsheetBot ? [
+          {
+            role: 'system',
+            content: systemMessage
+          },
+          ...conversationHistory
+        ] : conversationHistory;
+
+        // Use Responses API with file_search
+        const response = await openai.responses.create({
+          prompt: {
+            id: bot.promptId,
+            version: "1"
+          },
+          input: enhancedInput,
+          text: {
+            format: {
+              type: "text"
+            }
+          },
+          reasoning: {},
+          tools: [
+            {
+              type: "file_search",
+              vector_store_ids: [bot.vectorStoreId]
+            }
+          ],
+          max_output_tokens: 2048,
+          store: true,
+          include: ["web_search_call.action.sources"]
+        });
+
+        console.log('✅ Responses API response received');
+        
+        // Deep log the response structure for debugging
+        console.log('📊 Response keys:', Object.keys(response));
+        console.log('📊 Response type:', typeof response);
+        
+        // Try multiple extraction paths for Responses API
+        // Path 1: Direct text property
+        if (response.text && typeof response.text === 'string') {
+          assistantMessage = response.text;
+          console.log('✅ Extracted from response.text');
+        }
+        // Path 2: Output text property
+        else if (response.output && typeof response.output === 'string') {
+          assistantMessage = response.output;
+          console.log('✅ Extracted from response.output');
+        }
+        // Path 3: Output.text nested property
+        else if (response.output && response.output.text) {
+          assistantMessage = typeof response.output.text === 'string' 
+            ? response.output.text 
+            : JSON.stringify(response.output.text);
+          console.log('✅ Extracted from response.output.text');
+        }
+        // Path 4: Content property
+        else if (response.content) {
+          if (typeof response.content === 'string') {
+            assistantMessage = response.content;
+            console.log('✅ Extracted from response.content (string)');
+          } else if (Array.isArray(response.content)) {
+            // Handle content array (like Chat Completions format)
+            const textContent = response.content.find(c => c.type === 'text');
+            if (textContent && textContent.text) {
+              assistantMessage = textContent.text;
+              console.log('✅ Extracted from response.content array');
+            }
+          } else if (response.content.text) {
+            assistantMessage = response.content.text;
+            console.log('✅ Extracted from response.content.text');
+          }
+        }
+        // Path 5: Message.content property (if formatted like Chat API)
+        else if (response.message && response.message.content) {
+          assistantMessage = typeof response.message.content === 'string'
+            ? response.message.content
+            : JSON.stringify(response.message.content);
+          console.log('✅ Extracted from response.message.content');
+        }
+        // Path 6: Choices array (alternative format)
+        else if (response.choices && response.choices[0]) {
+          const choice = response.choices[0];
+          if (choice.message && choice.message.content) {
+            assistantMessage = choice.message.content;
+            console.log('✅ Extracted from response.choices[0].message.content');
+          } else if (choice.text) {
+            assistantMessage = choice.text;
+            console.log('✅ Extracted from response.choices[0].text');
+          }
+        }
+        
+        // If still not found, log full response and try to stringify intelligently
+        if (!assistantMessage) {
+          console.error('⚠️ Could not extract message from response');
+          console.error('Full response structure:', JSON.stringify(response, null, 2));
+          
+          // Try to find any text-like property recursively
+          const findText = (obj, depth = 0) => {
+            if (depth > 3) return null; // Prevent infinite recursion
+            if (typeof obj === 'string' && obj.length > 10) return obj;
+            if (typeof obj !== 'object' || obj === null) return null;
+            
+            for (const key of Object.keys(obj)) {
+              if (key.toLowerCase().includes('text') || 
+                  key.toLowerCase().includes('content') || 
+                  key.toLowerCase().includes('message')) {
+                const result = findText(obj[key], depth + 1);
+                if (result) return result;
+              }
+            }
+            return null;
+          };
+          
+          const foundText = findText(response);
+          if (foundText) {
+            assistantMessage = foundText;
+            console.log('✅ Found text through recursive search');
+          } else {
+            assistantMessage = 'Error: Could not extract response text. Please check server logs.';
+            console.error('❌ No text content found in response');
+          }
+        }
+        
+        console.log('📝 Final message preview:', assistantMessage.substring(0, 200) + '...');
+
+      } else {
+        console.log('⚠️ Bot missing valid vector store/prompt ID, using Chat Completions API');
+        
+        // Fallback to standard Chat Completions API
+        const systemPrompt = isSmartsheetBot 
+          ? `You are Smartsheet Bot for Garuda Yamato Steel company. Your SOLE purpose is to help users retrieve and analyze information from Smartsheet project management data.
+
+STRICT RULES:
+1. ONLY answer questions about Smartsheet projects, timelines, tasks, assignments, and related project data
+2. For ANY question outside Smartsheet scope, respond EXACTLY with:
+   "Maaf, saya adalah Smartsheet Bot yang khusus membantu informasi terkait project management di Smartsheet Garuda Yamato Steel. Saya tidak dapat menjawab pertanyaan di luar konteks Smartsheet. Silakan tanyakan tentang project, timeline, status, atau data lain yang tersimpan di Smartsheet."
+3. Always respond in Bahasa Indonesia
+4. Never provide information about general topics, current events, coding help, or anything not directly related to Smartsheet data
+5. Maintain strict boundaries - if unsure, use the rejection message above`
+          : `You are ${bot.name}. ${bot.description}
+
+Your role is to assist users with information and tasks related to your specialty.
+Be helpful, accurate, and professional in your responses.
+Provide clear and concise answers.`;
+
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            ...conversationHistory
+          ],
+          temperature: isSmartsheetBot ? 0.3 : 0.7, // Lower temperature for Smartsheet for more focused responses
+          max_tokens: 2048,
+        });
+
+        console.log('✅ Chat Completions API response received');
+        
+        if (completion.choices && completion.choices[0]?.message?.content) {
+          assistantMessage = String(completion.choices[0].message.content);
+        }
+      }
+
+    } catch (apiError) {
+      console.error('❌ OpenAI API Error:', apiError);
+      
+      // Check if it's a specific API error
+      if (apiError.message?.includes('prompt')) {
+        throw new Error('Invalid prompt ID. Please check bot configuration in database.');
+      }
+      if (apiError.message?.includes('vector_store')) {
+        throw new Error('Invalid vector store ID. Please check bot configuration in database.');
+      }
+      
+      throw apiError;
+    }
+
+    if (!assistantMessage || assistantMessage.trim() === '') {
+      console.error('❌ Empty response from OpenAI');
+      throw new Error('Empty or invalid response from OpenAI');
+    }
+
+    console.log('✅ Assistant message extracted successfully');
+    console.log('✅ Message length:', assistantMessage.length);
+    console.log('✅ Message preview:', assistantMessage.substring(0, 100) + '...');
+
+    // Save assistant message
+    const messageToSave = {
+      role: 'assistant',
+      content: String(assistantMessage).trim()
+    };
+    
+    console.log('💾 Saving message');
+    chat.messages.push(messageToSave);
+    await chat.save();
+    console.log('✅ Chat saved successfully');
+
+    res.json({
+      message: assistantMessage,
+      chatId: chat._id
+    });
+
+  } catch (error) {
+    console.error('❌ Chat error:', error.message);
+    
+    // Log detailed error for debugging
+    if (error.response) {
+      console.error('❌ OpenAI API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data
+      });
+    }
+    
+    // Check for specific OpenAI errors
+    if (error.message?.includes('API key')) {
+      return res.status(500).json({ 
+        error: 'Invalid or missing OpenAI API key. Please check server configuration.' 
+      });
+    }
+    
+    if (error.message?.includes('prompt') || error.message?.includes('vector_store')) {
+      return res.status(500).json({ 
+        error: error.message
+      });
+    }
+    
+    if (error.message?.includes('rate_limit')) {
+      return res.status(429).json({ 
+        error: 'OpenAI rate limit exceeded. Please try again later.' 
+      });
+    }
+    
+    if (error.message?.includes('insufficient_quota')) {
+      return res.status(500).json({ 
+        error: 'OpenAI quota exceeded. Please check your account balance.' 
+      });
+    }
+    
+    // Send detailed error in development
+    if (process.env.NODE_ENV === 'development') {
+      return res.status(500).json({ 
+        error: error.message,
+        details: error.response?.data || error.stack,
+        type: error.constructor.name
+      });
+    }
+    
+    // Generic error for production
+    res.status(500).json({ 
+      error: 'Failed to process message. Please try again later.',
+      hint: 'Check server logs for details'
+    });
+  }
+});
+
+// Clear chat history
+router.delete('/history/:botId', requireAuth, async (req, res) => {
+  try {
+    console.log('🗑️  Clearing chat history for bot:', req.params.botId);
+    
+    const result = await Chat.findOneAndDelete({
+      userId: req.session.userId,
+      botId: req.params.botId
+    });
+
+    if (result) {
+      console.log('✅ Chat history cleared successfully');
+    } else {
+      console.log('ℹ️  No chat history found to clear');
+    }
+
+    res.json({ message: 'Chat history cleared' });
+  } catch (error) {
+    console.error('❌ Error clearing history:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+export default router;

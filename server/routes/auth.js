@@ -11,9 +11,9 @@ router.post('/login', async (req, res) => {
     console.log('🔍 Login attempt received');
     console.log('🔍 Request body:', JSON.stringify(req.body));
     console.log('🔍 Content-Type:', req.get('Content-Type'));
-    
+
     const { username, password } = req.body;
-    
+
     if (!username || !password) {
       console.log('❌ Missing username or password');
       return res.status(400).json({ error: 'Username and password required' });
@@ -21,7 +21,7 @@ router.post('/login', async (req, res) => {
 
     console.log('🔍 Looking for user:', username);
     const user = await User.findOne({ username }).populate('assignedBots');
-    
+
     if (!user) {
       console.log('❌ User not found:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -29,11 +29,11 @@ router.post('/login', async (req, res) => {
 
     console.log('✅ User found:', user.username);
     console.log('🔍 Password hash in DB:', user.password.substring(0, 30) + '...');
-    console.log('🔍 Comparing password with bcryptjs...');
-    
+    console.log('🔍 Comparing password with bcrypt...');
+
     const isValid = await bcrypt.compare(password, user.password);
     console.log('🔍 Password comparison result:', isValid);
-    
+
     if (!isValid) {
       console.log('❌ Invalid password for user:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -42,7 +42,7 @@ router.post('/login', async (req, res) => {
     console.log('✅ Password valid, creating session...');
     req.session.userId = user._id;
     req.session.isAdmin = user.isAdmin;
-    
+
     console.log('✅ Session data:', {
       userId: req.session.userId,
       isAdmin: req.session.isAdmin,
@@ -57,7 +57,7 @@ router.post('/login', async (req, res) => {
         assignedBots: user.assignedBots
       }
     };
-    
+
     console.log('✅ Sending response:', JSON.stringify(response));
     res.json(response);
   } catch (error) {

@@ -18,32 +18,33 @@ const seedDatabase = async () => {
     await Bot.deleteMany({});
     console.log('✅ Old data cleared');
 
-    // Create bots - NO PROMPT ID & VECTOR STORE ID
+    // Create bots
     console.log('🤖 Creating bots...');
     const bots = await Bot.insertMany([
       {
-        name: 'Smartsheet Bot',
-        description: 'Smartsheet platform expert - dapat menampilkan gambar dan membuat report',
-        promptId: 'none', // Tidak digunakan
-        vectorStoreId: 'none' // Tidak digunakan
-      },
-      {
         name: 'SAP Bot',
         description: 'Expert in SAP systems and processes',
-        promptId: 'none',
-        vectorStoreId: 'none'
+        promptId: 'pmpt_sap_xxx',
+        vectorStoreId: 'vs_sap_xxx'
+      },
+      {
+        name: 'Smartsheet Bot',
+        description: 'Smartsheet platform expert',
+        promptId: 'pmpt_690b1ec8035081939a856b726efe574601be7398a70a0b13',
+        //vectorStoreId: 'vs_690b1e947b8c8191a1d8f4601f3cc21a'
+        vectorStoreId: 'vs_5fjl5W2jR5HVBOKXEfVeXm4T'
       },
       {
         name: 'MekariSign Bot',
         description: 'Digital signature and document management',
-        promptId: 'none',
-        vectorStoreId: 'none'
+        promptId: 'pmpt_mekarisign_xxx',
+        vectorStoreId: 'vs_mekarisign_xxx'
       },
       {
         name: 'GlobalServices Bot',
         description: 'Global services and operations support',
-        promptId: 'none',
-        vectorStoreId: 'none'
+        promptId: 'pmpt_globalservices_xxx',
+        vectorStoreId: 'vs_globalservices_xxx'
       }
     ]);
     
@@ -54,7 +55,7 @@ const seedDatabase = async () => {
 
     // Create admin user
     console.log('👤 Creating admin user...');
-    const hashedPassword = await bcryptjs.hash('Admin@123', 10);
+    const hashedPassword = await bcrypt.hash('Admin@123', 10);
     const admin = await User.create({
       username: 'admin',
       password: hashedPassword,

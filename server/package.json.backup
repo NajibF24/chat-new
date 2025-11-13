@@ -1,14 +1,10 @@
 {
   "name": "internal-chat-server",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "seed": "node seedUpdated.js",
-    "dev": "nodemon server.js",
-    "test-sheet-id": "node test-sheet-id.js",
-    "fetch-smartsheet": "node fetch-smartsheet.js",
-    "cleanup-reports": "node cleanup-reports.js"
+    "seed": "node seed.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -18,9 +14,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "openai": "^4.20.0",
-    "axios": "^1.6.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+    "axios": "^1.6.0",       
+    "pdfkit": "^0.13.0"  
   }
 }
