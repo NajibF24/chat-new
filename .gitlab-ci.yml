@@ -108,8 +108,36 @@ deploy_production:
     - sleep 10
     - docker image prune -f
     - echo "✅ Deployment Sukses!"
-# --- JOB 4: DAST (OWASP ZAP - LIGHTWEIGHT) ---
+# --- JOB 4: DAST (OWASP ZAP - FIX SHELL EXECUTOR) ---
 dast_scan:
+  stage: dast
+  tags:
+    - portal-ai
+  allow_failure: true
+  variables:
+    # Karena kita pakai --network host, kita tembak localhost port 80 (Nginx Host)
+    TARGET_URL: "https://portalai.gyssteel.com" 
+  script:
+    - echo "🕵️ Memulai DAST Scanning (ZAP Baseline)..."
+    
+    # 1. Siapkan folder report di host
+    - mkdir -p zap-reports
+    - chmod 777 zap-reports
+    
+    # 2. Jalankan ZAP menggunakan Docker Container
+    # --rm : Hapus container setelah selesai (hemat disk)
+    # --network host : Agar ZAP bisa melihat 'localhost' milik server VPS
+    # -v ... : Mounting folder agar report bisa tersimpan di VPS
+    # -u 0 : Jalankan sebagai root di dalam container agar tidak error permission tulis file
+    
+    - docker run --rm --network host -u 0 -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -I
+    
+  artifacts:
+    name: "DAST-Report-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - zap-reports/zap-report.html
+    expire_in: 7 days
+    when: always
   stage: dast
   tags:
     - portal-ai
