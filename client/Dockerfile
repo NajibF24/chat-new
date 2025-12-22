@@ -23,5 +23,11 @@ EXPOSE 8080
 # (Sebenarnya image ini sudah otomatis pakai user ini, tapi Trivy butuh tulisan ini)
 USER nginx
 # ------------------------
-
+# --- [PERBAIKAN TRIVY DS-026] ---
+# Cek kesehatan setiap 30 detik
+# Menggunakan 'wget' ke localhost:8080
+# Jika gagal (exit 1), Docker akan menandai container sebagai "unhealthy"
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD wget -q -O /dev/null http://localhost:8080/ || exit 1
+# --------------------------------
 CMD ["nginx", "-g", "daemon off;"]
