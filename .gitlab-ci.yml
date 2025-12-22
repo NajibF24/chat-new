@@ -2,6 +2,8 @@ stages:
   - build
   - deploy
 
+# --- JOB 1: BUILD IMAGE ---
+# Memastikan kodingan tidak error sebelum dideploy
 build_images:
   stage: build
   tags:
@@ -10,42 +12,51 @@ build_images:
     - main
   script:
     - echo "🏗️ Memulai Build..."
+    # Restore file .env dari GitLab Variable
     - echo "$DOT_ENV_FILE" > .env
+    # Build image (hasil build akan tersimpan di cache server)
     - docker compose build
     - echo "✅ Build Selesai."
 
+# --- JOB 2: DEPLOY PRODUCTION ---
 deploy_production:
   stage: deploy
   tags:
     - portal-ai
   only:
     - main
+  # Hanya jalan kalau build sukses
   needs: ["build_images"]
-    # --- BAGIAN INI SANGAT PENTING ---
+  
   variables:
-    # -ffdx : Clean force (hapus untracked files)
-    # -e data/ : EXCLUDE (Jangan sentuh) folder data/
+    # [SANGAT PENTING]
+    # Mencegah Runner menghapus folder 'data/' saat persiapan (git clean)
+    # Ini solusi ampuh untuk menghindari error "Permission denied" saat clean up.
     GIT_CLEAN_FLAGS: -ffdx -e data/
+  
   script:
     - echo "🚀 Memulai Deployment..."
+    
+    # 1. Restore .env
     - echo "$DOT_ENV_FILE" > .env
     
-    # [PENTING] Gunakan path LENGKAP yang sama dengan docker-compose.yml
-    - mkdir -p /home/admingys/internal-chat-picture/data/mongodb
-    - mkdir -p /home/admingys/internal-chat-picture/server/data
-    
-    # Berikan izin agar Runner bisa menulis ke folder milik User Admingys
-    - chmod -R 777 /home/admingys/internal-chat-picture/data
-    - chmod -R 777 /home/admingys/internal-chat-picture/server/data
-
-    # Hapus container lama (supaya tidak conflict)
+    # 2. Hapus container lama secara paksa (Safety Net)
+    # Supaya tidak ada error "Conflict container name"
     - docker rm -f mongo internal-chat-server internal-chat-client || true
+    
+    # 3. Turunkan service yang sedang jalan
     - docker compose down --remove-orphans || true
-
-    # Jalankan
+    
+    # 4. Jalankan Aplikasi
+    # Karena path di docker-compose.yml sudah Absolute (/home/admingys/...),
+    # Docker akan otomatis mount ke folder yang benar.
     - docker compose up -d 
-
-    # Bersihkan
+    
+    # 5. Cek Kesehatan Container (Opsional)
     - sleep 10
+    - docker compose ps
+
+    # 6. Bersihkan image bekas update
     - docker image prune -f
-    - echo "✅ Deployment Sukses!"
+    
+    - echo "✅ Deployment Sukses! Aplikasi sudah update."
