@@ -1,0 +1,46 @@
+stages:
+  - deploy
+
+deploy_production:
+  stage: deploy
+  tags:
+    - portal-ai  # Pastikan tag ini sama dengan saat register runner
+  only:
+    - main
+  
+  # Timeout opsional jika build client/server memakan waktu lama
+  timeout: 15m 
+  
+  script:
+    - echo "🚀 Memulai Deployment..."
+
+    # 1. Restore file .env (Sangat Penting karena dipakai di env_file & args)
+    - echo "$DOT_ENV_FILE" > .env
+    
+    # 2. Persiapkan Folder Data (CRITICAL STEP)
+    # Karena Anda menggunakan mounting ke host (./data/mongodb & ./server/data),
+    # kita harus membuatnya manual agar permission-nya milik user 'gitlab-runner', bukan 'root'.
+    - mkdir -p data/mongodb
+    - mkdir -p server/data
+    
+    # Berikan izin tulis (write) supaya container Mongo & Server bisa menulis file di folder ini
+    - chmod -R 777 data/mongodb
+    - chmod -R 777 server/data
+
+    # 3. Bersihkan container lama & orphaned networks
+    # Menggunakan '|| true' agar pipeline tidak stop jika tidak ada container yang jalan
+    - docker compose down --remove-orphans || true
+
+    # 4. Build & Up
+    # --build: Wajib agar perubahan kode di React/NodeJS ikut terupdate
+    # Variabel REACT_APP_API_URL akan otomatis diambil dari file .env yang sudah kita generate
+    - docker compose up -d --build
+
+    # 5. Cek status container (untuk memastikan tidak ada yang restart terus/looping)
+    - sleep 10
+    - docker compose ps
+
+    # 6. Bersihkan image sampah (Hemat disk VPS)
+    - docker image prune -f
+
+    - echo "✅ Deployment Selesai! Aplikasi berjalan."
