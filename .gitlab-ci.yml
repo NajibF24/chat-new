@@ -2,8 +2,6 @@ stages:
   - build
   - deploy
 
-# --- JOB 1: BUILD IMAGE ---
-# Tugas: Build image docker untuk memastikan tidak ada error di kodingan
 build_images:
   stage: build
   tags:
@@ -11,58 +9,38 @@ build_images:
   only:
     - main
   script:
-    - echo "🏗️ Memulai Proses Build..."
-    
-    # 1. Restore file .env (Penting untuk build args React)
+    - echo "🏗️ Memulai Build..."
     - echo "$DOT_ENV_FILE" > .env
-    
-    # 2. Build Image
-    # Karena dijalankan di server yang sama (Shell Executor),
-    # hasil build ini akan tersimpan di cache Docker server tersebut.
     - docker compose build
-    
-    - echo "✅ Build Selesai! Image siap digunakan."
+    - echo "✅ Build Selesai."
 
-# --- JOB 2: DEPLOY APP ---
-# Tugas: Menghapus container lama & menjalankan container baru
 deploy_production:
   stage: deploy
   tags:
     - portal-ai
   only:
     - main
-  # Deploy hanya jalan jika tahap Build sukses
   needs: ["build_images"]
-  
   script:
     - echo "🚀 Memulai Deployment..."
-    
-    # 1. Restore .env lagi (Setiap job mulai dari lingkungan bersih)
     - echo "$DOT_ENV_FILE" > .env
     
-    # 2. Persiapkan Folder Data (Agar tidak error permission)
+    # [PENTING] Gunakan path LENGKAP yang sama dengan docker-compose.yml
     - mkdir -p /home/admingys/internal-chat-picture/data/mongodb
     - mkdir -p /home/admingys/internal-chat-picture/server/data
+    
+    # Berikan izin agar Runner bisa menulis ke folder milik User Admingys
     - chmod -R 777 /home/admingys/internal-chat-picture/data
     - chmod -R 777 /home/admingys/internal-chat-picture/server/data
 
-    # 3. [PENTING] Hapus Paksa Container Lama
-    # Ini solusi untuk error "Conflict container name" yang Anda alami.
-    # Kita hapus container berdasarkan NAMANYA (sesuai docker ps Anda).
+    # Hapus container lama (supaya tidak conflict)
     - docker rm -f mongo internal-chat-server internal-chat-client || true
-    
-    # 4. Bersihkan network lama (opsional tapi disarankan)
     - docker compose down --remove-orphans || true
-    
-    # 5. Jalankan Aplikasi
-    # Tidak perlu '--build' lagi karena sudah dilakukan di stage 'build_images'
+
+    # Jalankan
     - docker compose up -d 
 
-    # 6. Cek Status Container
+    # Bersihkan
     - sleep 10
-    - docker compose ps
-
-    # 7. Bersihkan image sampah (agar disk VPS tidak penuh)
     - docker image prune -f
-    
     - echo "✅ Deployment Sukses!"
