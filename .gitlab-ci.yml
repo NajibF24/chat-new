@@ -12,6 +12,7 @@ stages:
   - security  # Trivy (Security Scan)
   - build     # Build & Push ke Registry
   - deploy    # Pull dari Registry & Run
+  - dast
 
 # --- JOB 1: SECURITY SCAN (TRIVY + HTML REPORT) ---
 # Ini ringan, aman dijalankan di server 4GB
@@ -107,3 +108,40 @@ deploy_production:
     - sleep 10
     - docker image prune -f
     - echo "✅ Deployment Sukses!"
+# --- JOB 4: DAST (OWASP ZAP - LIGHTWEIGHT) ---
+dast_scan:
+  stage: dast
+  tags:
+    - portal-ai
+  image: 
+    name: ghcr.io/zaproxy/zaproxy:stable
+    entrypoint: [""]
+  allow_failure: true # Jangan gagalkan pipeline kalau ada warning, cukup lapor saja
+  variables:
+    # URL website yang sudah running (Ganti dengan IP atau Domain Anda)
+    TARGET_URL: "http://172.17.0.1:80" 
+    # Catatan: Karena dijalankan dari dalam Container Docker, 
+    # kita pakai IP Gateway Docker (172.17.0.1) untuk nembak ke Host/Server Asli.
+    # Atau kalau punya domain publik (portal-ai.com), pakai domain itu lebih bagus.
+
+  script:
+    - echo "🕵️ Memulai DAST Scanning (ZAP Baseline)..."
+    
+    # Buat folder untuk report
+    - mkdir -p zap-reports
+    - chmod 777 zap-reports
+    
+    # Jalankan ZAP Baseline Scan
+    # -t : Target URL
+    # -r : Nama file report (HTML)
+    # -I : Abaikan warning (biar job tetap hijau walau ada temuan minor)
+    - zap-baseline.py -t $TARGET_URL -r zap-report.html -I
+    
+    - cp /zap/wrk/zap-report.html zap-reports/
+    
+  artifacts:
+    name: "DAST-Report-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - zap-reports/zap-report.html
+    expire_in: 7 days
+    when: always
