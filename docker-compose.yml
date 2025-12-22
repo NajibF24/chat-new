@@ -1,0 +1,113 @@
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: mongo
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin123}
+    # ✅ CRITICAL: MongoDB data persistence
+    volumes:
+      - ./data/mongodb:/data/db  # Mount to host directory
+    networks:
+      - internal-chat-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: internal-chat-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-5000}:5000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - MONGODB_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-admin123}@mongo:27017/internal-chat?authSource=admin&retryWrites=true&w=majority
+      - SESSION_SECRET=${SESSION_SECRET:-change-this-in-production}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SMARTSHEET_API_KEY=${SMARTSHEET_API_KEY}
+      - SMARTSHEET_PRIMARY_SHEET_ID=${SMARTSHEET_PRIMARY_SHEET_ID:-7472905240661892}
+      # LDAP Configuration
+      - LDAP_ENABLED=${LDAP_ENABLED:-false}
+      - LDAP_URL=${LDAP_URL}
+      - LDAP_BIND_DN=${LDAP_BIND_DN}
+      - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD}
+      - LDAP_SEARCH_BASE=${LDAP_SEARCH_BASE}
+      - LDAP_SEARCH_FILTER=${LDAP_SEARCH_FILTER}
+      - LDAP_USERNAME_ATTRIBUTE=${LDAP_USERNAME_ATTRIBUTE:-sAMAccountName}
+      - LDAP_MAIL_ATTRIBUTE=${LDAP_MAIL_ATTRIBUTE:-mail}
+      - LDAP_DISPLAYNAME_ATTRIBUTE=${LDAP_DISPLAYNAME_ATTRIBUTE:-cn}
+      - LDAP_FIRSTNAME_ATTRIBUTE=${LDAP_FIRSTNAME_ATTRIBUTE:-givenName}
+      - LDAP_LASTNAME_ATTRIBUTE=${LDAP_LASTNAME_ATTRIBUTE:-sn}
+      - LDAP_ADMIN_GROUPS=${LDAP_ADMIN_GROUPS}
+      - ALLOW_LOCAL_AUTH=${ALLOW_LOCAL_AUTH:-true}
+    # ✅ CRITICAL: Persistent file storage
+    volumes:
+      # Mount data folder to host (uploaded files + dashboard images)
+      - ./server/data:/usr/src/app/data
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - internal-chat-network
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 384M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=${REACT_APP_API_URL:-}
+    container_name: internal-chat-client
+    restart: unless-stopped
+    ports:
+      - "${CLIENT_PORT:-80}:80"
+    environment:
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-}
+    depends_on:
+      - server
+    networks:
+      - internal-chat-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal-chat-network:
+    driver: bridge
+
+# ✅ REMOVED: Docker named volumes (we use host directories instead)
