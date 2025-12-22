@@ -50,7 +50,8 @@ build_push_images:
     - main
   before_script:
     # Login ke GitLab Registry otomatis menggunakan token CI/CD
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    #- docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🏗️ Building & Pushing Images..."
     - echo "$DOT_ENV_FILE" > .env
@@ -76,7 +77,8 @@ deploy_production:
     - main
   needs: ["build_push_images"]
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY    
+    #- docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
     - echo "🚀 Memulai Deployment..."
     - echo "$DOT_ENV_FILE" > .env
