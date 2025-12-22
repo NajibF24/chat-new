@@ -108,64 +108,29 @@ deploy_production:
     - sleep 10
     - docker image prune -f
     - echo "✅ Deployment Sukses!"
-# --- JOB 4: DAST (OWASP ZAP - FIX SHELL EXECUTOR) ---
+
+# --- JOB 4: DAST (OWASP ZAP - FIX UNTUK SHELL EXECUTOR) ---
 dast_scan:
   stage: dast
   tags:
     - portal-ai
   allow_failure: true
   variables:
-    # Karena kita pakai --network host, kita tembak localhost port 80 (Nginx Host)
-    TARGET_URL: "https://portalai.gyssteel.com" 
+    # Target URL website Production Anda
+    TARGET_URL: "https://portalai.gyssteel.com"
   script:
     - echo "🕵️ Memulai DAST Scanning (ZAP Baseline)..."
     
-    # 1. Siapkan folder report di host
+    # 1. Siapkan folder report
     - mkdir -p zap-reports
     - chmod 777 zap-reports
     
-    # 2. Jalankan ZAP menggunakan Docker Container
-    # --rm : Hapus container setelah selesai (hemat disk)
-    # --network host : Agar ZAP bisa melihat 'localhost' milik server VPS
-    # -v ... : Mounting folder agar report bisa tersimpan di VPS
-    # -u 0 : Jalankan sebagai root di dalam container agar tidak error permission tulis file
+    # 2. Pull image dulu biar fresh
+    - docker pull ghcr.io/zaproxy/zaproxy:stable
     
-    - docker run --rm --network host -u 0 -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -I
-    
-  artifacts:
-    name: "DAST-Report-$CI_COMMIT_SHORT_SHA"
-    paths:
-      - zap-reports/zap-report.html
-    expire_in: 7 days
-    when: always
-  stage: dast
-  tags:
-    - portal-ai
-  image: 
-    name: ghcr.io/zaproxy/zaproxy:stable
-    entrypoint: [""]
-  allow_failure: true # Jangan gagalkan pipeline kalau ada warning, cukup lapor saja
-  variables:
-    # URL website yang sudah running (Ganti dengan IP atau Domain Anda)
-    TARGET_URL: "https://portalai.gyssteel.com" 
-    # Catatan: Karena dijalankan dari dalam Container Docker, 
-    # kita pakai IP Gateway Docker (172.17.0.1) untuk nembak ke Host/Server Asli.
-    # Atau kalau punya domain publik (portal-ai.com), pakai domain itu lebih bagus.
-
-  script:
-    - echo "🕵️ Memulai DAST Scanning (ZAP Baseline)..."
-    
-    # Buat folder untuk report
-    - mkdir -p zap-reports
-    - chmod 777 zap-reports
-    
-    # Jalankan ZAP Baseline Scan
-    # -t : Target URL
-    # -r : Nama file report (HTML)
-    # -I : Abaikan warning (biar job tetap hijau walau ada temuan minor)
-    - zap-baseline.py -t $TARGET_URL -r zap-report.html -I
-    
-    - cp /zap/wrk/zap-report.html zap-reports/
+    # 3. Jalankan ZAP menggunakan 'docker run'
+    # Kita mounting volume (-v) agar report tersimpan di folder zap-reports server
+    - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -I
     
   artifacts:
     name: "DAST-Report-$CI_COMMIT_SHORT_SHA"
