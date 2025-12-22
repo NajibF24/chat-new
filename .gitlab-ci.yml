@@ -1,46 +1,68 @@
 stages:
+  - build
   - deploy
 
+# --- JOB 1: BUILD IMAGE ---
+# Tugas: Build image docker untuk memastikan tidak ada error di kodingan
+build_images:
+  stage: build
+  tags:
+    - portal-ai
+  only:
+    - main
+  script:
+    - echo "🏗️ Memulai Proses Build..."
+    
+    # 1. Restore file .env (Penting untuk build args React)
+    - echo "$DOT_ENV_FILE" > .env
+    
+    # 2. Build Image
+    # Karena dijalankan di server yang sama (Shell Executor),
+    # hasil build ini akan tersimpan di cache Docker server tersebut.
+    - docker compose build
+    
+    - echo "✅ Build Selesai! Image siap digunakan."
+
+# --- JOB 2: DEPLOY APP ---
+# Tugas: Menghapus container lama & menjalankan container baru
 deploy_production:
   stage: deploy
   tags:
-    - portal-ai  # Pastikan tag ini sama dengan saat register runner
+    - portal-ai
   only:
     - main
-  
-  # Timeout opsional jika build client/server memakan waktu lama
-  timeout: 15m 
+  # Deploy hanya jalan jika tahap Build sukses
+  needs: ["build_images"]
   
   script:
     - echo "🚀 Memulai Deployment..."
-
-    # 1. Restore file .env (Sangat Penting karena dipakai di env_file & args)
+    
+    # 1. Restore .env lagi (Setiap job mulai dari lingkungan bersih)
     - echo "$DOT_ENV_FILE" > .env
     
-    # 2. Persiapkan Folder Data (CRITICAL STEP)
-    # Karena Anda menggunakan mounting ke host (./data/mongodb & ./server/data),
-    # kita harus membuatnya manual agar permission-nya milik user 'gitlab-runner', bukan 'root'.
+    # 2. Persiapkan Folder Data (Agar tidak error permission)
     - mkdir -p data/mongodb
     - mkdir -p server/data
-    
-    # Berikan izin tulis (write) supaya container Mongo & Server bisa menulis file di folder ini
     - chmod -R 777 data/mongodb
     - chmod -R 777 server/data
 
-    # 3. Bersihkan container lama & orphaned networks
-    # Menggunakan '|| true' agar pipeline tidak stop jika tidak ada container yang jalan
+    # 3. [PENTING] Hapus Paksa Container Lama
+    # Ini solusi untuk error "Conflict container name" yang Anda alami.
+    # Kita hapus container berdasarkan NAMANYA (sesuai docker ps Anda).
+    - docker rm -f mongo internal-chat-server internal-chat-client || true
+    
+    # 4. Bersihkan network lama (opsional tapi disarankan)
     - docker compose down --remove-orphans || true
+    
+    # 5. Jalankan Aplikasi
+    # Tidak perlu '--build' lagi karena sudah dilakukan di stage 'build_images'
+    - docker compose up -d 
 
-    # 4. Build & Up
-    # --build: Wajib agar perubahan kode di React/NodeJS ikut terupdate
-    # Variabel REACT_APP_API_URL akan otomatis diambil dari file .env yang sudah kita generate
-    - docker compose up -d --build
-
-    # 5. Cek status container (untuk memastikan tidak ada yang restart terus/looping)
+    # 6. Cek Status Container
     - sleep 10
     - docker compose ps
 
-    # 6. Bersihkan image sampah (Hemat disk VPS)
+    # 7. Bersihkan image sampah (agar disk VPS tidak penuh)
     - docker image prune -f
-
-    - echo "✅ Deployment Selesai! Aplikasi berjalan."
+    
+    - echo "✅ Deployment Sukses!"
