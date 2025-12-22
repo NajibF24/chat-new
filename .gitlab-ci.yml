@@ -1,71 +1,99 @@
-# --- KONFIGURASI GLOBAL (JANGAN DIHAPUS) ---
 variables:
-  # Ini memaksa runner bekerja di folder "project-baru-bersih"
-  # Wajib ada karena kita sudah aktifkan custom_build_dir di server
+  # Folder custom (Wajib karena kita pakai custom_build_dir)
   GIT_CLONE_PATH: '$CI_BUILDS_DIR/$CI_CONCURRENT_ID/project-baru-bersih'
-  
-  # Mencegah runner menghapus folder data lokal saat persiapan
   GIT_CLEAN_FLAGS: -ffdx -e data/
+  
+  # Definisi Nama Image di Registry GitLab Pusat
+  # Ini akan menyimpan image ke git.gyssteel.com:5050/...
+  SERVER_IMAGE: $CI_REGISTRY_IMAGE/server:latest
+  CLIENT_IMAGE: $CI_REGISTRY_IMAGE/client:latest
 
 stages:
-  - security  # <--- Stage Baru
-  - build
-  - deploy
+  - security  # Trivy (Security Scan)
+  - build     # Build & Push ke Registry
+  - deploy    # Pull dari Registry & Run
 
-# --- JOB 1: SECURITY SCAN (DEVSECOPS) ---
+# --- JOB 1: SECURITY SCAN (TRIVY + HTML REPORT) ---
+# Ini ringan, aman dijalankan di server 4GB
 security_scan:
   stage: security
   tags:
     - portal-ai
-  # allow_failure: true -> Pipeline lanjut meski ada temuan (ubah ke false jika ingin ketat)
-  allow_failure: true 
+  allow_failure: true
   script:
-    - echo "🛡️ Memulai Security Scanning dengan Trivy..."
+    - echo "🛡️ Memulai Security Scanning..."
     
-    # Scan kode sumber & config di folder saat ini (.)
-    # Mencari celah keamanan (vuln), password bocor (secret), dan salah config
-    - trivy fs --scanners vuln,secret,config --severity HIGH,CRITICAL .
+    # 1. Download Template HTML Report
+    - wget https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -O trivy-report.tpl
     
-    - echo "✅ Security Scan Selesai."
+    # 2. Scan & Generate HTML Report (Disimpan jadi file)
+    - trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --format template --template "@trivy-report.tpl" -o trivy-report.html .
+    
+    # 3. Tampilkan ringkasan di layar terminal juga
+    - trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL .
+    
+  artifacts:
+    name: "Trivy-Security-Report-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - trivy-report.html
+    expire_in: 7 days
+    when: always
 
-# --- JOB 2: BUILD IMAGE ---
-build_images:
+# --- JOB 2: BUILD & PUSH TO REGISTRY ---
+# Image dibangun lalu dikirim ke GitLab Server (git.gyssteel.com)
+# Jadi server on-premise ini tidak perlu menyimpan cache build yang besar
+build_push_images:
   stage: build
   tags:
     - portal-ai
   only:
     - main
+  before_script:
+    # Login ke GitLab Registry otomatis menggunakan token CI/CD
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    - echo "🏗️ Memulai Build di folder baru..."
+    - echo "🏗️ Building & Pushing Images..."
     - echo "$DOT_ENV_FILE" > .env
-    - docker compose build
-    - echo "✅ Build Selesai."
+    
+    # Build & Push Server
+    # Kita gunakan --cache-from agar build lebih cepat jika ada cache di registry
+    - docker build -t $SERVER_IMAGE ./server
+    - docker push $SERVER_IMAGE
+    
+    # Build & Push Client (dengan Build Args)
+    - docker build --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE ./client
+    - docker push $CLIENT_IMAGE
+    
+    - echo "✅ Images berhasil di-upload ke GitLab Registry."
 
-# --- JOB 3: DEPLOY PRODUCTION ---
+# --- JOB 3: DEPLOY (PULL FROM REGISTRY) ---
+# Di tahap ini, server hanya download image matang. Lebih stabil.
 deploy_production:
   stage: deploy
   tags:
     - portal-ai
   only:
     - main
-  needs: ["build_images"] # Tunggu build selesai
-
+  needs: ["build_push_images"]
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
     - echo "🚀 Memulai Deployment..."
-
-    # 1. Restore .env
     - echo "$DOT_ENV_FILE" > .env
-
-    # 2. Hapus container lama (Safety Net)
+    
+    # 1. Hapus container lama
     - docker rm -f mongo internal-chat-server internal-chat-client || true
     - docker compose down --remove-orphans || true
-
+    
+    # 2. Pull image terbaru dari Registry
+    - docker pull $SERVER_IMAGE
+    - docker pull $CLIENT_IMAGE
+    
     # 3. Jalankan Aplikasi
-    # (Menggunakan data di folder /home/admingys/... yang sudah diset di docker-compose.yml)
-    - docker compose up -d
-
-    # 4. Cek Kesehatan & Bersih-bersih
+    # (Pastikan docker-compose.yml sudah diedit menggunakan image: ${CI_REGISTRY_IMAGE}...)
+    - docker compose up -d 
+    
+    # 4. Bersihkan image sampah (Penting untuk hemat disk server on-premise)
     - sleep 10
-    - docker compose ps
     - docker image prune -f
     - echo "✅ Deployment Sukses!"

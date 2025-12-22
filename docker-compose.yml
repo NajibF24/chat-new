@@ -27,6 +27,7 @@ services:
       start_period: 40s
 
   server:
+    image: ${CI_REGISTRY_IMAGE:-internal-chat}/server:latest
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -79,6 +80,7 @@ services:
         max-file: "3"
 
   client:
+    image: ${CI_REGISTRY_IMAGE:-internal-chat}/client:latest
     build:
       context: ./client
       dockerfile: Dockerfile
