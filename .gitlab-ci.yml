@@ -25,14 +25,13 @@ test_server:
     - portal-ai
   script:
     - echo "🧪 Running Server Unit Tests..."
-    # Kita tambahkan flag -u (User) agar file node_modules tidak 'nyangkut' sebagai root
     - >
       docker run --rm 
       -u $(id -u):$(id -g)
       -v $(pwd)/server:/usr/src/app 
       -w /usr/src/app 
       node:20-alpine 
-      sh -c "npm install && npm test -- --passWithNoTests"
+      sh -c "npm install --cache .npm-cache && npm test -- --passWithNoTests"
 
 test_client:
   stage: test
@@ -46,7 +45,7 @@ test_client:
       -v $(pwd)/client:/usr/src/app 
       -w /usr/src/app 
       node:20-alpine 
-      sh -c "npm install && npm test -- --passWithNoTests"
+      sh -c "npm install --cache .npm-cache && npm test -- --passWithNoTests"
 
 security_scan:
   stage: security
