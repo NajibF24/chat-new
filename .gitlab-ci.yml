@@ -9,15 +9,19 @@ variables:
   
   # URL Website untuk DAST Scan
   TARGET_URL: "https://portalai.gyssteel.com"
+  
+  # PENTING: Agar SonarQube bisa mendeteksi "New Code" vs "Old Code"
+  GIT_DEPTH: "0"
 
 stages:
-  - security  # Trivy (Langsung mulai dari sini)
-  - build     # Build & Push
-  - deploy    # Deploy
-  - dast      # OWASP ZAP
-  - report    # Upload ke DefectDojo (Server Infra)
+  - security      # Trivy (Scanning Library/OS)
+  - code_quality  # SonarQube (Scanning Kualitas Kodingan) <--- BARU
+  - build         # Build & Push
+  - deploy        # Deploy
+  - dast          # OWASP ZAP (Attack Website)
+  - report        # Upload ke DefectDojo
 
-# --- UPDATE JOB: TRIVY (TAMBAH LICENSE & SBOM) ---
+# --- JOB 1: TRIVY SCAN ---
 security_scan:
   stage: security
   tags:
@@ -27,16 +31,13 @@ security_scan:
     - echo "🛡️ Memulai Deep Security Scanning..."
     - wget https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -O trivy-report.tpl
     
-    # 1. SCAN SERVER (Deep Mode)
-    # Menambahkan: --scanners license (Cek lisensi legal)
+    # 1. SCAN SERVER
     - echo "🔍 Deep Scan Server..."
     - trivy fs --scanners vuln,secret,misconfig,license --format template --template "@trivy-report.tpl" -o report-server.html ./server
-    # Generate SBOM (Inventaris Software) - Standar Industri Baru
     - trivy fs --format cyclonedx -o sbom-server.json ./server
-    # JSON standard untuk DefectDojo
     - trivy fs --scanners vuln,secret,misconfig,license --format json -o trivy-server.json ./server
     
-    # 2. SCAN CLIENT (Deep Mode)
+    # 2. SCAN CLIENT
     - echo "🔍 Deep Scan Client..."
     - trivy fs --scanners vuln,secret,misconfig,license --format template --template "@trivy-report.tpl" -o report-client.html ./client
     - trivy fs --scanners vuln,secret,misconfig,license --format json -o trivy-client.json ./client
@@ -46,13 +47,35 @@ security_scan:
     paths:
       - report-server.html
       - trivy-server.json
-      - sbom-server.json # File artifact baru
+      - sbom-server.json
       - report-client.html
       - trivy-client.json
     expire_in: 7 days
     when: always
 
-# --- JOB 2: BUILD & PUSH ---
+# --- JOB BARU: SONARQUBE CHECK ---
+sonarqube_check:
+  stage: code_quality
+  image: 
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  tags:
+    - portal-ai
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Cache folder
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - echo "🧠 Memulai Analisa Code Quality ke Server Infra..."
+    # Command ini otomatis baca variable SONAR_TOKEN & SONAR_HOST_URL dari GitLab
+    - sonar-scanner
+  allow_failure: true
+  only:
+    - main
+
+# --- JOB 3: BUILD & PUSH ---
 build_push_images:
   stage: build
   tags:
@@ -69,7 +92,7 @@ build_push_images:
     - docker build --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE ./client
     - docker push $CLIENT_IMAGE
 
-# --- JOB 3: DEPLOY ---
+# --- JOB 4: DEPLOY ---
 deploy_production:
   stage: deploy
   tags:
@@ -90,7 +113,7 @@ deploy_production:
     - sleep 10
     - docker image prune -f
 
-# --- UPDATE JOB: DAST (PILIHAN PASSIVE VS ACTIVE) ---
+# --- JOB 5: DAST (ZAP) ---
 dast_scan:
   stage: dast
   tags:
@@ -102,14 +125,8 @@ dast_scan:
     - chmod 777 zap-reports
     - docker pull ghcr.io/zaproxy/zaproxy:stable
     
-    # --- OPSI 1: PASSIVE SCAN (AMAN UNTUK PRODUCTION) ---
-    # Gunakan ini jika target adalah website kantor yang sedang dipakai
+    # PASSIVE SCAN (Aman untuk Production)
     - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -x zap-report.xml -I
-    
-    # --- OPSI 2: ACTIVE SCAN (FULL ATTACK) - BAHAYA ⚠️ ---
-    # HANYA NYALAKAN JIKA TARGET ADALAH SERVER TESTING/DEV YANG KOSONG
-    # Script ini akan mencoba jebol form login dan input data sampah
-    # - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-full-scan.py -t $TARGET_URL -r zap-report.html -x zap-report.xml -I
     
   artifacts:
     name: "DAST-Report-$CI_COMMIT_SHORT_SHA"
@@ -119,7 +136,7 @@ dast_scan:
     expire_in: 7 days
     when: always
     
-# --- JOB 5: UPLOAD REPORT TO INFRA SERVER ---
+# --- JOB 6: UPLOAD REPORT TO DEFECTDOJO ---
 upload_to_defectdojo:
   stage: report
   tags:
@@ -129,9 +146,7 @@ upload_to_defectdojo:
   script:
     - echo "🚀 Mengirim Laporan ke Server Infra (DefectDojo)..."
     
-    # IP SERVER INFRA: 172.16.21.82
-    
-    # 1. Upload Trivy SERVER (JSON)
+    # Upload Trivy SERVER
     - |
       curl -X POST "http://172.16.21.82:8080/api/v2/import-scan/" \
       -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
@@ -143,7 +158,7 @@ upload_to_defectdojo:
       -F "auto_create_context=true" \
       -F "close_old_findings=true"
 
-    # 2. Upload Trivy CLIENT (JSON)
+    # Upload Trivy CLIENT
     - |
       curl -X POST "http://172.16.21.82:8080/api/v2/import-scan/" \
       -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
@@ -155,7 +170,7 @@ upload_to_defectdojo:
       -F "auto_create_context=true" \
       -F "close_old_findings=true"
 
-    # 3. Upload ZAP DAST (XML)
+    # Upload ZAP DAST
     - |
       curl -X POST "http://172.16.21.82:8080/api/v2/import-scan/" \
       -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
