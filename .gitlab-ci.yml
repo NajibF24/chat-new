@@ -10,6 +10,7 @@ variables:
   CLIENT_IMAGE: $CI_REGISTRY_IMAGE/client:latest
 
 stages:
+  - test
   - security  # Trivy (Security Scan)
   - build     # Build & Push ke Registry
   - deploy    # Pull dari Registry & Run
@@ -18,6 +19,28 @@ stages:
 # --- JOB 1: SECURITY SCAN (TRIVY + HTML REPORT) ---
 # Ini ringan, aman dijalankan di server 4GB
 # --- JOB 1: SECURITY SCAN (TERPISAH SERVER & CLIENT) ---
+# --- JOB: UNIT TESTING SERVER ---
+test_server:
+  stage: test
+  tags:
+    - portal-ai
+  script:
+    - echo "🧪 Running Server Unit Tests..."
+    - cd server
+    - npm install
+    - npm test -- --watchAll=false --passWithNoTests
+  allow_failure: false # Jika test gagal, pipeline berhenti di sini
+
+# --- JOB: UNIT TESTING CLIENT ---
+test_client:
+  stage: test
+  tags:
+    - portal-ai
+  script:
+    - echo "🧪 Running Client Unit Tests..."
+    - cd client
+    - npm install
+    - npm test -- --watchAll=false --passWithNoTests
 security_scan:
   stage: security
   tags:
