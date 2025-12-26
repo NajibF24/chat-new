@@ -19,7 +19,8 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build"
+    "build": "react-scripts build",
+    "test": "echo \"Error: no test specified\" && exit 0"
   },
   "devDependencies": {
     "react-scripts": "5.0.1",
