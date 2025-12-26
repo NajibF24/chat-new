@@ -1,5 +1,5 @@
 FROM node:20-alpine
-
+#contoh
 # Install dumb-init (Penting untuk signal handling di non-root user)
 RUN apk add --no-cache dumb-init
 
