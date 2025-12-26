@@ -1,32 +1,30 @@
 variables:
-  # Folder custom (Wajib karena kita pakai custom_build_dir)
+  # Folder custom
   GIT_CLONE_PATH: '$CI_BUILDS_DIR/$CI_CONCURRENT_ID/project-baru-bersih'
   GIT_CLEAN_FLAGS: -ffdx -e data/
-  #test
-#test 2
-  # Definisi Nama Image di Registry GitLab Pusat
-  # Ini akan menyimpan image ke git.gyssteel.com:5050/...
+  
+  # Definisi Nama Image
   SERVER_IMAGE: $CI_REGISTRY_IMAGE/server:latest
   CLIENT_IMAGE: $CI_REGISTRY_IMAGE/client:latest
+  
+  # URL Website untuk DAST Scan
+  TARGET_URL: "https://portalai.gyssteel.com"
 
 stages:
   - test
-  - security  # Trivy (Security Scan)
-  - build     # Build & Push ke Registry
-  - deploy    # Pull dari Registry & Run
-  - dast
+  - security  # Trivy
+  - build     # Build & Push
+  - deploy    # Deploy
+  - dast      # OWASP ZAP
+  - report    # Upload ke DefectDojo (Server Infra)
 
-# --- JOB 1: SECURITY SCAN (TRIVY + HTML REPORT) ---
-# Ini ringan, aman dijalankan di server 4GB
-# --- JOB 1: SECURITY SCAN (TERPISAH SERVER & CLIENT) ---
-# --- JOB: UNIT TESTING SERVER ---
+# --- JOB 1: UNIT TESTING ---
 test_server:
   stage: test
   tags:
     - portal-ai
   script:
     - echo "🧪 Running Server Unit Tests..."
-    # Membuat folder cache secara manual dengan user runner
     - mkdir -p $(pwd)/server/.npm-cache
     - >
       docker run --rm 
@@ -37,14 +35,12 @@ test_server:
       node:20-alpine 
       sh -c "npm install && npm test"
 
-# --- JOB: UNIT TESTING CLIENT ---
 test_client:
   stage: test
   tags:
     - portal-ai
   script:
     - echo "🧪 Running Client Unit Tests..."
-    # Membuat folder cache secara manual dengan user runner
     - mkdir -p $(pwd)/client/.npm-cache
     - >
       docker run --rm 
@@ -54,7 +50,8 @@ test_client:
       -e npm_config_cache=/usr/src/app/.npm-cache
       node:20-alpine 
       sh -c "npm install && npm test"
-      
+
+# --- JOB 2: SECURITY SCAN (TRIVY) ---
 security_scan:
   stage: security
   tags:
@@ -63,32 +60,32 @@ security_scan:
   script:
     - echo "🛡️ Memulai Security Scanning..."
     
-    # 1. Download Template HTML
+    # Download Template HTML
     - wget https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -O trivy-report.tpl
     
-    # 2. SCAN SERVER (Simpan sebagai report-server.html)
-    - echo "🔍 Scanning Server..."
+    # 1. SCAN SERVER
+    # Output HTML (untuk Manusia)
     - trivy fs --scanners vuln,secret,misconfig --format template --template "@trivy-report.tpl" -o report-server.html ./server
+    # Output JSON (untuk DefectDojo)
+    - trivy fs --scanners vuln,secret,misconfig --format json -o trivy-server.json ./server
     
-    # 3. SCAN CLIENT (Simpan sebagai report-client.html)
-    - echo "🔍 Scanning Client..."
+    # 2. SCAN CLIENT
+    # Output HTML (untuk Manusia)
     - trivy fs --scanners vuln,secret,misconfig --format template --template "@trivy-report.tpl" -o report-client.html ./client
-    
-    # 4. Tampilkan Ringkasan di Terminal (Opsional, biar log pipeline ada isinya)
-    - trivy fs --scanners vuln,secret,misconfig ./server
-    - trivy fs --scanners vuln,secret,misconfig ./client
+    # Output JSON (untuk DefectDojo)
+    - trivy fs --scanners vuln,secret,misconfig --format json -o trivy-client.json ./client
 
-  # Simpan KEDUA file laporan
   artifacts:
     name: "Security-Reports-$CI_COMMIT_SHORT_SHA"
     paths:
       - report-server.html
+      - trivy-server.json
       - report-client.html
+      - trivy-client.json
     expire_in: 7 days
     when: always
-# --- JOB 2: BUILD & PUSH TO REGISTRY ---
-# Image dibangun lalu dikirim ke GitLab Server (git.gyssteel.com)
-# Jadi server on-premise ini tidak perlu menyimpan cache build yang besar
+
+# --- JOB 3: BUILD & PUSH ---
 build_push_images:
   stage: build
   tags:
@@ -96,26 +93,16 @@ build_push_images:
   only:
     - main
   before_script:
-    # Login ke GitLab Registry otomatis menggunakan token CI/CD
-    #- docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🏗️ Building & Pushing Images..."
     - echo "$DOT_ENV_FILE" > .env
-    
-    # Build & Push Server
-    # Kita gunakan --cache-from agar build lebih cepat jika ada cache di registry
     - docker build -t $SERVER_IMAGE ./server
     - docker push $SERVER_IMAGE
-    
-    # Build & Push Client (dengan Build Args)
     - docker build --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE ./client
     - docker push $CLIENT_IMAGE
-    
-    - echo "✅ Images berhasil di-upload ke GitLab Registry."
 
-# --- JOB 3: DEPLOY (PULL FROM REGISTRY) ---
-# Di tahap ini, server hanya download image matang. Lebih stabil.
+# --- JOB 4: DEPLOY ---
 deploy_production:
   stage: deploy
   tags:
@@ -125,54 +112,86 @@ deploy_production:
   needs: ["build_push_images"]
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY    
-    #- docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
     - echo "🚀 Memulai Deployment..."
     - echo "$DOT_ENV_FILE" > .env
-    
-    # 1. Hapus container lama
     - docker rm -f mongo internal-chat-server internal-chat-client || true
     - docker compose down --remove-orphans || true
-    
-    # 2. Pull image terbaru dari Registry
     - docker pull $SERVER_IMAGE
     - docker pull $CLIENT_IMAGE
-    
-    # 3. Jalankan Aplikasi
-    # (Pastikan docker-compose.yml sudah diedit menggunakan image: ${CI_REGISTRY_IMAGE}...)
     - docker compose up -d 
-    
-    # 4. Bersihkan image sampah (Penting untuk hemat disk server on-premise)
     - sleep 10
     - docker image prune -f
-    - echo "✅ Deployment Sukses!"
 
-# --- JOB 4: DAST (OWASP ZAP - FIX UNTUK SHELL EXECUTOR) ---
+# --- JOB 5: DAST (OWASP ZAP) ---
 dast_scan:
   stage: dast
   tags:
     - portal-ai
   allow_failure: true
-  variables:
-    # Target URL website Production Anda
-    TARGET_URL: "https://portalai.gyssteel.com"
   script:
     - echo "🕵️ Memulai DAST Scanning (ZAP Baseline)..."
-    
-    # 1. Siapkan folder report
     - mkdir -p zap-reports
     - chmod 777 zap-reports
-    
-    # 2. Pull image dulu biar fresh
     - docker pull ghcr.io/zaproxy/zaproxy:stable
     
-    # 3. Jalankan ZAP menggunakan 'docker run'
-    # Kita mounting volume (-v) agar report tersimpan di folder zap-reports server
-    - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -I
+    # Generate HTML (-r) DAN XML (-x)
+    # XML diperlukan oleh DefectDojo
+    - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -x zap-report.xml -I
     
   artifacts:
     name: "DAST-Report-$CI_COMMIT_SHORT_SHA"
     paths:
       - zap-reports/zap-report.html
+      - zap-reports/zap-report.xml
     expire_in: 7 days
     when: always
+
+# --- JOB 6: UPLOAD REPORT TO INFRA SERVER ---
+upload_to_defectdojo:
+  stage: report
+  tags:
+    - portal-ai
+  image: curlimages/curl
+  allow_failure: true
+  script:
+    - echo "🚀 Mengirim Laporan ke Server Infra (DefectDojo)..."
+    
+    # --- KONFIGURASI IP SERVER INFRA (WAJIB GANTI) ---
+    # Ganti IP di bawah ini dengan IP server 32GB Anda
+    
+    # 1. Upload Trivy SERVER (JSON)
+    - |
+      curl -X POST "http://http://172.16.21.82/:8080/api/v2/import-scan/" \
+      -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
+      -H "Content-Type: multipart/form-data" \
+      -F "scan_type=Trivy Scan" \
+      -F "file=@trivy-server.json" \
+      -F "product_name=Portal AI" \
+      -F "engagement_name=GitLab CI Pipeline" \
+      -F "auto_create_context=true" \
+      -F "close_old_findings=true"
+
+    # 2. Upload Trivy CLIENT (JSON)
+    - |
+      curl -X POST "http://http://172.16.21.82/:8080/api/v2/import-scan/" \
+      -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
+      -H "Content-Type: multipart/form-data" \
+      -F "scan_type=Trivy Scan" \
+      -F "file=@trivy-client.json" \
+      -F "product_name=Portal AI" \
+      -F "engagement_name=GitLab CI Pipeline" \
+      -F "auto_create_context=true" \
+      -F "close_old_findings=true"
+
+    # 3. Upload ZAP DAST (XML)
+    - |
+      curl -X POST "http://http://172.16.21.82/:8080/api/v2/import-scan/" \
+      -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
+      -H "Content-Type: multipart/form-data" \
+      -F "scan_type=ZAP Scan" \
+      -F "file=@zap-reports/zap-report.xml" \
+      -F "product_name=Portal AI" \
+      -F "engagement_name=GitLab CI Pipeline" \
+      -F "auto_create_context=true" \
+      -F "close_old_findings=true"
