@@ -19,34 +19,42 @@ stages:
 # --- JOB 1: SECURITY SCAN (TRIVY + HTML REPORT) ---
 # Ini ringan, aman dijalankan di server 4GB
 # --- JOB 1: SECURITY SCAN (TERPISAH SERVER & CLIENT) ---
+# --- JOB: UNIT TESTING SERVER ---
 test_server:
   stage: test
   tags:
     - portal-ai
   script:
     - echo "🧪 Running Server Unit Tests..."
+    # Membuat folder cache secara manual dengan user runner
+    - mkdir -p $(pwd)/server/.npm-cache
     - >
       docker run --rm 
       -u $(id -u):$(id -g)
       -v $(pwd)/server:/usr/src/app 
       -w /usr/src/app 
+      -e npm_config_cache=/usr/src/app/.npm-cache
       node:20-alpine 
-      sh -c "npm install --cache .npm-cache && npm test -- --passWithNoTests"
+      sh -c "npm install && npm test"
 
+# --- JOB: UNIT TESTING CLIENT ---
 test_client:
   stage: test
   tags:
     - portal-ai
   script:
     - echo "🧪 Running Client Unit Tests..."
+    # Membuat folder cache secara manual dengan user runner
+    - mkdir -p $(pwd)/client/.npm-cache
     - >
       docker run --rm 
       -u $(id -u):$(id -g)
       -v $(pwd)/client:/usr/src/app 
       -w /usr/src/app 
+      -e npm_config_cache=/usr/src/app/.npm-cache
       node:20-alpine 
-      sh -c "npm install --cache .npm-cache && npm test -- --passWithNoTests"
-
+      sh -c "npm install && npm test"
+      
 security_scan:
   stage: security
   tags:
