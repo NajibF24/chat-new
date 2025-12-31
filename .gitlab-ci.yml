@@ -1,11 +1,14 @@
 variables:
-  # Folder custom
+  # Folder custom (Sesuaikan jika perlu, defaultnya biasanya ok)
   GIT_CLONE_PATH: '$CI_BUILDS_DIR/$CI_CONCURRENT_ID/project-baru-bersih'
   GIT_CLEAN_FLAGS: -ffdx -e data/
   
-  # Definisi Nama Image
-  SERVER_IMAGE: $CI_REGISTRY_IMAGE/server:latest
-  CLIENT_IMAGE: $CI_REGISTRY_IMAGE/client:latest
+  # Definisi Nama Image (Menggunakan SHA commit untuk versioning yang unik)
+  SERVER_IMAGE: $CI_REGISTRY_IMAGE/server:$CI_COMMIT_SHORT_SHA
+  SERVER_IMAGE_LATEST: $CI_REGISTRY_IMAGE/server:latest
+  
+  CLIENT_IMAGE: $CI_REGISTRY_IMAGE/client:$CI_COMMIT_SHORT_SHA
+  CLIENT_IMAGE_LATEST: $CI_REGISTRY_IMAGE/client:latest
   
   # URL Website untuk DAST Scan
   TARGET_URL: "https://portalai.gyssteel.com"
@@ -14,48 +17,15 @@ variables:
   GIT_DEPTH: "0"
 
 stages:
-  - security      # Trivy (Scanning Library/OS)
-  - code_quality  # SonarQube (Scanning Kualitas Kodingan) <--- BARU
-  - build         # Build & Push
-  - deploy        # Deploy
-  - dast          # OWASP ZAP (Attack Website)
-  - report        # Upload ke DefectDojo
+  - code_quality  # 1. Cek Source Code (SonarQube)
+  - build         # 2. Build Docker Image
+  - security      # 3. Cek Image OS & App (Trivy)
+  - deploy        # 4. Deploy ke Production
+  - dast          # 5. Attack Website Live (ZAP)
+  - report        # 6. Lapor ke DefectDojo
 
-# --- JOB 1: TRIVY SCAN ---
-security_scan:
-  stage: security
-  tags:
-    - portal-ai
-  allow_failure: true
-  script:
-    - echo "🛡️ Memulai Deep Security Scanning..."
-    - wget https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -O trivy-report.tpl
-    
-    # 1. SCAN SERVER
-    - echo "🔍 Deep Scan Server..."
-    - trivy fs --scanners vuln,secret,misconfig,license --format template --template "@trivy-report.tpl" -o report-server.html ./server
-    - trivy fs --format cyclonedx -o sbom-server.json ./server
-    - trivy fs --scanners vuln,secret,misconfig,license --format json -o trivy-server.json ./server
-    
-    # 2. SCAN CLIENT
-    - echo "🔍 Deep Scan Client..."
-    - trivy fs --scanners vuln,secret,misconfig,license --format template --template "@trivy-report.tpl" -o report-client.html ./client
-    - trivy fs --scanners vuln,secret,misconfig,license --format json -o trivy-client.json ./client
-
-  artifacts:
-    name: "Deep-Security-Reports-$CI_COMMIT_SHORT_SHA"
-    paths:
-      - report-server.html
-      - trivy-server.json
-      - sbom-server.json
-      - report-client.html
-      - trivy-client.json
-    expire_in: 7 days
-    when: always
-
-# --- JOB BARU: SONARQUBE CHECK ---
-# --- UPDATE JOB: SONARQUBE CHECK (SHELL RUNNER FRIENDLY) ---
-# --- FIX: SONARQUBE CHECK (SINGLE LINE COMMAND) ---
+# --- JOB 1: CODE QUALITY (SONARQUBE) ---
+# Dijalankan paling awal. Jika kodingan berantakan, fail di sini.
 sonarqube_check:
   stage: code_quality
   tags:
@@ -63,16 +33,14 @@ sonarqube_check:
   variables:
     GIT_DEPTH: "0"
   script:
-    - echo "🧠 Memulai Analisa Code Quality (via Docker Container)..."
-    
-    # PERBAIKAN: Perintah dijalankan dalam satu baris memanjang agar tidak error parsing
-    - docker run --rm -e SONAR_HOST_URL="${SONAR_HOST_URL}" -e SONAR_TOKEN="${SONAR_TOKEN}" -v "$(pwd):/usr/src" sonarsource/sonar-scanner-cli -Dsonar.projectKey=portal-ai -Dsonar.sources=. -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**"
-
+    - echo "🧠 Memulai Analisa Code Quality (SAST)..."
+    # Menggunakan docker run untuk sonar-scanner (Single Line Command agar aman)
+    - docker run --rm -e SONAR_HOST_URL="${SONAR_HOST_URL}" -e SONAR_TOKEN="${SONAR_TOKEN}" -v "$(pwd):/usr/src" sonarsource/sonar-scanner-cli -Dsonar.projectKey=portal-ai -Dsonar.sources=. -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
   allow_failure: true
   only:
     - main
-    
-# --- JOB 3: BUILD & PUSH ---
+
+# --- JOB 2: BUILD & PUSH ---
 build_push_images:
   stage: build
   tags:
@@ -84,10 +52,50 @@ build_push_images:
   script:
     - echo "🏗️ Building & Pushing Images..."
     - echo "$DOT_ENV_FILE" > .env
-    - docker build -t $SERVER_IMAGE ./server
+    
+    # Build Server (Push 2 tag: SHA unik & Latest)
+    - docker build -t $SERVER_IMAGE -t $SERVER_IMAGE_LATEST ./server
     - docker push $SERVER_IMAGE
-    - docker build --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE ./client
+    - docker push $SERVER_IMAGE_LATEST
+    
+    # Build Client
+    - docker build --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE -t $CLIENT_IMAGE_LATEST ./client
     - docker push $CLIENT_IMAGE
+    - docker push $CLIENT_IMAGE_LATEST
+
+# --- JOB 3: TRIVY IMAGE SCAN (Container Security) ---
+# Dilakukan SETELAH build, mengecek Image final (OS + App)
+container_security_scan:
+  stage: security
+  tags:
+    - portal-ai
+  needs: ["build_push_images"] # Wajib tunggu build selesai
+  allow_failure: true
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🛡️ Memulai Container Security Scanning..."
+    - wget https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -O trivy-report.tpl
+    
+    # 1. SCAN IMAGE SERVER (Full Layer Scan)
+    - echo "🔍 Scanning Server Image..."
+    - trivy image --scanners vuln,secret,misconfig --format template --template "@trivy-report.tpl" -o report-server.html $SERVER_IMAGE
+    - trivy image --scanners vuln,secret,misconfig --format json -o trivy-server.json $SERVER_IMAGE
+    
+    # 2. SCAN IMAGE CLIENT (Full Layer Scan)
+    - echo "🔍 Scanning Client Image..."
+    - trivy image --scanners vuln,secret,misconfig --format template --template "@trivy-report.tpl" -o report-client.html $CLIENT_IMAGE
+    - trivy image --scanners vuln,secret,misconfig --format json -o trivy-client.json $CLIENT_IMAGE
+
+  artifacts:
+    name: "Security-Reports-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - report-server.html
+      - trivy-server.json
+      - report-client.html
+      - trivy-client.json
+    expire_in: 7 days
+    when: always
 
 # --- JOB 4: DEPLOY ---
 deploy_production:
@@ -96,16 +104,23 @@ deploy_production:
     - portal-ai
   only:
     - main
-  needs: ["build_push_images"]
+  # Optional: Tambahkan 'needs: ["container_security_scan"]' jika ingin block deploy kalau scan error
+  needs: ["container_security_scan"] 
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY    
   script:
     - echo "🚀 Memulai Deployment..."
     - echo "$DOT_ENV_FILE" > .env
+    
+    # Bersihkan container lama
     - docker rm -f mongo internal-chat-server internal-chat-client || true
     - docker compose down --remove-orphans || true
-    - docker pull $SERVER_IMAGE
-    - docker pull $CLIENT_IMAGE
+    
+    # Pull image terbaru (LATEST)
+    - docker pull $SERVER_IMAGE_LATEST
+    - docker pull $CLIENT_IMAGE_LATEST
+    
+    # Up
     - docker compose up -d 
     - sleep 10
     - docker image prune -f
@@ -116,13 +131,14 @@ dast_scan:
   tags:
     - portal-ai
   allow_failure: true
+  needs: ["deploy_production"] # Tunggu deploy selesai baru di-attack
   script:
-    - echo "🕵️ Memulai DAST Scanning..."
+    - echo "🕵️ Memulai DAST Scanning (Passive Scan)..."
     - mkdir -p zap-reports
     - chmod 777 zap-reports
     - docker pull ghcr.io/zaproxy/zaproxy:stable
     
-    # PASSIVE SCAN (Aman untuk Production)
+    # Menjalankan ZAP Baseline Scan
     - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -x zap-report.xml -I
     
   artifacts:
@@ -132,7 +148,7 @@ dast_scan:
       - zap-reports/zap-report.xml
     expire_in: 7 days
     when: always
-    
+
 # --- JOB 6: UPLOAD REPORT TO DEFECTDOJO ---
 upload_to_defectdojo:
   stage: report
@@ -140,10 +156,11 @@ upload_to_defectdojo:
     - portal-ai
   image: curlimages/curl
   allow_failure: true
+  needs: ["container_security_scan", "dast_scan"]
   script:
-    - echo "🚀 Mengirim Laporan ke Server Infra (DefectDojo)..."
+    - echo "📊 Mengirim Laporan ke DefectDojo..."
     
-    # Upload Trivy SERVER
+    # Upload Trivy SERVER (Type: Trivy Scan)
     - |
       curl -X POST "http://172.16.21.82:8080/api/v2/import-scan/" \
       -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
@@ -155,7 +172,7 @@ upload_to_defectdojo:
       -F "auto_create_context=true" \
       -F "close_old_findings=true"
 
-    # Upload Trivy CLIENT
+    # Upload Trivy CLIENT (Type: Trivy Scan)
     - |
       curl -X POST "http://172.16.21.82:8080/api/v2/import-scan/" \
       -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
@@ -167,7 +184,7 @@ upload_to_defectdojo:
       -F "auto_create_context=true" \
       -F "close_old_findings=true"
 
-    # Upload ZAP DAST
+    # Upload ZAP DAST (Type: ZAP Scan)
     - |
       curl -X POST "http://172.16.21.82:8080/api/v2/import-scan/" \
       -H "Authorization: Token $DEFECT_DOJO_API_KEY" \
