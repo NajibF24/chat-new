@@ -27,8 +27,8 @@ connectDB();
 app.set('trust proxy', 1);
 
 const allowedOrigins = [
-  'https://portalai.gyssteel.com',
-  'http://portalai.gyssteel.com',
+  'https://chat.gyssteel.com',
+  'http://chat.gyssteel.com',
   'http://localhost:8080'
 ];
 
