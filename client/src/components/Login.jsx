@@ -1,20 +1,50 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+// Hapus useNavigate karena routing ditangani oleh App.jsx berdasarkan state user
 
-const Login = () => {
-  const [email, setEmail] = useState('');
+const Login = ({ setUser }) => {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    // Simulate API call for LDAP Login
-    setTimeout(() => {
+
+    try {
+      // Menggunakan logika asli untuk connect ke backend
+      const response = await axios.post('/api/auth/login', 
+        { username, password },
+        { withCredentials: true } 
+      );
+      
+      console.log('✅ Login successful');
+      // Update state user di App.jsx agar otomatis pindah halaman
+      setUser(response.data.user);
+      
+    } catch (err) {
+      console.error('❌ Login failed', err);
+      
+      let errorMessage = 'Login failed';
+      if (err.response) {
+        if (err.response.status === 401) {
+          errorMessage = 'Invalid username or password';
+        } else if (err.response.status === 500) {
+          errorMessage = 'Server error - please try again';
+        } else {
+          errorMessage = err.response.data?.error || 'An error occurred';
+        }
+      } else if (err.request) {
+        errorMessage = 'Cannot connect to server. Check your connection.';
+      } else {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
+    } finally {
       setLoading(false);
-      navigate('/dashboard');
-    }, 1500);
+    }
   };
 
   return (
@@ -79,9 +109,9 @@ const Login = () => {
 
             <form onSubmit={handleLogin} className="space-y-6">
               
-              {/* Email Input */}
+              {/* Username Input */}
               <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider text-cyan-400 font-semibold ml-1">Enterprise ID / Email</label>
+                <label className="text-xs uppercase tracking-wider text-cyan-400 font-semibold ml-1">Enterprise ID / Username</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                     <svg className="h-5 w-5 text-gray-500 group-focus-within:text-cyan-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -89,12 +119,13 @@ const Login = () => {
                     </svg>
                   </div>
                   <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                     className="w-full pl-12 pr-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 transition-all duration-300"
-                    placeholder="name@garudayamatosteel.com"
+                    placeholder="Enter your AD Username"
                     required
+                    autoFocus
                   />
                 </div>
               </div>
@@ -119,6 +150,16 @@ const Login = () => {
                 </div>
               </div>
 
+              {/* Error Message Display (Futuristic Style) */}
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg text-sm flex items-center animate-pulse">
+                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <span>{error}</span>
+                </div>
+              )}
+
               {/* Checkbox Only - No Forgot Password */}
               <div className="flex items-center text-sm">
                 <label className="flex items-center text-gray-400 cursor-pointer hover:text-white transition-colors">
@@ -131,7 +172,7 @@ const Login = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full relative overflow-hidden group bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white font-bold py-4 rounded-lg transition-all duration-300 shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)]"
+                className="w-full relative overflow-hidden group bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white font-bold py-4 rounded-lg transition-all duration-300 shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 <div className="relative z-10 flex items-center justify-center gap-2">
                   {loading ? (
