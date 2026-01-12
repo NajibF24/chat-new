@@ -4,6 +4,7 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import fs from 'fs';
 import path from 'path';
+import officeParser from 'officeparser'; // ✅ LIBRARY BARU (Wajib npm install officeparser)
 import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import Bot from '../models/Bot.js';
@@ -25,7 +26,7 @@ class AICoreService {
     return dataKeywords.some(k => lowerMsg.includes(k));
   }
 
-  // --- 1. UNIVERSAL FILE EXTRACTOR (200k LIMIT) ---
+  // --- 1. UNIVERSAL FILE EXTRACTOR (UPDATED FOR OFFICE FILES) ---
   async extractFileContent(attachedFile) {
       if (!attachedFile || !attachedFile.path) return null;
       
@@ -35,38 +36,66 @@ class AICoreService {
       let content = null;
       let displayType = 'FILE';
       
-      // ✅ UPDATE: Limit 200.000 karakter agar Annex/Lampiran terbaca
+      // Limit karakter agar tidak overload token AI (200k chars)
       const CHAR_LIMIT = 200000; 
 
       try {
-          if (mime === 'application/pdf') {
+          // A. PDF HANDLING
+          if (mime === 'application/pdf' || ext === '.pdf') {
               const dataBuffer = fs.readFileSync(attachedFile.path);
               const data = await pdf(dataBuffer);
-              content = data.text.replace(/\n\s*\n/g, '\n').substring(0, CHAR_LIMIT);
+              content = data.text.replace(/\n\s*\n/g, '\n');
               displayType = 'PDF';
           }
+          // B. WORD HANDLING (.docx)
           else if (mime.includes('wordprocessingml') || ext === '.docx') {
-              const result = await mammoth.extractRawText({ path: attachedFile.path });
-              content = result.value.substring(0, CHAR_LIMIT);
+              // Coba pakai Mammoth dulu (lebih cepat untuk teks)
+              try {
+                  const result = await mammoth.extractRawText({ path: attachedFile.path });
+                  content = result.value;
+              } catch (err) {
+                  // Fallback ke officeParser jika mammoth gagal
+                  console.log("Mammoth failed, trying officeParser for DOCX...");
+                  content = await officeParser.parseOfficeAsync(attachedFile.path);
+              }
               displayType = 'DOCX';
           }
-          else if (ext === '.xlsx' || ext === '.xls') {
+          // C. EXCEL HANDLING (.xlsx, .xls) - BACA SEMUA SHEET
+          else if (ext === '.xlsx' || ext === '.xls' || mime.includes('spreadsheet')) {
               const workbook = XLSX.readFile(attachedFile.path);
-              const sheetName = workbook.SheetNames[0]; 
-              const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-              content = csv.substring(0, CHAR_LIMIT);
-              displayType = `EXCEL (${sheetName})`;
+              let allSheetsData = [];
+              
+              // Loop semua sheet, bukan cuma yang pertama
+              workbook.SheetNames.forEach(sheetName => {
+                  const sheet = workbook.Sheets[sheetName];
+                  const csv = XLSX.utils.sheet_to_csv(sheet);
+                  if (csv && csv.trim().length > 0) {
+                      allSheetsData.push(`[SHEET NAME: ${sheetName}]\n${csv}`);
+                  }
+              });
+              
+              content = allSheetsData.join('\n\n-------------------\n\n');
+              displayType = `EXCEL (${workbook.SheetNames.length} Sheets)`;
           }
+          // D. POWERPOINT HANDLING (.pptx) - ✅ NEW FEATURE
+          else if (ext === '.pptx' || ext === '.ppt' || mime.includes('presentation')) {
+              // Menggunakan officeParser untuk ekstrak teks dari slide
+              content = await officeParser.parseOfficeAsync(attachedFile.path);
+              displayType = 'POWERPOINT (PPTX)';
+          }
+          // E. TEXT/CODE HANDLING
           else {
               const textExts = ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.html', '.css', '.js', '.jsx', '.ts', '.py', '.java', '.c', '.cpp', '.sql', '.log', '.env'];
               if (textExts.includes(ext) || mime.startsWith('text/') || mime.includes('json') || mime.includes('javascript')) {
-                  content = fs.readFileSync(attachedFile.path, 'utf8').substring(0, CHAR_LIMIT);
+                  content = fs.readFileSync(attachedFile.path, 'utf8');
                   displayType = 'CODE/TEXT';
               }
           }
 
           if (content) {
-              return `\n\n[FILE START: ${originalName} (${displayType})]\n${content}\n[FILE END]\n`;
+              // Potong konten jika terlalu panjang
+              const trimmedContent = content.substring(0, CHAR_LIMIT);
+              return `\n\n[FILE START: ${originalName} (${displayType})]\n${trimmedContent}\n[FILE END]\n`;
           }
       } catch (e) {
           console.error(`File extraction failed: ${e.message}`);
@@ -160,7 +189,6 @@ class AICoreService {
         );
 
         // ✅ GABUNGKAN PESAN + FILE JADI SATU STRING PANJANG
-        // Ini memastikan teks PDF 200k karakter terkirim dalam field "message"
         let finalMessage = message || "";
         
         if (Array.isArray(userContent)) {
