@@ -11,8 +11,8 @@ variables:
   CLIENT_IMAGE_LATEST: $CI_REGISTRY_IMAGE/client:latest
 
   # --- TARGET ---
-  TARGET_URL: "https://portalai.gyssteel.com"
-  
+  #TARGET_URL: "https://chat.gyssteel.com"
+  TARGET_URL: "https://chat.gyssteel.com"
   # --- DEFECT DOJO URL (Internal IP) ---
   DD_URL: "http://172.16.21.82:8080"
 
