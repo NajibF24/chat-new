@@ -1,333 +1,372 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import ChatMessage from './ChatMessage';
 
-function Chat({ user, handleLogout }) {
-  const navigate = useNavigate();
-  
-  // --- STATE DATA ---
-  const [bots, setBots] = useState([]);
-  const [threads, setThreads] = useState([]); // Untuk Sidebar History
-  
-  // --- STATE SELECTION ---
-  const [selectedBot, setSelectedBot] = useState(null);
-  const [activeThreadId, setActiveThreadId] = useState(null);
-  
-  // --- STATE UI ---
+const Chat = ({ user, handleLogout }) => {
+  const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState('');
+  const [history, setHistory] = useState([]); // Riwayat Chat
+  const [bots, setBots] = useState([]);       // Daftar Bot di Sidebar
+  const [selectedBot, setSelectedBot] = useState(null); // Bot yang sedang aktif
+  const [currentChatId, setCurrentChatId] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  
-  // --- STATE FILE ---
-  const [selectedFile, setSelectedFile] = useState(null);
-  const fileInputRef = useRef(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Toggle Sidebar di Mobile
   const messagesEndRef = useRef(null);
-  const textareaRef = useRef(null); // Ref untuk auto-resize textarea
 
-  // --- INITIAL LOAD ---
-  useEffect(() => { 
-      fetchBots(); 
-      fetchThreads(); 
+  // --- 1. INITIAL LOAD (Fetch Bots & History) ---
+  useEffect(() => {
+    fetchBots();
+    fetchHistory();
   }, []);
 
-  // --- EFFECT: LOAD MESSAGES SAAT PILIH THREAD ---
+  // Auto-scroll ke bawah saat ada pesan baru
   useEffect(() => {
-      if (activeThreadId) {
-          fetchThreadMessages(activeThreadId);
-      } else {
-          // New Chat Mode
-          setMessages([]);
-          // Default pilih bot pertama jika belum ada yang dipilih
-          if (!selectedBot && bots.length > 0) setSelectedBot(bots[0]);
-      }
-  }, [activeThreadId]);
-
-  // --- EFFECT: AUTO SCROLL ---
-  useEffect(() => { 
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ================= API CALLS =================
-
+  // --- API CALLS ---
   const fetchBots = async () => {
     try {
-      const res = await axios.get('/api/chat/bots');
-      const list = Array.isArray(res.data) ? res.data : (res.data.bots || []);
-      setBots(list);
-      if (list.length > 0 && !selectedBot) setSelectedBot(list[0]);
-    } catch (error) { console.error('Error fetching bots:', error); }
-  };
-
-  const fetchThreads = async () => {
-      try {
-          const res = await axios.get('/api/chat/threads');
-          setThreads(res.data);
-      } catch (error) { console.error('Error fetching threads:', error); }
-  };
-
-  const fetchThreadMessages = async (threadId) => {
-      try {
-          const res = await axios.get(`/api/chat/thread/${threadId}`);
-          setMessages(res.data);
-          
-          // Sinkronisasi Bot: Saat buka history, pastikan Bot yang aktif sesuai dengan history tersebut
-          const currentThread = threads.find(t => t._id === threadId);
-          if (currentThread && currentThread.botId) {
-              const botId = typeof currentThread.botId === 'object' ? currentThread.botId._id : currentThread.botId;
-              const savedBot = bots.find(b => b._id === botId);
-              if (savedBot) setSelectedBot(savedBot);
-          }
-      } catch (error) { console.error('Error messages:', error); }
-  };
-
-  // ================= ACTIONS =================
-
-  const handleNewChat = () => {
-      setActiveThreadId(null);
-      setMessages([]);
-      setSelectedFile(null);
-      // Reset ke bot default atau tetap di bot terakhir
-      if (bots.length > 0) setSelectedBot(bots[0]);
-  };
-
-  const deleteThread = async (e, threadId) => {
-      e.stopPropagation();
-      if(!window.confirm("Hapus percakapan ini?")) return;
-      try {
-          await axios.delete(`/api/chat/thread/${threadId}`);
-          fetchThreads();
-          if (activeThreadId === threadId) handleNewChat();
-      } catch (e) { console.error(e); }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage(e);
+      // Kita panggil endpoint untuk list bot (pastikan user punya akses)
+      // Jika endpoint khusus user belum ada, kita bisa pakai admin route atau buat baru
+      // Disini saya asumsi user bisa baca list bot
+      const res = await axios.get('/api/admin/bots'); 
+      setBots(res.data);
+      
+      // Set default bot jika ada
+      if (res.data.length > 0 && !selectedBot) {
+        setSelectedBot(res.data[0]); 
+      }
+    } catch (error) {
+      console.error("Error fetching bots:", error);
     }
   };
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-        if(file.size > 20 * 1024 * 1024) return alert("File max 20MB");
-        setSelectedFile(file);
+  const fetchHistory = async () => {
+    try {
+      const res = await axios.get('/api/chat/history');
+      setHistory(res.data);
+    } catch (error) {
+      console.error("Error fetching history:", error);
     }
   };
 
-  const handleSendMessage = async (e, msgOverride = null) => {
-    if (e) e.preventDefault();
+  // --- ACTIONS ---
+
+  // A. Ganti Bot dari Sidebar (Start New Chat dengan Bot tertentu)
+  const handleBotSelect = (bot) => {
+    setSelectedBot(bot);
+    setMessages([]); // Kosongkan layar chat
+    setCurrentChatId(null); // Reset ID chat karena ini sesi baru
     
-    const txt = msgOverride || inputMessage.trim();
-    if ((!txt && !selectedFile) || !selectedBot || loading) return;
+    // Optional: Auto mobile sidebar close
+    if (window.innerWidth < 1024) setIsSidebarOpen(false);
+  };
 
-    setInputMessage('');
-    setSelectedFile(null);
+  // B. Buka Riwayat Chat (Load Old Chat)
+  const loadChat = async (chatId) => {
+    try {
+      setLoading(true);
+      const res = await axios.get(`/api/chat/${chatId}`);
+      
+      // Set messages
+      setMessages(res.data.messages || []);
+      setCurrentChatId(chatId);
+      
+      // Cari bot yang sesuai dengan history ini dan set sebagai aktif
+      const historyBot = bots.find(b => b._id === res.data.botId);
+      if (historyBot) setSelectedBot(historyBot);
+      
+      if (window.innerWidth < 1024) setIsSidebarOpen(false);
+    } catch (error) {
+      console.error("Error loading chat:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // C. Kirim Pesan
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || !selectedBot) return;
+
+    const userMessage = { role: 'user', content: input };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
     setLoading(true);
-    if(textareaRef.current) textareaRef.current.style.height = 'auto'; // Reset height
 
     try {
-        let fileData = null;
-        if (selectedFile) {
-            const fd = new FormData();
-            fd.append('file', selectedFile);
-            const upRes = await axios.post('/api/chat/upload', fd, { headers: {'Content-Type': 'multipart/form-data'} });
-            fileData = upRes.data;
-        }
+      // Kirim ke backend
+      const res = await axios.post('/api/chat/message', {
+        message: input,
+        botId: selectedBot._id,
+        chatId: currentChatId 
+      });
 
-        // Optimistic UI
-        const newMsg = {
-            role: 'user', content: txt, createdAt: new Date(),
-            attachedFiles: fileData ? [{ name: fileData.originalname, path: fileData.url, type: 'file', size: (fileData.size/1024).toFixed(1) }] : []
-        };
-        setMessages(prev => [...prev, newMsg]);
+      // Tambahkan balasan bot ke UI
+      const botMessage = { role: 'assistant', content: res.data.reply };
+      setMessages(prev => [...prev, botMessage]);
 
-        // API Call
-        const payload = {
-            botId: selectedBot._id,
-            message: txt,
-            attachedFile: fileData,
-            threadId: activeThreadId,
-            history: messages.map(m => ({ role: m.role, content: m.content }))
-        };
-
-        const res = await axios.post('/api/chat/message', payload);
-
-        // Handle Response
-        if (!activeThreadId && res.data.threadId) {
-            setActiveThreadId(res.data.threadId);
-            fetchThreads(); // Refresh sidebar agar thread baru muncul
-        } else {
-            fetchThreads(); // Update timestamp
-        }
-
-        setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: res.data.response,
-            createdAt: new Date(),
-            attachedFiles: res.data.attachedFiles || []
-        }]);
+      // Jika ini chat baru, simpan ID nya agar chat selanjutnya nyambung
+      if (res.data.chatId) {
+        setCurrentChatId(res.data.chatId);
+        // Refresh history agar chat baru muncul di sidebar list
+        if (!currentChatId) fetchHistory(); 
+      }
 
     } catch (error) {
-        console.error(error);
-        alert("Gagal mengirim pesan: " + error.message);
+      console.error("Error sending message:", error);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Error: Failed to connect to Neural Core." }]);
     } finally {
-        setLoading(false);
-        if(fileInputRef.current) fileInputRef.current.value = '';
+      setLoading(false);
     }
+  };
+
+  // D. Reset / New Chat General
+  const handleNewChat = () => {
+    setMessages([]);
+    setCurrentChatId(null);
+    // Kita tetap pertahankan selectedBot terakhir
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-[#0a0f1c] text-white font-sans overflow-hidden relative">
       
-      {/* ================= SIDEBAR HISTORY (RESTORED) ================= */}
-      <div className={`${sidebarOpen ? 'w-80' : 'w-0'} bg-gray-900 flex flex-col transition-all duration-300 shadow-xl overflow-hidden border-r border-gray-800`}>
-        
-        {/* Header User */}
-        <div className="p-4 bg-gray-900 border-b border-gray-800 flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-green-400 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
-                {user.username.charAt(0).toUpperCase()}
-            </div>
-            <div className="text-white overflow-hidden">
-                <div className="font-semibold text-sm truncate">{user.username}</div>
-                <div className="text-xs text-gray-400">GYS Portal AI</div>
-            </div>
-        </div>
-
-        {/* New Chat Button */}
-        <div className="p-3">
-            <button onClick={handleNewChat} className="w-full py-2.5 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-lg flex items-center justify-center space-x-2 transition-all shadow-lg border border-primary-500/30">
-                <span className="text-xl font-light">+</span>
-                <span className="text-sm font-medium">New Chat</span>
-            </button>
-        </div>
-
-        {/* List Threads */}
-        <div className="flex-1 overflow-y-auto px-2 space-y-1 scrollbar-thin scrollbar-thumb-gray-700">
-            <div className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Recent History</div>
-            
-            {threads.length === 0 && <div className="text-gray-600 text-xs text-center py-4">Belum ada riwayat chat.</div>}
-
-            {threads.map(t => (
-                <div key={t._id} onClick={() => setActiveThreadId(t._id)} 
-                    className={`group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all ${activeThreadId === t._id ? 'bg-gray-800 text-white border border-gray-700' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`}>
-                    <div className="flex flex-col overflow-hidden w-full">
-                        <span className="truncate text-sm">{t.title || 'New Conversation'}</span>
-                        <div className="flex justify-between items-center mt-1">
-                            <span className="text-[10px] bg-gray-700 px-1.5 rounded text-gray-300 truncate max-w-[80px]">{t.botId?.name || 'Bot'}</span>
-                            <span className="text-[9px] opacity-50">{new Date(t.lastMessageAt).toLocaleDateString()}</span>
-                        </div>
-                    </div>
-                    <button onClick={(e) => deleteThread(e, t._id)} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 p-1">✕</button>
-                </div>
-            ))}
-        </div>
-
-        {/* Footer */}
-        <div className="p-3 bg-gray-900 border-t border-gray-800 space-y-1">
-            {user.isAdmin && <button onClick={() => navigate('/admin')} className="w-full py-2 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded text-left px-3">⚙️ Admin Dashboard</button>}
-            <button onClick={handleLogout} className="w-full py-2 text-xs text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded text-left px-3">🚪 Sign Out</button>
-        </div>
+      {/* BACKGROUND ACCENTS */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[30%] h-[30%] rounded-full bg-gys-navy opacity-10 blur-[100px]"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] rounded-full bg-cyan-900 opacity-10 blur-[100px]"></div>
       </div>
 
-      {/* ================= MAIN AREA ================= */}
-      <div className="flex-1 flex flex-col h-full bg-white relative">
-        
-        {/* Top Bar (Bot Selector) */}
-        <div className="h-16 border-b border-gray-200 flex items-center justify-between px-6 bg-white/90 backdrop-blur sticky top-0 z-20">
-            <div className="flex items-center space-x-4">
-                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-gray-500 hover:text-gray-800"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button>
-                
-                {/* Logic Judul: Kalau New Chat -> Dropdown, Kalau History -> Teks Statis */}
-                {!activeThreadId ? (
-                    <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-gray-500">Assistant:</span>
-                        <select 
-                            value={selectedBot?._id || ''} 
-                            onChange={e => setSelectedBot(bots.find(b => b._id === e.target.value))}
-                            className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block p-2 font-bold cursor-pointer min-w-[200px]"
-                        >
-                            {bots.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
-                        </select>
-                    </div>
-                ) : (
-                    <div className="flex flex-col">
-                        <h2 className="font-bold text-gray-800">{selectedBot?.name}</h2>
-                        <span className="text-[10px] text-gray-500 bg-gray-100 px-2 rounded-full w-fit">History Mode</span>
-                    </div>
-                )}
+      {/* --- SIDEBAR --- */}
+      <aside 
+        className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:relative z-30 w-72 h-full bg-[#0d1221] border-r border-white/5 flex flex-col transition-transform duration-300 backdrop-blur-xl shadow-2xl lg:shadow-none`}
+      >
+        {/* Sidebar Header */}
+        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <img src="/assets/favicon_gys.ico" alt="Logo" className="w-8 h-8 drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]"/>
+             <div>
+               <h1 className="font-bold tracking-wider text-lg text-white">PORTAL AI</h1>
+               <div className="flex items-center gap-1">
+                 <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></div>
+                 <span className="text-[10px] text-cyan-500 uppercase tracking-widest">Online</span>
+               </div>
+             </div>
+          </div>
+          {/* Close Sidebar Mobile */}
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-gray-400 hover:text-white">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        {/* Scrollable Area */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+          
+          {/* Section 1: AGENTS (BOTS) */}
+          <div>
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-2">Select Agent</h3>
+            <div className="space-y-1">
+              {bots.map((bot) => (
+                <button
+                  key={bot._id}
+                  onClick={() => handleBotSelect(bot)}
+                  className={`w-full text-left px-3 py-3 rounded-lg flex items-center gap-3 transition-all duration-200 group ${
+                    selectedBot?._id === bot._id 
+                      ? 'bg-cyan-900/20 border border-cyan-500/30 text-white shadow-[0_0_15px_rgba(6,182,212,0.1)]' 
+                      : 'hover:bg-white/5 text-gray-400 hover:text-white border border-transparent'
+                  }`}
+                >
+                  {/* Bot Icon Placeholder */}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                     selectedBot?._id === bot._id ? 'bg-cyan-500 text-black' : 'bg-gray-800 text-gray-400 group-hover:bg-gray-700'
+                  }`}>
+                    {bot.name.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 truncate">
+                    <div className="font-medium text-sm truncate">{bot.name}</div>
+                    <div className="text-[10px] opacity-60 truncate">{bot.description || "AI Assistant"}</div>
+                  </div>
+                  {selectedBot?._id === bot._id && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)]"></div>
+                  )}
+                </button>
+              ))}
             </div>
+          </div>
+
+          {/* Section 2: HISTORY */}
+          <div>
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-2 mt-4">History</h3>
+            <div className="space-y-1">
+              <button 
+                 onClick={handleNewChat}
+                 className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-3 text-cyan-400 hover:bg-cyan-900/10 hover:text-cyan-300 transition-colors border border-dashed border-cyan-900/50 hover:border-cyan-500/50 mb-2"
+              >
+                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                 <span className="text-sm font-medium">New Conversation</span>
+              </button>
+
+              {history.length === 0 && (
+                <p className="text-xs text-gray-600 px-3 italic">No recent history.</p>
+              )}
+
+              {history.map((chat) => (
+                <button
+                  key={chat._id}
+                  onClick={() => loadChat(chat._id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors flex items-center gap-2 ${
+                    currentChatId === chat._id 
+                    ? 'bg-white/10 text-white' 
+                    : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                  }`}
+                >
+                  <svg className="w-4 h-4 opacity-50 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+                  <span className="truncate">{chat.title || "Untitled Chat"}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* User Footer */}
+        <div className="p-4 border-t border-white/5 bg-[#0a0f1c]/50">
+          <div className="flex items-center gap-3">
+             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gys-red to-pink-600 flex items-center justify-center text-white font-bold text-xs shadow-lg">
+                {user?.username?.substring(0,2).toUpperCase() || 'US'}
+             </div>
+             <div className="flex-1 overflow-hidden">
+               <p className="text-sm font-medium text-white truncate">{user?.username}</p>
+               <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors">
+                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                 Sign Out
+               </button>
+             </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* --- MAIN CHAT AREA --- */}
+      <main className="flex-1 flex flex-col relative z-10 h-full">
+        
+        {/* Mobile Header */}
+        <div className="lg:hidden h-16 border-b border-white/5 flex items-center justify-between px-4 bg-[#0d1221]/80 backdrop-blur-md">
+           <div className="flex items-center gap-2">
+              <img src="/assets/favicon_gys.ico" alt="Logo" className="w-6 h-6"/>
+              <span className="font-bold text-white">Portal AI</span>
+           </div>
+           <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-cyan-500 bg-cyan-900/20 rounded-lg">
+             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+           </button>
         </div>
 
         {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-            {messages.length === 0 ? (
-                // ✅ TAMPILAN NEW CHAT (STARTER QUESTIONS)
-                <div className="h-full flex flex-col items-center justify-center text-center pb-20">
-                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-4 text-4xl">🤖</div>
-                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Hello, {user.displayName || user.username}</h2>
-                    <p className="text-gray-500 max-w-md mb-8">Saya {selectedBot?.name}. Ada yang bisa saya bantu?</p>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
-                        {(selectedBot?.starterQuestions?.length > 0 ? selectedBot.starterQuestions : ["Apa yang bisa kamu lakukan?", "Buatkan ringkasan"]).map((q, i) => (
-                            <button key={i} onClick={(e) => handleSendMessage(e, q)} className="p-4 bg-white border border-gray-200 rounded-xl hover:border-primary-500 hover:shadow-md transition-all text-sm text-gray-600 hover:text-primary-700 text-left">
-                                "{q}"
-                            </button>
-                        ))}
-                    </div>
+        <div className="flex-1 overflow-y-auto p-4 lg:p-10 space-y-6 custom-scrollbar scroll-smooth">
+          {messages.length === 0 ? (
+            // EMPTY STATE (Welcome Screen)
+            <div className="h-full flex flex-col items-center justify-center text-center opacity-0 animate-[fadeIn_0.5s_ease-out_forwards]">
+              <div className="w-20 h-20 bg-gradient-to-br from-gray-800 to-black rounded-2xl flex items-center justify-center mb-6 shadow-2xl border border-white/10 relative group">
+                 <div className="absolute inset-0 bg-cyan-500/20 blur-xl group-hover:bg-cyan-500/30 transition-all duration-500 rounded-2xl"></div>
+                 <span className="text-3xl font-bold text-cyan-400">{selectedBot?.name?.substring(0,1) || "A"}</span>
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-2">
+                {selectedBot ? `Connected to ${selectedBot.name}` : "Select an Agent"}
+              </h2>
+              <p className="text-gray-400 max-w-md mx-auto mb-8">
+                {selectedBot?.description || "Choose an AI agent from the sidebar to begin your session."}
+              </p>
+              
+              {/* Quick Prompts (Contoh) */}
+              {selectedBot && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
+                   {["Analyze current data", "Draft a report", "Search knowledge base", "System status check"].map((txt, i) => (
+                     <button 
+                       key={i} 
+                       onClick={() => setInput(txt)}
+                       className="p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-cyan-500/30 rounded-xl text-left text-sm text-gray-300 hover:text-cyan-400 transition-all duration-200"
+                     >
+                       {txt}
+                     </button>
+                   ))}
                 </div>
-            ) : (
-                // ✅ TAMPILAN CHAT AKTIF
-                <div className="max-w-4xl mx-auto pb-4">
-                    {messages.map((msg, i) => <ChatMessage key={i} message={msg} />)}
-                    {loading && <div className="text-xs text-gray-400 animate-pulse ml-14">Thinking...</div>}
-                    <div ref={messagesEndRef} />
-                </div>
-            )}
-        </div>
-
-        {/* Input Area (Textarea + Shift Enter) */}
-        <div className="p-4 bg-white border-t border-gray-200">
-            {selectedFile && (
-                <div className="max-w-4xl mx-auto mb-2 flex items-center space-x-2 bg-primary-50 text-primary-700 px-3 py-1 rounded text-xs w-fit">
-                    <span>📎 {selectedFile.name}</span>
-                    <button onClick={() => setSelectedFile(null)} className="text-red-500 font-bold ml-2">✕</button>
-                </div>
-            )}
-            
-            <form className="max-w-4xl mx-auto flex items-end space-x-2">
-                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
-                <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 text-gray-400 hover:text-primary-600 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors border border-gray-200">📎</button>
-                
-                <textarea 
-                    ref={textareaRef}
-                    value={inputMessage}
-                    onChange={e => { setInputMessage(e.target.value); e.target.style.height='auto'; e.target.style.height=`${e.target.scrollHeight}px`; }}
-                    onKeyDown={handleKeyDown}
-                    placeholder={`Message ${selectedBot?.name || 'Assistant'}...`}
-                    rows={1}
-                    className="flex-1 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-xl focus:ring-primary-500 focus:border-primary-500 block p-3 resize-none max-h-32 scrollbar-thin"
-                    disabled={loading || !selectedBot}
-                />
-                
-                <button 
-                    onClick={handleSendMessage} 
-                    disabled={loading || (!inputMessage.trim() && !selectedFile)}
-                    className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl shadow-md disabled:opacity-50 disabled:shadow-none transition-all"
-                >
-                    {loading ? '...' : '➤'}
-                </button>
-            </form>
-            <div className="text-center mt-2">
-                <span className="text-[10px] text-gray-400">Press <strong>Shift + Enter</strong> for new line. <strong>Enter</strong> to send.</span>
+              )}
             </div>
+          ) : (
+            // MESSAGE LIST
+            messages.map((msg, index) => (
+              <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] lg:max-w-[70%] rounded-2xl p-4 lg:p-6 shadow-lg relative overflow-hidden ${
+                  msg.role === 'user' 
+                    ? 'bg-gradient-to-r from-cyan-700 to-blue-700 text-white rounded-tr-sm' 
+                    : 'bg-[#1a2035] border border-white/5 text-gray-200 rounded-tl-sm'
+                }`}>
+                  {/* Glowing line for AI messages */}
+                  {msg.role === 'assistant' && (
+                     <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500/50"></div>
+                  )}
+                  
+                  {/* Markdown or Plain Text */}
+                  <div className="prose prose-invert max-w-none text-sm lg:text-base leading-relaxed whitespace-pre-wrap font-light">
+                    {msg.content}
+                  </div>
+                  
+                  {/* Timestamp / Role Label */}
+                  <div className={`text-[10px] mt-2 font-mono uppercase tracking-widest opacity-40 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                    {msg.role === 'user' ? 'You' : selectedBot?.name || 'System'}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+          {loading && (
+             <div className="flex justify-start">
+               <div className="bg-[#1a2035] border border-white/5 rounded-2xl rounded-tl-sm p-4 flex items-center gap-2">
+                 <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce"></div>
+                 <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce delay-100"></div>
+                 <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce delay-200"></div>
+               </div>
+             </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
-      </div>
+        {/* Input Area */}
+        <div className="p-4 lg:p-6 bg-[#0a0f1c]/80 backdrop-blur-lg border-t border-white/5 relative z-20">
+          <form onSubmit={handleSubmit} className="max-w-4xl mx-auto relative group">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl opacity-20 group-focus-within:opacity-100 transition duration-500 blur"></div>
+            <div className="relative flex bg-[#0d1221] rounded-xl overflow-hidden shadow-2xl">
+               <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={selectedBot ? `Ask ${selectedBot.name} anything...` : "Select a bot to start..."}
+                disabled={!selectedBot || loading}
+                className="flex-1 bg-transparent border-none text-white px-6 py-4 focus:ring-0 focus:outline-none placeholder-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || !selectedBot || loading}
+                className="px-6 text-cyan-500 hover:text-white hover:bg-cyan-600 transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-cyan-500"
+              >
+                <svg className="w-6 h-6 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
+            {!selectedBot && (
+               <div className="absolute -top-10 left-0 text-red-400 text-xs animate-pulse">
+                 * Please select an agent from the sidebar first
+               </div>
+            )}
+          </form>
+          <div className="text-center mt-3">
+             <p className="text-[10px] text-gray-600 font-mono">
+               AI System can make mistakes. Verify important information. Restricted Access GYS.
+             </p>
+          </div>
+        </div>
+      </main>
     </div>
   );
-}
+};
 
 export default Chat;
