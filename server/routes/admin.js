@@ -9,7 +9,63 @@ import { requireAdmin } from '../middleware/auth.js';
 const router = express.Router();
 
 // ============================================================================
-// 👥 USER MANAGEMENT
+// 📊 DASHBOARD STATISTICS (BARU)
+// ============================================================================
+
+router.get('/stats', requireAdmin, async (req, res) => {
+  try {
+    // 1. Basic Counts (Total Data)
+    const totalUsers = await User.countDocuments();
+    const totalBots = await Bot.countDocuments();
+    const totalChats = await Chat.countDocuments();
+    const activeThreads = await Thread.countDocuments();
+
+    // 2. Activity Last 7 Days (Grafik Garis)
+    // Mengambil data 7 hari ke belakang
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 7);
+
+    const dailyActivity = await Chat.aggregate([
+      { $match: { createdAt: { $gte: last7Days } } },
+      { 
+        $group: { 
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, 
+          count: { $sum: 1 } 
+        } 
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // 3. Bot Popularity (Pie Chart)
+    // Menghitung bot mana yang paling sering menjawab (role: assistant)
+    const botUsage = await Chat.aggregate([
+        { $match: { role: 'assistant', botId: { $exists: true, $ne: null } } },
+        { $group: { _id: "$botId", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 } // Ambil Top 5
+    ]);
+
+    // Populate Nama Bot (karena aggregate hanya mengembalikan ID)
+    const botStats = await Bot.populate(botUsage, { path: "_id", select: "name" });
+    const formattedBotStats = botStats.map(b => ({
+        name: b._id ? b._id.name : 'Unknown Bot',
+        count: b.count
+    }));
+
+    res.json({
+        counts: { totalUsers, totalBots, totalChats, activeThreads },
+        dailyActivity,
+        botUsage: formattedBotStats
+    });
+
+  } catch (error) {
+    console.error("Stats Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================================
+// 👥 USER MANAGEMENT (EXISTING)
 // ============================================================================
 
 router.get('/users', requireAdmin, async (req, res) => {
@@ -55,7 +111,7 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
 });
 
 // ============================================================================
-// 🤖 BOT MANAGEMENT
+// 🤖 BOT MANAGEMENT (EXISTING)
 // ============================================================================
 
 router.get('/bots', requireAdmin, async (req, res) => {
@@ -94,7 +150,7 @@ router.delete('/bots/:id', requireAdmin, async (req, res) => {
 });
 
 // ============================================================================
-// 👁️ CHAT MONITORING & EXPORT (UPDATED)
+// 👁️ CHAT MONITORING & EXPORT (EXISTING)
 // ============================================================================
 
 router.get('/chat-logs', requireAdmin, async (req, res) => {
@@ -108,27 +164,19 @@ router.get('/chat-logs', requireAdmin, async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// ✅ UPDATE: Export dengan Filter Bulan
 router.get('/export-chats', requireAdmin, async (req, res) => {
     try {
         const { month, year } = req.query;
         let query = {};
         let fileName = `chat-logs-all-${new Date().toISOString().slice(0,10)}.csv`;
 
-        // Filter Tanggal jika parameter ada
         if (month && year) {
             const m = parseInt(month); // 1-12
             const y = parseInt(year);
-            
-            // Buat range tanggal awal bulan s/d akhir bulan
             const startDate = new Date(y, m - 1, 1);
             const endDate = new Date(y, m, 0, 23, 59, 59, 999);
             
-            query.createdAt = { 
-                $gte: startDate, 
-                $lte: endDate 
-            };
-            
+            query.createdAt = { $gte: startDate, $lte: endDate };
             fileName = `chat-logs-${y}-${m.toString().padStart(2, '0')}.csv`;
         }
 

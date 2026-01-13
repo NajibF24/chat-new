@@ -99,16 +99,16 @@ build_push_images:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🏗️ Building & Pushing Images..."
-    # Buat .env dari Variable GitLab
     - echo "$DOT_ENV_FILE" > .env
     
-    # Build Server
+    # Server (Boleh pakai cache biar cepat)
     - docker build -t $SERVER_IMAGE -t $SERVER_IMAGE_LATEST ./server
     - docker push $SERVER_IMAGE
     - docker push $SERVER_IMAGE_LATEST
     
-    # Build Client
-    - docker build --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE -t $CLIENT_IMAGE_LATEST ./client
+    # ✅ FIX: Tambahkan --no-cache di sini!
+    # Ini memaksa Docker membaca ulang file default.conf yang baru
+    - docker build --no-cache --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE -t $CLIENT_IMAGE_LATEST ./client
     - docker push $CLIENT_IMAGE
     - docker push $CLIENT_IMAGE_LATEST
 
@@ -164,7 +164,7 @@ deploy_production:
     - docker pull $CLIENT_IMAGE_LATEST
     
     # Start Services
-    - docker compose up -d 
+    - docker compose up -d --force-recreate
     - sleep 10
     - docker image prune -f
 
