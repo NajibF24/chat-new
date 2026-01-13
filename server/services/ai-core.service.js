@@ -1,10 +1,10 @@
 import OpenAI from 'openai';
 import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
-import XLSX from 'xlsx'; // ✅ FIX: Ganti import agar readFile terbaca
+import XLSX from 'xlsx'; // Import standar
 import fs from 'fs';
 import path from 'path';
-import officeParser from 'officeparser'; // ✅ FIX: Import langsung (karena sudah di package.json)
+import officeParser from 'officeparser'; // Import standar
 
 import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
@@ -19,7 +19,19 @@ class AICoreService {
     this.fileManager = new FileManagerService();
   }
 
-  // --- 1. UNIVERSAL FILE EXTRACTOR ---
+  // ✅ KEMBALIKAN FUNGSI INI (Ini yang menyebabkan Error tadi)
+  isDataQuery(message) {
+    const lowerMsg = (message || '').toLowerCase();
+    // Keyword visual (gambar) - return false agar tidak dianggap query data excel
+    const visualKeywords = ['dashboard', 'gambar', 'image', 'foto', 'screenshot', 'grafik'];
+    if (visualKeywords.some(k => lowerMsg.includes(k))) return false;
+
+    // Keyword data
+    const dataKeywords = ['berikan', 'tampilkan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 'overdue', 'summary', 'health', 'analisa', 'resume', 'data', 'nilai', 'code', 'coding', 'script', 'excel', 'word', 'pembayaran', 'termin', 'kontrak', 'top', 'rows', 'column', 'missing', 'date'];
+    return dataKeywords.some(k => lowerMsg.includes(k));
+  }
+
+  // --- 1. UNIVERSAL FILE EXTRACTOR (DEBUG VERSION) ---
   async extractFileContent(attachedFile) {
       if (!attachedFile || !attachedFile.path) return null;
       
@@ -30,7 +42,7 @@ class AICoreService {
       let displayType = 'FILE';
       const CHAR_LIMIT = 200000; 
 
-      console.log(`📂 [FILE START] Reading: ${originalName} (${mime}) Size: ${attachedFile.size} bytes`);
+      console.log(`📂 [FILE START] Processing: ${originalName} (${mime})`);
 
       try {
           // A. PDF HANDLING
@@ -40,72 +52,64 @@ class AICoreService {
               content = data.text.replace(/\n\s*\n/g, '\n');
               displayType = 'PDF';
           }
-          // B. WORD HANDLING (.docx)
-          else if (mime.includes('wordprocessingml') || ext === '.docx') {
+          // B. WORD HANDLING
+          else if (ext === '.docx' || mime.includes('word')) {
               try {
                   const result = await mammoth.extractRawText({ path: attachedFile.path });
                   content = result.value;
                   displayType = 'DOCX (Mammoth)';
               } catch (err) {
-                  console.log("Mammoth error, trying fallback...", err.message);
+                  // Fallback
                   try {
-                      content = await officeParser.parseOfficeAsync(attachedFile.path);
-                      displayType = 'DOCX (OfficeParser)';
-                  } catch (opErr) {
-                      console.error("OfficeParser failed:", opErr);
-                  }
+                       content = await officeParser.parseOfficeAsync(attachedFile.path);
+                       displayType = 'DOCX (OfficeParser)';
+                  } catch (e) { console.error(e); }
               }
           }
-          // C. EXCEL HANDLING (.xlsx) - ✅ SUDAH DIPERBAIKI
+          // C. EXCEL HANDLING
           else if (ext === '.xlsx' || ext === '.xls' || mime.includes('spreadsheet')) {
               console.log("📊 Reading Excel file...");
-              // Menggunakan XLSX.readFile (sekarang sudah terbaca karena import diperbaiki)
               const workbook = XLSX.readFile(attachedFile.path);
               let allSheetsData = [];
-              
               workbook.SheetNames.forEach(sheetName => {
                   const sheet = workbook.Sheets[sheetName];
-                  // Gunakan options { FS: '\t' } agar format lebih rapi
                   const csv = XLSX.utils.sheet_to_csv(sheet, { FS: '\t' }); 
-                  if (csv && csv.trim().length > 0) {
-                      allSheetsData.push(`[SHEET: ${sheetName}]\n${csv}`);
-                  }
+                  if (csv && csv.trim().length > 0) allSheetsData.push(`[SHEET: ${sheetName}]\n${csv}`);
               });
-              
               if (allSheetsData.length > 0) {
                   content = allSheetsData.join('\n\n====================\n\n');
                   displayType = `EXCEL (${workbook.SheetNames.length} Sheets)`;
-              } else {
-                  console.warn("⚠️ Excel file terbaca tapi kosong.");
               }
           }
-          // D. POWERPOINT (.pptx)
+          // D. POWERPOINT HANDLING (Dengan Debug Log)
           else if (ext === '.pptx' || ext === '.ppt' || mime.includes('presentation')) {
-              console.log("📽️ Reading PowerPoint file...");
+              console.log("📽️ Attempting to read PPTX...");
               try {
-                  content = await officeParser.parseOfficeAsync(attachedFile.path);
+                  content = await officeParser.parseOfficeAsync(attachedFile.path, { outputErrorToConsole: true });
                   displayType = 'POWERPOINT';
               } catch (err) {
-                  console.error("PPT Parse Error:", err);
-                  content = `[SYSTEM ERROR: Gagal membaca PPT. ${err.message}]`;
+                  console.error("❌ PPT ERROR:", err);
+                  return `[SYSTEM ERROR: Gagal membaca file PPT. Pesan Error: ${err.message}. Pastikan file tidak dikunci/corrupt.]`;
               }
           }
-          // E. TEXT/CODE
+          // E. Text Files
           else {
-              const textExts = ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.html', '.css', '.js', '.jsx', '.ts', '.py', '.java', '.c', '.cpp', '.sql', '.log', '.env'];
-              if (textExts.includes(ext) || mime.startsWith('text/') || mime.includes('json')) {
-                  content = fs.readFileSync(attachedFile.path, 'utf8');
-                  displayType = 'CODE/TEXT';
-              }
+               const textExts = ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.html', '.css', '.js', '.jsx', '.ts', '.py', '.java', '.c', '.cpp', '.sql', '.log', '.env'];
+               if (textExts.includes(ext) || mime.startsWith('text/') || mime.includes('json')) {
+                   content = fs.readFileSync(attachedFile.path, 'utf8');
+                   displayType = 'CODE/TEXT';
+               }
           }
 
-          if (content) {
+          // --- LOGIC PENGECEKAN KOSONG ---
+          if (content && content.trim().length > 0) {
               if (typeof content === 'object') content = JSON.stringify(content, null, 2);
               const trimmedContent = content.substring(0, CHAR_LIMIT);
               console.log(`✅ [FILE SUCCESS] ${displayType} - Length: ${trimmedContent.length}`);
               return `\n\n[FILE START: ${originalName} (${displayType})]\n${trimmedContent}\n[FILE END]\n`;
           } else {
-              return null;
+              console.warn(`⚠️ [FILE EMPTY] ${originalName} terbaca tapi teks KOSONG.`);
+              return `\n[SYSTEM INFO: File ${originalName} berhasil diupload, TETAPI isinya kosong atau berupa gambar yang tidak mengandung teks. Bot tidak bisa membaca isinya.]\n`;
           }
 
       } catch (e) {
@@ -145,9 +149,10 @@ class AICoreService {
         }
     }
 
-    // Smartsheet Logic
+    // 3. Logic Smartsheet
     let contextData = "";
     if (bot.smartsheetConfig?.enabled) {
+        // Cek file query
         const isFileReq = this.fileManager.isFileRequest(message || '');
         if (isFileReq) {
             const query = this.fileManager.extractFileQuery(message || '');
@@ -161,6 +166,7 @@ class AICoreService {
             }
         }
 
+        // Cek data query (Smartsheet) - DISINI ERROR SEBELUMNYA KARENA FUNGSI HILANG
         if (this.isDataQuery(message)) {
             const apiKey = (bot.smartsheetConfig.apiKey && bot.smartsheetConfig.apiKey.trim() !== '') ? bot.smartsheetConfig.apiKey : process.env.SMARTSHEET_API_KEY;
             const sheetId = (bot.smartsheetConfig.sheetId && bot.smartsheetConfig.sheetId.trim() !== '') ? bot.smartsheetConfig.sheetId : process.env.SMARTSHEET_PRIMARY_SHEET_ID;
@@ -177,17 +183,17 @@ class AICoreService {
         }
     }
 
-    // System Prompt
+    // 4. Construct System Prompt
     let systemPrompt = bot.systemPrompt || "Anda adalah asisten AI.";
     if (contextData) {
         if (systemPrompt.includes('{{CONTEXT}}')) systemPrompt = systemPrompt.replace('{{CONTEXT}}', contextData);
         else systemPrompt += `\n\n${contextData}`;
     }
 
-    // AI Execution
+    // 5. AI EXECUTION
     let aiResponse = "";
     
-    // KOUVENTA
+    // KOUVENTA LOGIC
     if (bot.kouventaConfig?.enabled) {
         console.log(`🤖 Using KOUVENTA for bot: ${bot.name}`);
         const kvService = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
@@ -202,7 +208,7 @@ class AICoreService {
         }
         aiResponse = await kvService.generateResponse(finalMessage);
     } 
-    // OPENAI
+    // OPENAI LOGIC
     else {
         console.log(`🧠 Using OPENAI for bot: ${bot.name}`);
         const messagesPayload = [
@@ -219,7 +225,7 @@ class AICoreService {
         aiResponse = completion.choices[0].message.content;
     }
 
-    // Save & Return
+    // 6. Save & Return
     let savedAttachments = [];
     if (attachedFile) {
         savedAttachments.push({
