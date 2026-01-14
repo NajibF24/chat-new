@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import path from 'path'; // Pindah ke atas (Best Practice)
 import AICoreService from '../services/ai-core.service.js';
 import { requireAuth } from '../middleware/auth.js';
 import User from '../models/User.js';
@@ -9,6 +10,7 @@ import Thread from '../models/Thread.js';
 
 const router = express.Router();
 
+// Config Upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = 'data/files';
@@ -23,7 +25,7 @@ const upload = multer({ storage: storage, limits: { fileSize: 20 * 1024 * 1024 }
 
 // --- ENDPOINTS ---
 
-// 1. Upload
+// 1. Upload File
 router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
@@ -48,7 +50,7 @@ router.get('/bots', requireAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// 3. ✅ GET THREADS (SIDEBAR HISTORY)
+// 3. Get Threads
 router.get('/threads', requireAuth, async (req, res) => {
     try {
         const threads = await Thread.find({ userId: req.session.userId })
@@ -75,7 +77,7 @@ router.delete('/thread/:threadId', requireAuth, async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// 6. Send Message
+// 6. Send Message (Delegate ke AICoreService)
 router.post('/message', requireAuth, async (req, res) => {
   try {
     const { message, botId, history, threadId } = req.body;
@@ -97,5 +99,4 @@ router.post('/message', requireAuth, async (req, res) => {
   }
 });
 
-import path from 'path';
 export default router;

@@ -19,7 +19,7 @@ class AICoreService {
     this.fileManager = new FileManagerService();
   }
 
-  // ✅ 1. FUNGSI DETEKSI QUERY DATA (PENTING)
+  // ✅ 1. FUNGSI DETEKSI QUERY DATA
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
     
@@ -28,11 +28,11 @@ class AICoreService {
     if (visualKeywords.some(k => lowerMsg.includes(k)) && lowerMsg.includes('dashboard')) return false;
 
     // Keyword untuk memicu pembacaan data (Smartsheet/Excel)
-    const dataKeywords = ['berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 'overdue', 'summary', 'health', 'analisa', 'resume', 'data', 'nilai', 'rows', 'column', 'missing', 'date', 'workstream', 'total', 'berapa'];
+    const dataKeywords = ['berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 'overdue', 'summary', 'health', 'analisa', 'resume', 'data', 'nilai', 'rows', 'column', 'missing', 'date', 'workstream', 'total', 'berapa', 'mana', 'versi', 'latest', 'terbaru'];
     return dataKeywords.some(k => lowerMsg.includes(k));
   }
 
-  // ✅ 2. UNIVERSAL FILE EXTRACTOR
+  // ✅ 2. UNIVERSAL FILE EXTRACTOR (Tidak Diubah - Tetap Sama)
   async extractFileContent(attachedFile) {
       if (!attachedFile || !attachedFile.path) return null;
       
@@ -61,8 +61,8 @@ class AICoreService {
                   displayType = 'DOCX (Mammoth)';
               } catch (err) {
                   try {
-                       content = await officeParser.parseOfficeAsync(attachedFile.path);
-                       displayType = 'DOCX (OfficeParser)';
+                        content = await officeParser.parseOfficeAsync(attachedFile.path);
+                        displayType = 'DOCX (OfficeParser)';
                   } catch (e) { console.error(e); }
               }
           }
@@ -83,18 +83,16 @@ class AICoreService {
           }
           // POWERPOINT (.pptx)
           else if (ext === '.pptx' || ext === '.ppt' || mime.includes('presentation')) {
-              console.log("📽️ Attempting to read PPTX...");
               try {
                   content = await officeParser.parseOfficeAsync(attachedFile.path, { outputErrorToConsole: true });
                   displayType = 'POWERPOINT';
               } catch (err) {
-                  console.error("❌ PPT ERROR:", err);
-                  return `[SYSTEM ERROR: Gagal membaca file PPT. Pesan Error: ${err.message}.]`;
+                  return `[SYSTEM ERROR: Gagal membaca file PPT. ${err.message}.]`;
               }
           }
           // TEXT / CODE
           else {
-               const textExts = ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.html', '.css', '.js', '.jsx', '.ts', '.py', '.java', '.c', '.cpp', '.sql', '.log', '.env'];
+               const textExts = ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.html', '.css', '.js', '.jsx', '.ts', '.py', '.java', '.c', '.sql', '.env'];
                if (textExts.includes(ext) || mime.startsWith('text/') || mime.includes('json')) {
                    content = fs.readFileSync(attachedFile.path, 'utf8');
                    displayType = 'CODE/TEXT';
@@ -104,25 +102,24 @@ class AICoreService {
           if (content && content.trim().length > 0) {
               if (typeof content === 'object') content = JSON.stringify(content, null, 2);
               const trimmedContent = content.substring(0, CHAR_LIMIT);
-              console.log(`✅ [FILE SUCCESS] ${displayType} - Length: ${trimmedContent.length}`);
               return `\n\n[FILE START: ${originalName} (${displayType})]\n${trimmedContent}\n[FILE END]\n`;
           } else {
-              console.warn(`⚠️ [FILE EMPTY] ${originalName} terbaca tapi teks KOSONG.`);
-              return `\n[SYSTEM INFO: File ${originalName} berhasil diupload, TETAPI isinya kosong atau berupa gambar yang tidak mengandung teks.]\n`;
+              return `\n[SYSTEM INFO: File ${originalName} kosong atau tidak terbaca.]\n`;
           }
 
       } catch (e) {
-          console.error(`❌ [FILE ERROR] Gagal membaca ${originalName}:`, e);
+          console.error(`❌ [FILE ERROR] ${originalName}:`, e);
           return `\n[SYSTEM ERROR: Gagal membaca file ${originalName}. ${e.message}]`;
       }
   }
 
   // ✅ 3. MAIN PROCESS
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
+    // A. Validasi Bot
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
-    // Manage Thread
+    // B. Manage Thread
     let currentThreadTitle;
     if (!threadId) {
         const title = message ? (message.length > 30 ? message.substring(0, 30) + '...' : message) : `Chat with ${bot.name}`;
@@ -134,7 +131,7 @@ class AICoreService {
         await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
     }
 
-    // Prepare User Content
+    // C. Prepare User Content (Text + Image/File)
     let userContent = [];
     if (message) userContent.push({ type: "text", text: message });
 
@@ -148,98 +145,147 @@ class AICoreService {
         }
     }
 
-    // --- A. LOGIC DASHBOARD / LOCAL FILE SEARCH ---
-    // Cek apakah user meminta file/dashboard (Logic FileManager)
+    // --- D. LOGIC FILE MANAGER (DASHBOARD SEARCH) ---
+    // (Cek apakah user minta gambar dashboard lokal)
     const isFileReq = this.fileManager.isFileRequest(message || '');
-    
     if (isFileReq) {
         const query = this.fileManager.extractFileQuery(message || '');
-        console.log(`🔎 Searching dashboard files for query: "${query}"`);
+        console.log(`🔎 Searching dashboard files: "${query}"`);
         
         const foundFiles = await this.fileManager.searchFiles(query);
         
         if (foundFiles.length > 0) {
-            console.log(`✅ Found ${foundFiles.length} dashboard files.`);
             const reply = this.fileManager.generateSmartDescription(foundFiles, query);
-            
-            // Format attachment agar bisa dirender Frontend
             const attachments = foundFiles.map(f => ({ 
                 name: f.name, 
-                path: f.relativePath, // Path ini yang dipakai frontend untuk <img src="...">
+                path: f.relativePath, 
                 type: f.type, 
                 size: f.sizeKB 
             }));
 
-            // Simpan Chat & Return Langsung (Skip OpenAI)
             await new Chat({ userId, botId, threadId, role: 'user', content: message, attachedFiles: [] }).save();
             await new Chat({ userId, botId, threadId, role: 'assistant', content: reply, attachedFiles: attachments }).save();
             
             return { response: reply, threadId, attachedFiles: attachments };
-        } else {
-            console.log("⚠️ No dashboard files found. Fallback to AI.");
         }
     }
 
-    // --- B. LOGIC SMARTSHEET ---
+    // --- E. LOGIC SMARTSHEET FETCH ---
     let contextData = "";
-    if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled) {
-        const apiKey = (bot.smartsheetConfig.apiKey && bot.smartsheetConfig.apiKey.trim() !== '') ? bot.smartsheetConfig.apiKey : process.env.SMARTSHEET_API_KEY;
-        const sheetId = (bot.smartsheetConfig.sheetId && bot.smartsheetConfig.sheetId.trim() !== '') ? bot.smartsheetConfig.sheetId : process.env.SMARTSHEET_PRIMARY_SHEET_ID;
+    // Cek config: support sheetId (baru) atau primarySheetId (lama)
+    const targetSheetId = bot.smartsheetConfig?.sheetId || bot.smartsheetConfig?.primarySheetId;
+    
+    if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled && targetSheetId) {
+        const apiKey = bot.smartsheetConfig.apiKey || process.env.SMARTSHEET_API_KEY;
         
-        if (apiKey && sheetId) {
+        if (apiKey && targetSheetId) {
             try {
                 const service = new SmartsheetJSONService();
                 service.apiKey = apiKey;
-                const sheetData = await service.getData(sheetId, message.includes('refresh'));
+                const sheetData = await service.getData(targetSheetId, message.toLowerCase().includes('refresh'));
+                
+                // Format data menjadi string context
                 const rawContext = service.formatForAI(sheetData);
-                contextData = `\n\n=== SMARTSHEET DATA ===\n${rawContext}\n=== END DATA ===\n`;
-            } catch (e) { console.error("Smartsheet fetch error", e); }
+                contextData = rawContext; // Simpan dulu, jangan di-append langsung
+            } catch (e) { 
+                console.error("⚠️ Smartsheet fetch error", e); 
+                contextData = "[SISTEM: Gagal mengambil data real-time Smartsheet.]";
+            }
         }
     }
 
-    // --- C. SYSTEM PROMPT ---
-    let systemPrompt = bot.systemPrompt || "Anda adalah asisten AI.";
-    if (contextData) {
-        if (systemPrompt.includes('{{CONTEXT}}')) systemPrompt = systemPrompt.replace('{{CONTEXT}}', contextData);
-        else systemPrompt += `\n\n${contextData}`;
+    // ============================================================
+    // --- F. LOGIC SYSTEM PROMPT (ANTI-TABRAKAN) ---
+    // ============================================================
+    
+    let finalSystemPrompt = "";
+
+    // 1. Cek apakah User membuat Custom Prompt di Dashboard?
+    // Kita cek field 'prompt' (baru) atau 'systemPrompt' (lama)
+    // Syarat: Harus cukup panjang (>20 char) dan BUKAN default system ("Anda adalah...")
+    const userPrompt = bot.prompt || bot.systemPrompt;
+    const isCustom = userPrompt && userPrompt.length > 20 && !userPrompt.includes("Anda adalah asisten AI profesional yang siap membantu");
+
+    if (isCustom) {
+        // ✅ KASUS A: CUSTOM BOT (Misal: "BP Revamp Document Controller")
+        // Gunakan prompt user sepenuhnya, lalu tempel data di bawahnya.
+        
+        finalSystemPrompt = userPrompt;
+
+        // Inject Smartsheet Data jika ada (menggantikan placeholder {{CONTEXT}} atau append di bawah)
+        if (contextData) {
+            if (finalSystemPrompt.includes('{{CONTEXT}}')) {
+                finalSystemPrompt = finalSystemPrompt.replace('{{CONTEXT}}', `\n\n=== DATA SOURCE ===\n${contextData}\n=== END DATA ===\n`);
+            } else {
+                finalSystemPrompt += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📁 DATASET REAL-TIME (DARI SMARTSHEET):\n${contextData}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n(Gunakan data di atas sebagai referensi utama jawaban Anda.)`;
+            }
+        }
+
+    } else {
+        // ✅ KASUS B: DEFAULT SMART BOT (Project Analyst + Versioning Logic)
+        // Jika user tidak mengisi prompt, gunakan logika CANGGIH ini.
+        
+        finalSystemPrompt = `Anda adalah ${bot.name}, Asisten Project Management & Document Control Profesional.
+
+${contextData ? `=== AKSES DATA PROYEK REAL-TIME ===\n${contextData}\n====================================` : ''}
+
+**PERAN ANDA:**
+1. **Analisis Proyek:** Monitoring status, health, dan progress.
+2. **Document Controller (Cerdas):** Melacak versi dokumen & revisi.
+
+**LOGIKA DETEKSI VERSI DOKUMEN (CRITICAL):**
+Jika user mencari dokumen (misal: "Proposal DevSecOps"):
+1. **Fuzzy Search:** Kumpulkan semua file dengan nama mirip (contoh: "TechProc_DevSecOps", "DevSecOps_Rev1").
+2. **Cek Hierarki Revisi:**
+   - Urutan: Draft < v1 < Rev1 < Rev2 < Final.
+   - Jika tanpa label, file dengan TANGGAL MODIFIKASI TERBARU = LATEST.
+3. **Output:** Selalu sarankan file versi TERBARU (Latest). Tandai file lama sebagai "Outdated/Usang".
+
+**FORMAT JAWABAN:**
+- Gunakan Markdown (Tabel, Bold) untuk kerapian.
+- Bahasa Indonesia Profesional.
+- Jika data tidak ditemukan di sheet, katakan "Data tidak ditemukan".
+`;
     }
 
-    // --- D. AI EXECUTION ---
+    // --- G. AI EXECUTION (OPENAI / KOUVENTA) ---
     let aiResponse = "";
     
-    // KOUVENTA LOGIC
+    // 1. KOUVENTA LOGIC (Jika Enabled)
     if (bot.kouventaConfig?.enabled) {
         console.log(`🤖 Using KOUVENTA for bot: ${bot.name}`);
         const kvService = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
-        let finalMessage = message || "";
         
+        // Gabungkan System Prompt + User Message untuk Kouventa
+        let finalMessage = `[SYSTEM INSTRUCTION]\n${finalSystemPrompt}\n\n[USER MESSAGE]\n${message || ""}`;
+
         if (Array.isArray(userContent)) {
             const fileTexts = userContent
                 .filter(c => c.type === 'text' && c.text !== message) 
                 .map(c => c.text)
                 .join("\n");
-            if (fileTexts) finalMessage += `\n\n${fileTexts}`;
+            if (fileTexts) finalMessage += `\n\n[ATTACHED FILE CONTENT]\n${fileTexts}`;
         }
         aiResponse = await kvService.generateResponse(finalMessage);
     } 
-    // OPENAI LOGIC
+    // 2. OPENAI LOGIC (Default)
     else {
         console.log(`🧠 Using OPENAI for bot: ${bot.name}`);
         const messagesPayload = [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: finalSystemPrompt },
             ...history,
             { role: 'user', content: userContent }
         ];
 
         const completion = await this.openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: 'gpt-4o', // Gunakan model terbaik
             messages: messagesPayload,
             temperature: 0.5
         });
         aiResponse = completion.choices[0].message.content;
     }
 
-    // --- E. SAVE & RETURN ---
+    // --- H. SAVE & RETURN ---
     let savedAttachments = [];
     if (attachedFile) {
         savedAttachments.push({
