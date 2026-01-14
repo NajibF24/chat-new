@@ -25,49 +25,47 @@ class AICoreService {
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
     
-    const visualKeywords = ['dashboard', 'gambar', 'image', 'foto', 'screenshot', 'show', 'tampilkan', 'lihat', 'visual'];
+    // Keyword Visual (Dashboard Images)
+    const visualKeywords = ['dashboard', 'gambar', 'image', 'foto', 'screenshot', 'visual'];
     if (visualKeywords.some(k => lowerMsg.includes(k)) && lowerMsg.includes('dashboard')) return false;
 
-    // Trigger Keywords (Indo & English)
+    // Keyword Data (Smartsheet)
     const dataKeywords = [
         'berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 
         'summary', 'analisa', 'data', 'total', 'berapa', 'mana', 'versi', 'latest', 
         'terbaru', 'revisi', 'dokumen', 'file', 'tracking', 'update', 'history', 'riwayat',
-        'give', 'show', 'find', 'search', 'document', 'documents', 'version', 'excel', 'sheet', 
-        'another', 'other', 'what', 'where'
+        'give', 'show', 'find', 'search', 'get', 'document', 'documents', 'version', 'excel', 'sheet', 
+        'another', 'other', 'what', 'where', 'have', 'all'
     ];
     
-    // Jika ada keyword ATAU ada pola nama file (underscore/titik)
+    // Trigger: Keyword ditemukan ATAU ada karakter khas file (underscore/titik)
     return dataKeywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.'); 
   }
 
   // ===========================================================================
-  // 2. UTILS: EKSTRAKSI FILE (TETAP)
+  // 2. UTILS: EKSTRAKSI FILE
   // ===========================================================================
   async extractFileContent(attachedFile) {
       if (!attachedFile || !attachedFile.path) return null;
-      
+      // ... (Kode ekstraksi file sama seperti sebelumnya) ...
       const mime = attachedFile.mimetype || '';
       const originalName = attachedFile.originalname || '';
       const ext = path.extname(originalName).toLowerCase();
       let content = null;
       const CHAR_LIMIT = 200000; 
-
       try {
           if (mime === 'application/pdf' || ext === '.pdf') {
               const dataBuffer = fs.readFileSync(attachedFile.path);
               const data = await pdf(dataBuffer);
               content = data.text.replace(/\n\s*\n/g, '\n');
-          }
-          else if (ext === '.docx' || mime.includes('word')) {
+          } else if (ext === '.docx' || mime.includes('word')) {
               try {
                   const result = await mammoth.extractRawText({ path: attachedFile.path });
                   content = result.value;
               } catch (err) {
                   try { content = await officeParser.parseOfficeAsync(attachedFile.path); } catch (e) {}
               }
-          }
-          else if (ext === '.xlsx' || ext === '.xls') {
+          } else if (ext === '.xlsx' || ext === '.xls') {
               const workbook = XLSX.readFile(attachedFile.path);
               let allSheetsData = [];
               workbook.SheetNames.forEach(sheetName => {
@@ -76,99 +74,91 @@ class AICoreService {
                   if (csv.trim()) allSheetsData.push(`[SHEET: ${sheetName}]\n${csv}`);
               });
               if (allSheetsData.length > 0) content = allSheetsData.join('\n\n');
-          }
-          else {
+          } else {
                content = fs.readFileSync(attachedFile.path, 'utf8');
           }
-
           if (content && content.trim().length > 0) {
               return `\n\n[FILE: ${originalName}]\n${content.substring(0, CHAR_LIMIT)}\n[END FILE]\n`;
           }
           return `\n[SYSTEM INFO: File ${originalName} kosong.]\n`;
-
-      } catch (e) {
-          console.error(`❌ File Error:`, e);
-          return `\n[SYSTEM ERROR reading file]\n`;
-      }
+      } catch (e) { return `\n[SYSTEM ERROR reading file]\n`; }
   }
 
   // ===========================================================================
-  // 3. CORE: NORMALIZED SMART FILTERING (The Fix)
+  // 3. CORE: NORMALIZED SMART FILTERING (PERBAIKAN LOGIKA)
   // ===========================================================================
   
-  // Helper: Hapus semua simbol, sisakan hanya huruf & angka untuk perbandingan
   normalizeText(text) {
       if (!text) return "";
-      // Ubah ke lowercase, ganti %20 jadi spasi, hapus simbol selain alfanumerik
-      return text.toLowerCase()
-                 .replace(/%20/g, ' ') 
-                 .replace(/[^a-z0-9]/g, ''); 
+      return text.toLowerCase().replace(/%20/g, ' ').replace(/[^a-z0-9]/g, ''); 
   }
 
   filterRelevantData(sheetData, userMessage) {
     let items = [];
     let dataContainer = null; 
 
-    // Handle berbagai struktur data (Array langsung atau Object Wrapper)
-    if (Array.isArray(sheetData)) {
-        items = sheetData;
-    } else if (sheetData?.projects && Array.isArray(sheetData.projects)) {
-        items = sheetData.projects;
-        dataContainer = 'projects';
-    } else if (sheetData?.rows && Array.isArray(sheetData.rows)) {
-        items = sheetData.rows;
-        dataContainer = 'rows';
-    } else {
-        return sheetData;
-    }
+    // Handle Structure
+    if (Array.isArray(sheetData)) { items = sheetData; } 
+    else if (sheetData?.projects && Array.isArray(sheetData.projects)) { items = sheetData.projects; dataContainer = 'projects'; } 
+    else if (sheetData?.rows && Array.isArray(sheetData.rows)) { items = sheetData.rows; dataContainer = 'rows'; } 
+    else { return sheetData; }
 
     const query = userMessage.toLowerCase().trim();
-    const normalizedQuery = this.normalizeText(query); // Query tanpa simbol (misal: "garubeka01bdmain")
+    const normalizedQuery = this.normalizeText(query);
 
-    // --- LOGIC 1: GENERAL REQUEST ---
-    const generalKeywords = ['semua', 'all', 'list', 'another', 'other', 'lain', 'lagi', 'show me'];
-    // Jika query pendek DAN mengandung kata general, kembalikan 50 baris terbaru
-    if (generalKeywords.some(k => query.includes(k)) && query.length < 20) {
-        console.log("🔍 Filter: General Request.");
-        const slicedItems = items.slice(0, 50); 
-        return Array.isArray(sheetData) ? slicedItems : { ...sheetData, [dataContainer]: slicedItems };
+    // --- LOGIC 1: GENERAL REQUEST (FIXED) ---
+    // Pemicu: Kata kunci general ditemukan. 
+    // PERBAIKAN: Hapus batasan panjang string yang ketat (< 60 char masih wajar).
+    const generalKeywords = ['semua', 'all', 'list', 'another', 'other', 'lain', 'lagi', 'show me', 'give me', 'seluruh', 'everything', 'have'];
+    
+    if (generalKeywords.some(k => query.includes(k))) {
+        // Cek apakah query murni general ("give me all") atau spesifik ("give me all garubeka files")
+        // Jika spesifik (ada kata lain selain general keywords), lanjut ke filtering spesifik.
+        // Jika murni general, kembalikan 50 data teratas.
+        
+        // Cara simpel: Jika tidak ada underscore (nama file) dan panjang < 50
+        if (!query.includes('_') && query.length < 50) {
+            console.log("🔍 Filter: General Request Detected (Sending top 50 rows).");
+            const slicedItems = items.slice(0, 50); 
+            return Array.isArray(sheetData) ? slicedItems : { ...sheetData, [dataContainer]: slicedItems };
+        }
     }
     
-    // --- LOGIC 2: NORMALIZED "DEEP" SEARCH ---
-    // Cari query user (yang sudah dinormalisasi) di dalam setiap baris data (yang juga dinormalisasi).
-    // Ini akan menembus link, underscore, spasi, atau simbol aneh.
+    // --- LOGIC 2: DEEP NORMALIZED SEARCH ---
     const deepMatches = items.filter(item => {
-        const itemString = JSON.stringify(item); // Ambil seluruh baris
-        const normalizedItem = this.normalizeText(itemString); // Bersihkan simbol
-        
-        // Cek apakah "garubeka01bdmain" ada di dalam baris tersebut
+        const itemString = JSON.stringify(item);
+        const normalizedItem = this.normalizeText(itemString);
         return normalizedItem.includes(normalizedQuery);
     });
 
     if (deepMatches.length > 0) {
         console.log(`🔍 Deep Match: Found ${deepMatches.length} rows.`);
-        // Kita ambil BANYAK (200) agar semua history revisi masuk
-        const resultItems = deepMatches.slice(0, 200); 
+        const resultItems = deepMatches.slice(0, 150); 
         return Array.isArray(sheetData) ? resultItems : { ...sheetData, [dataContainer]: resultItems };
     }
 
-    // --- LOGIC 3: PARTIAL KEYWORD MATCH (Fallback) ---
-    // Jika deep match gagal, coba cari per kata (keyword)
-    const keywords = query.split(/[\s\_\-\.]+/).filter(w => w.length > 3 && !['cari', 'give', 'show', 'data', 'file'].includes(w));
+    // --- LOGIC 3: KEYWORD MATCH ---
+    const keywords = query.split(/[\s\_\-\.]+/).filter(w => w.length > 3 && !['cari', 'give', 'show', 'data', 'file', 'document', 'have', 'you', 'please'].includes(w));
     
-    if (keywords.length === 0) {
-        // Fallback total
-        const fallback = items.slice(0, 30);
-        return Array.isArray(sheetData) ? fallback : { ...sheetData, [dataContainer]: fallback };
+    let finalItems = [];
+    
+    if (keywords.length > 0) {
+        const keywordMatches = items.filter(item => {
+            const itemString = JSON.stringify(item).toLowerCase();
+            return keywords.some(k => itemString.includes(k));
+        });
+        console.log(`🔍 Keyword Match: ${keywordMatches.length} rows.`);
+        finalItems = keywordMatches.slice(0, 50);
     }
 
-    const keywordMatches = items.filter(item => {
-        const itemString = JSON.stringify(item).toLowerCase();
-        return keywords.some(k => itemString.includes(k));
-    });
+    // --- LOGIC 4: FALLBACK SAFETY NET (PENTING!) ---
+    // Jika semua filter di atas gagal (hasil 0) padahal user jelas-jelas minta data,
+    // jangan kirim kosong. Kirim 30 data terbaru sebagai fallback.
+    if (finalItems.length === 0) {
+        console.log("⚠️ Filter Result Empty. Using Fallback (Top 30 rows).");
+        finalItems = items.slice(0, 30);
+    }
 
-    console.log(`🔍 Keyword Match: ${keywordMatches.length} rows.`);
-    const finalItems = keywordMatches.slice(0, 50);
     return Array.isArray(sheetData) ? finalItems : { ...sheetData, [dataContainer]: finalItems };
   }
 
@@ -176,7 +166,6 @@ class AICoreService {
   // 4. MAIN PROCESS
   // ===========================================================================
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
-    // A. Validasi Bot & Thread (Standard)
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
@@ -191,10 +180,10 @@ class AICoreService {
         await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
     }
 
-    // B. User Content
     let userContent = [];
     if (message) userContent.push({ type: "text", text: message });
     if (attachedFile) {
+        // ... (File attachment logic same as before) ...
         if (attachedFile.mimetype?.startsWith('image/')) {
              const imgBuffer = fs.readFileSync(attachedFile.path);
              userContent.push({ type: "image_url", image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` } });
@@ -204,7 +193,7 @@ class AICoreService {
         }
     }
 
-    // C. File Manager (Dashboard Images)
+    // Dashboard Images Check
     if (this.fileManager.isFileRequest(message || '')) {
         const query = this.fileManager.extractFileQuery(message || '');
         const foundFiles = await this.fileManager.searchFiles(query);
@@ -217,25 +206,26 @@ class AICoreService {
         }
     }
 
-    // D. SMARTSHEET DATA (FILTERED)
+    // SMARTSHEET DATA FETCH & FILTER
     let contextData = "";
     const targetSheetId = bot.smartsheetConfig?.sheetId || bot.smartsheetConfig?.primarySheetId;
     
+    // Cek apakah ini Data Query?
     if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled && targetSheetId) {
         try {
             const service = new SmartsheetJSONService();
             if (bot.smartsheetConfig.apiKey) service.apiKey = bot.smartsheetConfig.apiKey;
             
-            // 1. Fetch Full Data
+            // 1. Fetch
             const fullSheetData = await service.getData(targetSheetId, message.includes('refresh'));
             
-            // 2. Filter using Normalized Logic
+            // 2. Filter (Logic Baru dengan Safety Net)
             const filteredData = this.filterRelevantData(fullSheetData, message);
 
             // 3. Format
             const rawContext = service.formatForAI(filteredData);
             
-            contextData = `\n\n=== FILTERED DATA (RELEVANT ROWS) ===\n${rawContext}\n=== END DATA ===\n`;
+            contextData = `\n\n=== FILTERED DATA (RESULTS/FALLBACK) ===\n${rawContext}\n=== END DATA ===\n`;
             
         } catch (e) { 
             console.error("Smartsheet Error:", e); 
@@ -243,7 +233,7 @@ class AICoreService {
         }
     }
 
-    // E. SYSTEM PROMPT (ANTI-TABRAKAN)
+    // SYSTEM PROMPT
     let finalSystemPrompt = "";
     const userPrompt = bot.prompt || bot.systemPrompt;
     const isCustomPrompt = userPrompt && userPrompt.length > 20 && !userPrompt.includes("Anda adalah asisten AI profesional");
@@ -258,16 +248,16 @@ class AICoreService {
             }
         }
     } else {
-        // Fallback Default Prompt
         finalSystemPrompt = `Anda adalah ${bot.name}, Project Analyst & Document Controller.
 ${contextData}
 **INSTRUKSI:**
-1. Tampilkan SEMUA data yang ditemukan di context, jangan disembunyikan.
-2. Jika ada banyak history file (nama sama), tampilkan sebagai tabel.
-3. Ikuti bahasa user.`;
+1. Jika data berisi banyak baris, tampilkan sebagai TABEL.
+2. Jika user minta "all documents" dan data tersedia, tampilkan semuanya (limit 20 teratas jika terlalu banyak).
+3. Jika data kosong (N/A), tulis N/A.
+4. Ikuti bahasa user.`;
     }
 
-    // F. EXECUTE AI
+    // EXECUTE AI
     let aiResponse = "";
     const messagesPayload = [
         { role: 'system', content: finalSystemPrompt },
@@ -275,15 +265,13 @@ ${contextData}
         { role: 'user', content: userContent }
     ];
 
-    // Gunakan OpenAI (Kouventa opsional di-disable dulu untuk kestabilan)
     const completion = await this.openai.chat.completions.create({
         model: 'gpt-4o',
         messages: messagesPayload,
-        temperature: 0.1 // Sangat rendah untuk akurasi data
+        temperature: 0.1 
     });
     aiResponse = completion.choices[0].message.content;
 
-    // G. Save & Return
     let savedAttachments = [];
     if (attachedFile) {
         savedAttachments.push({
