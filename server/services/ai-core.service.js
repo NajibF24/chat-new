@@ -25,20 +25,17 @@ class AICoreService {
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
     
-    // Keyword Visual (Dashboard Images)
-    const visualKeywords = ['dashboard', 'gambar', 'image', 'foto', 'screenshot', 'visual'];
+    const visualKeywords = ['dashboard', 'gambar', 'image', 'foto', 'screenshot', 'visual', 'pic'];
     if (visualKeywords.some(k => lowerMsg.includes(k)) && lowerMsg.includes('dashboard')) return false;
 
-    // Keyword Data (Smartsheet)
     const dataKeywords = [
         'berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 
         'summary', 'analisa', 'data', 'total', 'berapa', 'mana', 'versi', 'latest', 
         'terbaru', 'revisi', 'dokumen', 'file', 'tracking', 'update', 'history', 'riwayat',
         'give', 'show', 'find', 'search', 'get', 'document', 'documents', 'version', 'excel', 'sheet', 
-        'another', 'other', 'what', 'where', 'have', 'all'
+        'another', 'other', 'what', 'where', 'have', 'all', 'everything'
     ];
     
-    // Trigger: Keyword ditemukan ATAU ada karakter khas file (underscore/titik)
     return dataKeywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.'); 
   }
 
@@ -47,7 +44,7 @@ class AICoreService {
   // ===========================================================================
   async extractFileContent(attachedFile) {
       if (!attachedFile || !attachedFile.path) return null;
-      // ... (Kode ekstraksi file sama seperti sebelumnya) ...
+      
       const mime = attachedFile.mimetype || '';
       const originalName = attachedFile.originalname || '';
       const ext = path.extname(originalName).toLowerCase();
@@ -85,12 +82,28 @@ class AICoreService {
   }
 
   // ===========================================================================
-  // 3. CORE: NORMALIZED SMART FILTERING (PERBAIKAN LOGIKA)
+  // 3. CORE: ROBUST FILTERING (RAW SUBSTRING MATCH)
   // ===========================================================================
   
-  normalizeText(text) {
-      if (!text) return "";
-      return text.toLowerCase().replace(/%20/g, ' ').replace(/[^a-z0-9]/g, ''); 
+  // Fungsi untuk membuang kata-kata perintah ("give me") dan menyisakan INTI pencarian
+  extractCoreQuery(userMessage) {
+      // Daftar kata yang harus dibuang, KECUALI jika kata itu bagian dari nama file (underscore/titik)
+      const stopWords = [
+          'give', 'me', 'all', 'document', 'documents', 'file', 'files', 'data', 'list', 'show', 
+          'find', 'search', 'cari', 'berikan', 'minta', 'daftar', 'semua', 'yang', 'ada', 'versi', 
+          'version', 'history', 'riwayat', 'latest', 'terbaru', 'update', 'tracking', 'excel', 'sheet',
+          'please', 'tolong', 'you', 'have', 'of', 'this', 'the', 'for', 'about', 'terkait', 'dengan'
+      ];
+      
+      const words = userMessage.trim().split(/\s+/);
+      
+      // Ambil kata-kata yang BUKAN stopword
+      const coreWords = words.filter(w => {
+          const lowerW = w.toLowerCase().replace(/[^a-z0-9\._\-]/g, ''); // bersihkan simbol bacaan di ujung
+          return !stopWords.includes(lowerW) || w.includes('_') || w.includes('.');
+      });
+
+      return coreWords.join(' ').trim();
   }
 
   filterRelevantData(sheetData, userMessage) {
@@ -103,63 +116,61 @@ class AICoreService {
     else if (sheetData?.rows && Array.isArray(sheetData.rows)) { items = sheetData.rows; dataContainer = 'rows'; } 
     else { return sheetData; }
 
-    const query = userMessage.toLowerCase().trim();
-    const normalizedQuery = this.normalizeText(query);
-
-    // --- LOGIC 1: GENERAL REQUEST (FIXED) ---
-    // Pemicu: Kata kunci general ditemukan. 
-    // PERBAIKAN: Hapus batasan panjang string yang ketat (< 60 char masih wajar).
-    const generalKeywords = ['semua', 'all', 'list', 'another', 'other', 'lain', 'lagi', 'show me', 'give me', 'seluruh', 'everything', 'have'];
+    const rawQuery = userMessage.toLowerCase().trim();
     
-    if (generalKeywords.some(k => query.includes(k))) {
-        // Cek apakah query murni general ("give me all") atau spesifik ("give me all garubeka files")
-        // Jika spesifik (ada kata lain selain general keywords), lanjut ke filtering spesifik.
-        // Jika murni general, kembalikan 50 data teratas.
-        
-        // Cara simpel: Jika tidak ada underscore (nama file) dan panjang < 50
-        if (!query.includes('_') && query.length < 50) {
-            console.log("🔍 Filter: General Request Detected (Sending top 50 rows).");
-            const slicedItems = items.slice(0, 50); 
-            return Array.isArray(sheetData) ? slicedItems : { ...sheetData, [dataContainer]: slicedItems };
-        }
+    // --- STEP 1: GENERAL REQUEST CHECK ---
+    // Jika user minta "give me all document" tanpa menyebut nama file spesifik
+    const coreQuery = this.extractCoreQuery(userMessage); // Ambil inti kalimat
+    
+    // Jika inti kalimat kosong atau sangat pendek (misal: "list"), berarti General Request
+    if (coreQuery.length < 3) {
+        console.log("🔍 Filter: General Request (No specific filename).");
+        const slicedItems = items.slice(0, 50); // Ambil 50 teratas/terbaru
+        return Array.isArray(sheetData) ? slicedItems : { ...sheetData, [dataContainer]: slicedItems };
     }
+
+    // --- STEP 2: RAW SUBSTRING MATCH (The Solution) ---
+    // Kita cari "coreQuery" (misal: "Garubeka01...MEC") di dalam JSON string setiap baris.
+    // Ini akan menemukan string tersebut meskpiun dia ada di tengah-tengah Path Folder atau URL.
     
-    // --- LOGIC 2: DEEP NORMALIZED SEARCH ---
+    const searchString = coreQuery.toLowerCase();
+    console.log(`🔍 Searching for substring: [${searchString}] inside data rows.`);
+
     const deepMatches = items.filter(item => {
-        const itemString = JSON.stringify(item);
-        const normalizedItem = this.normalizeText(itemString);
-        return normalizedItem.includes(normalizedQuery);
+        // Konversi seluruh baris data (termasuk path, link, user, dll) menjadi satu string lowercase
+        const rowString = JSON.stringify(item).toLowerCase();
+        
+        // CEK APAKAH STRING PENCARIAN ADA DI DALAMNYA
+        return rowString.includes(searchString);
     });
 
     if (deepMatches.length > 0) {
-        console.log(`🔍 Deep Match: Found ${deepMatches.length} rows.`);
+        console.log(`✅ Deep Match Found: ${deepMatches.length} rows.`);
+        // Ambil hingga 150 baris untuk memastikan semua history revisi terangkut
         const resultItems = deepMatches.slice(0, 150); 
         return Array.isArray(sheetData) ? resultItems : { ...sheetData, [dataContainer]: resultItems };
     }
 
-    // --- LOGIC 3: KEYWORD MATCH ---
-    const keywords = query.split(/[\s\_\-\.]+/).filter(w => w.length > 3 && !['cari', 'give', 'show', 'data', 'file', 'document', 'have', 'you', 'please'].includes(w));
-    
-    let finalItems = [];
+    // --- STEP 3: FALLBACK (KEYWORD MATCH) ---
+    // Jika pencarian utuh gagal (mungkin user salah ketik 1 huruf), coba cari per kata
+    const keywords = searchString.split(/[\s\_\-\.]+/).filter(w => w.length > 3);
     
     if (keywords.length > 0) {
         const keywordMatches = items.filter(item => {
-            const itemString = JSON.stringify(item).toLowerCase();
-            return keywords.some(k => itemString.includes(k));
+            const rowString = JSON.stringify(item).toLowerCase();
+            // Match jika setidaknya satu keyword ada
+            return keywords.some(k => rowString.includes(k));
         });
-        console.log(`🔍 Keyword Match: ${keywordMatches.length} rows.`);
-        finalItems = keywordMatches.slice(0, 50);
+        console.log(`⚠️ Fuzzy Match Found: ${keywordMatches.length} rows.`);
+        const finalItems = keywordMatches.slice(0, 50);
+        return Array.isArray(sheetData) ? finalItems : { ...sheetData, [dataContainer]: finalItems };
     }
 
-    // --- LOGIC 4: FALLBACK SAFETY NET (PENTING!) ---
-    // Jika semua filter di atas gagal (hasil 0) padahal user jelas-jelas minta data,
-    // jangan kirim kosong. Kirim 30 data terbaru sebagai fallback.
-    if (finalItems.length === 0) {
-        console.log("⚠️ Filter Result Empty. Using Fallback (Top 30 rows).");
-        finalItems = items.slice(0, 30);
-    }
-
-    return Array.isArray(sheetData) ? finalItems : { ...sheetData, [dataContainer]: finalItems };
+    // --- STEP 4: SAFETY NET ---
+    // Jangan pernah return kosong jika user sudah effort mengetik
+    console.log("❌ No matches found. Returning fallback (Top 30).");
+    const fallback = items.slice(0, 30);
+    return Array.isArray(sheetData) ? fallback : { ...sheetData, [dataContainer]: fallback };
   }
 
   // ===========================================================================
@@ -183,7 +194,6 @@ class AICoreService {
     let userContent = [];
     if (message) userContent.push({ type: "text", text: message });
     if (attachedFile) {
-        // ... (File attachment logic same as before) ...
         if (attachedFile.mimetype?.startsWith('image/')) {
              const imgBuffer = fs.readFileSync(attachedFile.path);
              userContent.push({ type: "image_url", image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` } });
@@ -193,7 +203,7 @@ class AICoreService {
         }
     }
 
-    // Dashboard Images Check
+    // Dashboard Files
     if (this.fileManager.isFileRequest(message || '')) {
         const query = this.fileManager.extractFileQuery(message || '');
         const foundFiles = await this.fileManager.searchFiles(query);
@@ -206,11 +216,10 @@ class AICoreService {
         }
     }
 
-    // SMARTSHEET DATA FETCH & FILTER
+    // SMARTSHEET LOGIC
     let contextData = "";
     const targetSheetId = bot.smartsheetConfig?.sheetId || bot.smartsheetConfig?.primarySheetId;
     
-    // Cek apakah ini Data Query?
     if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled && targetSheetId) {
         try {
             const service = new SmartsheetJSONService();
@@ -219,13 +228,13 @@ class AICoreService {
             // 1. Fetch
             const fullSheetData = await service.getData(targetSheetId, message.includes('refresh'));
             
-            // 2. Filter (Logic Baru dengan Safety Net)
+            // 2. Filter (NEW RAW LOGIC)
             const filteredData = this.filterRelevantData(fullSheetData, message);
 
             // 3. Format
             const rawContext = service.formatForAI(filteredData);
             
-            contextData = `\n\n=== FILTERED DATA (RESULTS/FALLBACK) ===\n${rawContext}\n=== END DATA ===\n`;
+            contextData = `\n\n=== FILTERED DATA (RAW MATCH) ===\n${rawContext}\n=== END DATA ===\n`;
             
         } catch (e) { 
             console.error("Smartsheet Error:", e); 
@@ -248,13 +257,12 @@ class AICoreService {
             }
         }
     } else {
-        finalSystemPrompt = `Anda adalah ${bot.name}, Project Analyst & Document Controller.
+        finalSystemPrompt = `Anda adalah ${bot.name}, Project Analyst.
 ${contextData}
 **INSTRUKSI:**
-1. Jika data berisi banyak baris, tampilkan sebagai TABEL.
-2. Jika user minta "all documents" dan data tersedia, tampilkan semuanya (limit 20 teratas jika terlalu banyak).
-3. Jika data kosong (N/A), tulis N/A.
-4. Ikuti bahasa user.`;
+1. Jika data mengandung banyak baris (history), tampilkan semuanya dalam TABEL.
+2. Periksa kolom 'Folder Location' atau 'Link', seringkali nama file ada di situ.
+3. Ikuti bahasa user.`;
     }
 
     // EXECUTE AI
