@@ -45,44 +45,43 @@ const Login = ({ setUser }) => {
   };
 
   return (
-    <div className="min-h-screen flex w-full bg-[#0a0f1c] text-white font-sans overflow-hidden relative">
+    <div className="min-h-screen w-full flex bg-[#0a0f1c] font-sans overflow-hidden">
       
-      {/* LEFT SIDE - Cyber Form (Sekarang di Kiri) */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 z-20 relative border-r border-white/5 bg-[#0a0f1c]/90 backdrop-blur-sm">
+      {/* =========================================
+          BAGIAN KIRI: FORMULIR LOGIN (CYBER STYLE)
+         ========================================= */}
+      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 sm:p-12 z-20 relative border-r border-white/5 bg-[#0a0f1c]">
         
-        {/* Background Effects untuk sisi Form */}
+        {/* Background Effects (Subtle) */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-           <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-gys-navy opacity-10 blur-[120px]"></div>
-           <div className="absolute bottom-[10%] right-[10%] w-[40%] h-[40%] rounded-full bg-cyan-900 opacity-10 blur-[100px]"></div>
-           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
+           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-900 opacity-10 blur-[100px]"></div>
+           <div className="absolute bottom-[10%] right-[10%] w-[30%] h-[30%] rounded-full bg-blue-900 opacity-10 blur-[80px]"></div>
+           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
         </div>
 
-        <div className="w-full max-w-md mx-auto z-10">
+        <div className="w-full max-w-md z-10">
           
-          {/* Mobile Header (Hanya muncul di HP) */}
-          <div className="lg:hidden mb-8 text-center">
-            <img src="/assets/favicon_gys.ico" alt="Logo" className="w-12 h-12 mx-auto mb-4"/>
-            <h2 className="text-xl font-bold tracking-widest text-white">PORTAL AI</h2>
-          </div>
-
-          {/* Desktop Logo & Status Badge */}
-          <div className="hidden lg:block mb-10">
-             <div className="flex items-center gap-3 mb-4">
-                <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-                <span className="text-cyan-400 text-xs tracking-[0.2em] font-bold uppercase">System Operational</span>
+          {/* Logo & Header */}
+          <div className="text-center mb-10">
+             <div className="flex flex-col items-center justify-center gap-3 mb-4">
+                <img 
+                    src="/assets/favicon_gys.ico" 
+                    alt="GYS Logo" 
+                    className="w-14 h-14 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]"
+                />
+                <div className="flex items-center gap-2 mt-2">
+                   <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
+                   <span className="text-cyan-400 text-[0.65rem] tracking-[0.2em] font-bold uppercase">System Operational</span>
+                </div>
              </div>
-             <img 
-                src="/assets/favicon_gys.ico" 
-                alt="GYS Logo" 
-                className="w-12 h-12 drop-shadow-[0_0_15px_rgba(0,180,255,0.5)]"
-             />
+             <h1 className="text-3xl font-bold text-white tracking-widest">PORTAL AI</h1>
           </div>
 
           {/* Login Card */}
-          <div className="bg-white/5 border border-white/10 p-8 rounded-2xl backdrop-blur-xl shadow-2xl">
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold text-white mb-2">Welcome Back</h2>
-              <p className="text-gray-400 text-sm">Enter your Enterprise credentials to access the neural network.</p>
+          <div className="bg-white/5 border border-white/10 p-8 rounded-2xl backdrop-blur-md shadow-2xl relative">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-white mb-2">Welcome Back</h2>
+              <p className="text-gray-400 text-sm">Enter credentials to access the system.</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-6">
@@ -139,7 +138,7 @@ const Login = ({ setUser }) => {
               )}
 
               {/* Checkbox */}
-              <div className="flex items-center text-sm">
+              <div className="flex items-center text-sm justify-center">
                 <label className="flex items-center text-gray-400 cursor-pointer hover:text-white transition-colors">
                   <input type="checkbox" className="form-checkbox h-4 w-4 text-cyan-500 rounded border-gray-600 bg-gray-800 focus:ring-offset-gray-900" />
                   <span className="ml-2">Remember device</span>
@@ -175,43 +174,27 @@ const Login = ({ setUser }) => {
           </div>
 
           <div className="mt-8 text-center">
-            <p className="text-gray-600 text-xs">
+            <p className="text-gray-500 text-xs">
               Restricted Access. Authorized Personnel Only.<br/>
-              &copy; 2026 PT Garuda Yamato Steel. All systems operational.
+              &copy; 2026 PT Garuda Yamato Steel.
             </p>
           </div>
         </div>
       </div>
 
-      {/* RIGHT SIDE - Image & Tech Visual (Sekarang di Kanan) */}
-      <div className="hidden lg:flex w-1/2 relative h-full">
-        {/* Gambar Gedung sebagai Background */}
+      {/* =========================================
+          BAGIAN KANAN: GAMBAR FULL (TANPA TEKS)
+         ========================================= */}
+      <div className="hidden lg:block lg:w-1/2 relative h-screen">
         <img 
-            src="/assets/login.jpeg" 
+            src="/assets/WhatsApp Image 2026-01-14 at 11.13.44.jpeg" 
             alt="Garuda Yamato Steel Building"
             className="absolute inset-0 w-full h-full object-cover"
         />
-        
-        {/* Overlay Gelap/Biru agar teks terbaca dan nuansa Cyber terjaga */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0f1c] via-cyan-900/40 to-[#0a0f1c]/60 mix-blend-multiply"></div>
-        <div className="absolute inset-0 bg-black/20"></div>
-
-        {/* Konten Overlay (Teks Future Intelligence dipindah ke sini) */}
-        <div className="relative z-10 flex flex-col justify-end w-full h-full p-16 pb-24">
-            <h1 className="text-6xl font-bold mb-6 leading-tight text-white drop-shadow-2xl">
-              Future <br/>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-500">Intelligence.</span>
-            </h1>
-            <p className="text-gray-200 text-lg max-w-md border-l-4 border-cyan-500 pl-6 bg-black/30 backdrop-blur-sm py-2 pr-4 rounded-r-lg">
-              Integrated AI Portal for Garuda Yamato Steel. <br/>
-              Optimizing operations through advanced machine learning & real-time analytics.
-            </p>
-            
-            <div className="flex gap-4 text-xs text-gray-300 font-mono mt-8">
-              <span className="bg-black/50 px-2 py-1 rounded border border-white/20">ID: GYS-AI-2026</span>
-              <span className="bg-black/50 px-2 py-1 rounded border border-white/20">Ver: 2.4.0 (Stable)</span>
-            </div>
-        </div>
+        {/* Tidak ada overlay teks atau gradient tebal, hanya gambar murni.
+            Opsional: Overlay tipis sekali agar tidak terlalu silau jika gambar terang, 
+            tapi bisa dihapus jika ingin gambar 100% asli. */}
+        <div className="absolute inset-0 bg-black/10"></div>
       </div>
 
     </div>
