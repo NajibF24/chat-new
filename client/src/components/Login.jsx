@@ -48,9 +48,10 @@ const Login = ({ setUser }) => {
     <div className="min-h-screen w-full flex bg-[#0a0f1c] font-sans overflow-hidden">
       
       {/* =========================================
-          BAGIAN KIRI: FORMULIR LOGIN (CYBER STYLE)
+          BAGIAN KIRI: FORMULIR LOGIN
          ========================================= */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 sm:p-12 z-20 relative border-r border-white/5 bg-[#0a0f1c]">
+      {/* Catatan: border-r dihapus agar menyatu dengan gradasi di kanan */}
+      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 sm:p-12 z-20 relative bg-[#0a0f1c]">
         
         {/* Background Effects (Subtle) */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
@@ -183,7 +184,7 @@ const Login = ({ setUser }) => {
       </div>
 
       {/* =========================================
-          BAGIAN KANAN: GAMBAR FULL (TANPA TEKS)
+          BAGIAN KANAN: GAMBAR DENGAN GRADASI HALUS
          ========================================= */}
       <div className="hidden lg:block lg:w-1/2 relative h-screen">
         <img 
@@ -191,10 +192,14 @@ const Login = ({ setUser }) => {
             alt="Garuda Yamato Steel Building"
             className="absolute inset-0 w-full h-full object-cover"
         />
-        {/* Tidak ada overlay teks atau gradient tebal, hanya gambar murni.
-            Opsional: Overlay tipis sekali agar tidak terlalu silau jika gambar terang, 
-            tapi bisa dihapus jika ingin gambar 100% asli. */}
-        <div className="absolute inset-0 bg-black/10"></div>
+        
+        {/* --- GRADIENT OVERLAY (KUNCI GRADASI) --- 
+            Ini adalah layer di atas gambar yang memiliki warna background kiri 
+            dan memudar ke transparan ke arah kanan. 
+            'from-[#0a0f1c]' = warna background panel kiri.
+        */}
+        <div className="absolute top-0 left-0 w-64 h-full bg-gradient-to-r from-[#0a0f1c] via-[#0a0f1c]/70 to-transparent z-10 pointer-events-none"></div>
+
       </div>
 
     </div>
