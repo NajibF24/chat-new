@@ -9,53 +9,83 @@ import { requireAdmin } from '../middleware/auth.js';
 const router = express.Router();
 
 // ============================================================================
-// 📊 DASHBOARD STATISTICS (BARU)
+// 📊 DASHBOARD STATISTICS (UPDATED FOR GYS THEME)
 // ============================================================================
 
 router.get('/stats', requireAdmin, async (req, res) => {
   try {
-    // 1. Basic Counts (Total Data)
+    // 1. Basic Counts
     const totalUsers = await User.countDocuments();
     const totalBots = await Bot.countDocuments();
     const totalChats = await Chat.countDocuments();
-    const activeThreads = await Thread.countDocuments();
+    const totalThreads = await Thread.countDocuments();
 
-    // 2. Activity Last 7 Days (Grafik Garis)
-    // Mengambil data 7 hari ke belakang
+    // 2. Activity Last 7 Days (Trend Grafik)
     const last7Days = new Date();
     last7Days.setDate(last7Days.getDate() - 7);
 
-    const dailyActivity = await Chat.aggregate([
+    const activityTrend = await Chat.aggregate([
       { $match: { createdAt: { $gte: last7Days } } },
-      { 
-        $group: { 
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, 
-          count: { $sum: 1 } 
-        } 
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 }
+        }
       },
       { $sort: { _id: 1 } }
     ]);
 
-    // 3. Bot Popularity (Pie Chart)
-    // Menghitung bot mana yang paling sering menjawab (role: assistant)
-    const botUsage = await Chat.aggregate([
+    // 3. Bot Popularity (Pie/Doughnut Chart)
+    const botPopularityRaw = await Chat.aggregate([
         { $match: { role: 'assistant', botId: { $exists: true, $ne: null } } },
         { $group: { _id: "$botId", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
-        { $limit: 5 } // Ambil Top 5
+        { $limit: 5 }
     ]);
 
-    // Populate Nama Bot (karena aggregate hanya mengembalikan ID)
-    const botStats = await Bot.populate(botUsage, { path: "_id", select: "name" });
-    const formattedBotStats = botStats.map(b => ({
+    const botPopularityPopulated = await Bot.populate(botPopularityRaw, { path: "_id", select: "name" });
+    const botPopularity = botPopularityPopulated.map(b => ({
         name: b._id ? b._id.name : 'Unknown Bot',
         count: b.count
     }));
 
+    // 4. Top Active Users (Data untuk tabel baru di GYS Dashboard)
+    const topUsers = await Chat.aggregate([
+      { $match: { role: 'user' } }, // Hanya hitung pesan dari manusia
+      {
+        $group: {
+          _id: "$userId",
+          msgCount: { $sum: 1 }
+        }
+      },
+      { $sort: { msgCount: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "userInfo"
+        }
+      },
+      {
+        $project: {
+          username: { $arrayElemAt: ["$userInfo.username", 0] },
+          email: { $arrayElemAt: ["$userInfo.email", 0] },
+          count: "$msgCount"
+        }
+      }
+    ]);
+
+    // Response disesuaikan dengan kebutuhan AdminDashboard.jsx GYS
     res.json({
-        counts: { totalUsers, totalBots, totalChats, activeThreads },
-        dailyActivity,
-        botUsage: formattedBotStats
+        totalUsers,
+        totalBots,
+        totalChats,
+        totalThreads, // Digunakan oleh stats.totalThreads
+        activityTrend, // Digunakan oleh Weekly Activity Chart
+        botPopularity, // Digunakan oleh Bot Usage Chart
+        topUsers       // Digunakan oleh Top Contributors Table
     });
 
   } catch (error) {
@@ -65,7 +95,7 @@ router.get('/stats', requireAdmin, async (req, res) => {
 });
 
 // ============================================================================
-// 👥 USER MANAGEMENT (EXISTING)
+// 👥 USER MANAGEMENT (EXISTING - KEPT AS IS)
 // ============================================================================
 
 router.get('/users', requireAdmin, async (req, res) => {
@@ -111,7 +141,7 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
 });
 
 // ============================================================================
-// 🤖 BOT MANAGEMENT (EXISTING)
+// 🤖 BOT MANAGEMENT (EXISTING - KEPT AS IS)
 // ============================================================================
 
 router.get('/bots', requireAdmin, async (req, res) => {
@@ -150,7 +180,7 @@ router.delete('/bots/:id', requireAdmin, async (req, res) => {
 });
 
 // ============================================================================
-// 👁️ CHAT MONITORING & EXPORT (EXISTING)
+// 👁️ CHAT MONITORING & EXPORT (EXISTING - KEPT AS IS)
 // ============================================================================
 
 router.get('/chat-logs', requireAdmin, async (req, res) => {
@@ -171,11 +201,10 @@ router.get('/export-chats', requireAdmin, async (req, res) => {
         let fileName = `chat-logs-all-${new Date().toISOString().slice(0,10)}.csv`;
 
         if (month && year) {
-            const m = parseInt(month); // 1-12
+            const m = parseInt(month);
             const y = parseInt(year);
             const startDate = new Date(y, m - 1, 1);
             const endDate = new Date(y, m, 0, 23, 59, 59, 999);
-            
             query.createdAt = { $gte: startDate, $lte: endDate };
             fileName = `chat-logs-${y}-${m.toString().padStart(2, '0')}.csv`;
         }
