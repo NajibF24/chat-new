@@ -190,11 +190,25 @@ const Chat = ({ user, handleLogout }) => {
       <aside
         className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:relative z-30 w-72 h-full bg-white border-r border-steel-light/30 flex flex-col transition-transform duration-300 shadow-xl`}
       >
-        {/* Sidebar Header */}
+      {/* Sidebar Header */}
         <div className="p-5 border-b border-steel-light/30 flex items-center justify-between bg-white">
           <div className="flex items-center gap-3">
-             {/* Logo GYS (Bisa diganti dengan tag img seperti di Login jika diperlukan) */}
-             <div className="w-8 h-8 bg-primary rounded flex items-center justify-center font-bold text-white text-lg">G</div>
+             
+             {/* Logo GYS */}
+             <img
+               src="/assets/gys-logo.webp"
+               alt="GYS Logo"
+               className="h-8 w-auto object-contain"
+               onError={(e) => {
+                 e.target.style.display = 'none';
+                 document.getElementById('sidebar-logo-fallback').style.display = 'flex';
+               }}
+             />
+             {/* Fallback jika gambar gagal dimuat */}
+             <div id="sidebar-logo-fallback" className="hidden w-8 h-8 bg-primary rounded items-center justify-center font-bold text-white text-lg shadow-sm">
+                G
+             </div>
+             
              <div>
                <h1 className="font-bold text-lg text-primary-dark tracking-wide">PORTAL AI</h1>
                <div className="flex items-center gap-1.5">
