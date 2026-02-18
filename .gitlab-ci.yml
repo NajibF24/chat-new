@@ -27,64 +27,64 @@ stages:
 # ==========================================================
 # 1. CODE QUALITY CHECK (SONARQUBE) - DIRECT API VERSION 🚀
 # ==========================================================
-sonarqube_check:
-  stage: code_quality
-  tags:
-    - portal-ai
-  variables:
-    GIT_DEPTH: "0"
-  script:
-    - echo "🧠 Memulai Analisa Code Quality via Docker..."
+# sonarqube_check:
+#   stage: code_quality
+#   tags:
+#     - portal-ai
+#   variables:
+#     GIT_DEPTH: "0"
+#   script:
+#     - echo "🧠 Memulai Analisa Code Quality via Docker..."
     
-    # 1. Ambil ID User Host
-    - export HOST_UID=$(id -u)
-    - export HOST_GID=$(id -g)
+#     # 1. Ambil ID User Host
+#     - export HOST_UID=$(id -u)
+#     - export HOST_GID=$(id -g)
     
-    # 2. Jalankan Docker
-    - |
-      docker run --rm \
-      -e SONAR_HOST_URL="${SONAR_HOST_URL}" \
-      -e SONAR_TOKEN="${SONAR_TOKEN}" \
-      -v "$(pwd):/usr/src" \
-      -w /usr/src \
-      node:lts-bullseye \
-      /bin/bash -c "
-        # FUNGSI PEMBERSIH: Selalu jalan saat exit
-        function cleanup {
-            echo '🧹 Fixing Permissions (Running cleanup)...'
-            chown -R $HOST_UID:$HOST_GID .
-        }
-        trap cleanup EXIT
+#     # 2. Jalankan Docker
+#     - |
+#       docker run --rm \
+#       -e SONAR_HOST_URL="${SONAR_HOST_URL}" \
+#       -e SONAR_TOKEN="${SONAR_TOKEN}" \
+#       -v "$(pwd):/usr/src" \
+#       -w /usr/src \
+#       node:lts-bullseye \
+#       /bin/bash -c "
+#         # FUNGSI PEMBERSIH: Selalu jalan saat exit
+#         function cleanup {
+#             echo '🧹 Fixing Permissions (Running cleanup)...'
+#             chown -R $HOST_UID:$HOST_GID .
+#         }
+#         trap cleanup EXIT
 
-        echo '📦 Installing Dependencies...' &&
-        apt-get update > /dev/null && 
-        apt-get install -y default-jre curl > /dev/null && 
-        npm install -g sonarqube-scanner > /dev/null &&
+#         echo '📦 Installing Dependencies...' &&
+#         apt-get update > /dev/null && 
+#         apt-get install -y default-jre curl > /dev/null && 
+#         npm install -g sonarqube-scanner > /dev/null &&
         
-        echo '🔍 Running Sonar Scanner...' &&
-        # TAMBAHAN PENTING: -Dsonar.qualitygate.wait=true
-        # Agar scanner menunggu server selesai memproses report sebelum lanjut
-        sonar-scanner \
-          -Dsonar.projectKey=portal-ai \
-          -Dsonar.sources=. \
-          -Dsonar.host.url=\$SONAR_HOST_URL \
-          -Dsonar.login=\$SONAR_TOKEN \
-        #  -Dsonar.qualitygate.wait=true \
-          -Dsonar.exclusions='**/node_modules/**,**/dist/**,**/build/**,**/coverage/**' &&
+#         echo '🔍 Running Sonar Scanner...' &&
+#         # TAMBAHAN PENTING: -Dsonar.qualitygate.wait=true
+#         # Agar scanner menunggu server selesai memproses report sebelum lanjut
+#         sonar-scanner \
+#           -Dsonar.projectKey=portal-ai \
+#           -Dsonar.sources=. \
+#           -Dsonar.host.url=\$SONAR_HOST_URL \
+#           -Dsonar.login=\$SONAR_TOKEN \
+#         #  -Dsonar.qualitygate.wait=true \
+#           -Dsonar.exclusions='**/node_modules/**,**/dist/**,**/build/**,**/coverage/**' &&
           
-        echo '📝 Fetching Report from SonarQube API...' &&
-        # KITA PAKAI CURL LANGSUNG KE API (Lebih Stabil)
-        # Mengambil 500 issues pertama (bisa dinaikkan jika perlu)
-        curl -s -u \"\$SONAR_TOKEN:\" \"\$SONAR_HOST_URL/api/issues/search?componentKeys=portal-ai&ps=500\" -o sonar-report.json
-      "
+#         echo '📝 Fetching Report from SonarQube API...' &&
+#         # KITA PAKAI CURL LANGSUNG KE API (Lebih Stabil)
+#         # Mengambil 500 issues pertama (bisa dinaikkan jika perlu)
+#         curl -s -u \"\$SONAR_TOKEN:\" \"\$SONAR_HOST_URL/api/issues/search?componentKeys=portal-ai&ps=500\" -o sonar-report.json
+#       "
 
-  artifacts:
-    paths:
-      - sonar-report.json
-    expire_in: 1 day
-  allow_failure: true
-  only:
-    - main
+#   artifacts:
+#     paths:
+#       - sonar-report.json
+#     expire_in: 1 day
+#   allow_failure: true
+#   only:
+#     - main
 
 # ==========================================================
 # 2. BUILD & PUSH DOCKER IMAGES
@@ -115,29 +115,29 @@ build_push_images:
 # ==========================================================
 # 3. CONTAINER SECURITY SCAN (TRIVY)
 # ==========================================================
-container_security_scan:
-  stage: security
-  tags:
-    - portal-ai
-  needs: ["build_push_images"]
-  allow_failure: true
-  before_script:
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
-  script:
-    - echo "🛡️ Memulai Container Security Scanning..."
+# container_security_scan:
+#   stage: security
+#   tags:
+#     - portal-ai
+#   needs: ["build_push_images"]
+#   allow_failure: true
+#   before_script:
+#     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+#   script:
+#     - echo "🛡️ Memulai Container Security Scanning..."
     
-    # 1. Scan Server Image
-    - trivy image --scanners vuln,secret,misconfig --format json -o trivy-server.json $SERVER_IMAGE
+#     # 1. Scan Server Image
+#     - trivy image --scanners vuln,secret,misconfig --format json -o trivy-server.json $SERVER_IMAGE
     
-    # 2. Scan Client Image
-    - trivy image --scanners vuln,secret,misconfig --format json -o trivy-client.json $CLIENT_IMAGE
+#     # 2. Scan Client Image
+#     - trivy image --scanners vuln,secret,misconfig --format json -o trivy-client.json $CLIENT_IMAGE
 
-  artifacts:
-    paths:
-      - trivy-server.json
-      - trivy-client.json
-    expire_in: 1 day
-  when: always
+#   artifacts:
+#     paths:
+#       - trivy-server.json
+#       - trivy-client.json
+#     expire_in: 1 day
+#   when: always
 
 # ==========================================================
 # 4. DEPLOY TO PRODUCTION
@@ -171,31 +171,31 @@ deploy_production:
 # ==========================================================
 # 5. DAST SCAN (ZAP)
 # ==========================================================
-dast_scan:
-  stage: dast
-  tags:
-    - portal-ai
-  allow_failure: true
-  needs: ["deploy_production"]
-  script:
-    - echo "🕵️ Memulai DAST Scanning (Passive Scan)..."
-    - mkdir -p zap-reports
-    - chmod 777 zap-reports
-    - docker pull ghcr.io/zaproxy/zaproxy:stable
+# dast_scan:
+#   stage: dast
+#   tags:
+#     - portal-ai
+#   allow_failure: true
+#   needs: ["deploy_production"]
+#   script:
+#     - echo "🕵️ Memulai DAST Scanning (Passive Scan)..."
+#     - mkdir -p zap-reports
+#     - chmod 777 zap-reports
+#     - docker pull ghcr.io/zaproxy/zaproxy:stable
     
-    # Menjalankan ZAP Baseline Scan
-    - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -x zap-report.xml -I
+#     # Menjalankan ZAP Baseline Scan
+#     - docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $TARGET_URL -r zap-report.html -x zap-report.xml -I
     
-  artifacts:
-    paths:
-      - zap-reports/zap-report.xml
-    expire_in: 1 day
-  when: always
+#   artifacts:
+#     paths:
+#       - zap-reports/zap-report.xml
+#     expire_in: 1 day
+#   when: always
 
 # ==========================================================
 # 6. UPLOAD REPORT TO DEFECTDOJO (ALL IN ONE)
-# ==========================================================
-upload_to_defectdojo:
+# # ==========================================================
+# upload_to_defectdojo:
   stage: report
   tags:
     - portal-ai

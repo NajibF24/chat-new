@@ -6,42 +6,40 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // --- EXISTING THEME (Hijau) ---
+        // --- PRIMARY GREEN (Berdasarkan GYS Brand Guidelines) ---
         primary: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          200: '#bbf7d0',
-          300: '#86efac',
-          400: '#4ade80',
-          500: '#22c55e',  // Main green
-          600: '#16a34a',  // Darker green
-          700: '#15803d',
-          800: '#166534',
-          900: '#14532d',
+          300: '#48AE92', // Primary Color Derivatives (Light)
+          500: '#007857', // Primary Color (Warna Utama)
+          900: '#004E36', // Primary Color Derivatives (Dark)
+          
+          // Alias untuk memudahkan penggunaan (contoh: bg-primary, text-primary-light)
+          light: '#48AE92',
+          DEFAULT: '#007857',
+          dark: '#004E36',
         },
-        // --- EXISTING NEUTRAL (Steel/Gray) ---
+        // --- NEUTRAL / STEEL (Berdasarkan GYS Brand Guidelines) ---
         steel: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
+          100: '#F0F1F1', // Derivative Grey Light
+          300: '#A5A7AA', // Derivative Grey
+          500: '#6E6F72', // Grey Color (Warna Utama)
+
+          // Alias
+          lightest: '#F0F1F1',
+          light: '#A5A7AA',
+          DEFAULT: '#6E6F72',
         },
-        // --- NEW BRANDING (Navy & Red GYS) ---
+        // --- GYS BRANDING (Hanya menggunakan warna resmi) ---
         gys: {
-          navy: '#002561', // Biru gelap khas korporat/baja
-          red: '#C1272D',  // Merah tegas untuk aksen/tombol
-          steel: '#64748B', // Abu-abu metalik (opsional, mirip steel-500)
-          light: '#F8FAFC', // Background sangat muda
+          green: '#007857', 
+          'green-dark': '#004E36',
+          'green-light': '#48AE92',
+          grey: '#6E6F72',
+          'grey-light': '#A5A7AA',
+          'grey-lightest': '#F0F1F1',
         }
       },
-      // Tambahan Font agar desain Login lebih modern (mirip Dribbble)
       fontFamily: {
+        // Font 'Inter' adalah font resmi yang digunakan dalam Brand Guidelines GYS
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       }
     },
