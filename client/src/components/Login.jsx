@@ -47,30 +47,21 @@ const Login = ({ setUser }) => {
 
       {/* =========================================
           KOTAK LOGIN UTAMA (CENTERED CARD)
-         ========================================= */}
+          ========================================= */}
       <div className="w-full max-w-md bg-white p-8 sm:p-10 rounded-2xl shadow-lg border border-steel-light/20 z-20">
 
         {/* Header & Logo Section */}
         <div className="flex flex-col items-center text-center mb-10">
-          
-          {/* Container Logo */}
           <div className="mb-4 flex justify-center items-center min-h-[64px]">
-            {/* Instruksi: 
-              1. Simpan file logo Anda di folder public/assets/ (misal: gys-logo.png atau gys-logo.svg)
-              2. Ubah src di bawah ini sesuai nama file Anda.
-              3. Ubah nilai h-16 (tinggi) jika logo dirasa terlalu kecil atau besar.
-            */}
             <img
               src="/assets/gys-logo.webp" 
               alt="Garuda Yamato Steel Logo"
               className="h-16 w-auto object-contain"
               onError={(e) => {
-                // Fallback: Jika gambar gagal dimuat (belum ada), tampilkan teks GYS
                 e.target.style.display = 'none';
                 document.getElementById('logo-fallback').style.display = 'block';
               }}
             />
-            {/* Teks cadangan jika logo belum tersedia */}
             <h1 id="logo-fallback" className="hidden text-5xl font-black text-primary tracking-tighter">GYS</h1>
           </div>
 
@@ -86,7 +77,6 @@ const Login = ({ setUser }) => {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
-          {/* Username Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-steel uppercase">Username</label>
             <div className="relative group">
@@ -107,7 +97,6 @@ const Login = ({ setUser }) => {
             </div>
           </div>
 
-          {/* Password Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-steel uppercase">Password</label>
             <div className="relative group">
@@ -127,7 +116,6 @@ const Login = ({ setUser }) => {
             </div>
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm flex items-center">
               <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -137,7 +125,6 @@ const Login = ({ setUser }) => {
             </div>
           )}
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
@@ -165,69 +152,58 @@ const Login = ({ setUser }) => {
         </div>
       </div>
 
-      // {/* =========================================
-      //     FLOATING AVATAR WIDGET (DIGITAL ASSISTANT)
-      //    ========================================= */}
-      
-      // {/* 1. Iframe Container */}
-      // {isAvatarOpen && (
-      //   <div className="fixed bottom-24 right-6 z-50 animate-in slide-in-from-bottom-5 duration-300">
-      //     <div className="bg-white border border-steel-lightest p-1 rounded-2xl shadow-2xl w-[350px] sm:w-[400px] h-[500px] flex flex-col relative overflow-hidden">
-            
-      //       {/* Header Popup */}
-      //       <div className="flex justify-between items-center px-4 py-3 border-b border-steel-lightest bg-white">
-      //          <div className="flex items-center gap-2">
-      //             <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-      //             <span className="text-primary text-xs font-bold tracking-widest uppercase">Digital Assistant</span>
-      //          </div>
-      //          <button
-      //            onClick={() => setIsAvatarOpen(false)}
-      //            className="text-steel-light hover:text-steel transition-colors"
-      //          >
-      //            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      //              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-      //            </svg>
-      //          </button>
-      //       </div>
+      {/* =========================================
+          FLOATING AVATAR WIDGET (NONAKTIF/DIKOMENTARI)
+          ========================================= */}
+      {/* {isAvatarOpen && (
+        <div className="fixed bottom-24 right-6 z-50 animate-in slide-in-from-bottom-5 duration-300">
+          <div className="bg-white border border-steel-lightest p-1 rounded-2xl shadow-2xl w-[350px] sm:w-[400px] h-[500px] flex flex-col relative overflow-hidden">
+            <div className="flex justify-between items-center px-4 py-3 border-b border-steel-lightest bg-white">
+               <div className="flex items-center gap-2">
+                 <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                 <span className="text-primary text-xs font-bold tracking-widest uppercase">Digital Assistant</span>
+               </div>
+               <button onClick={() => setIsAvatarOpen(false)} className="text-steel-light hover:text-steel transition-colors">
+                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                 </svg>
+               </button>
+            </div>
+            <iframe
+              src="https://chat.unith.ai/none-1579/assistit-24328?api_key=abab404e3143433e923c0b016f302081"
+              width="100%"
+              height="100%"
+              allow="microphone"
+              title="Digital Receptionist"
+              className="flex-1 border-none bg-steel-lightest"
+            ></iframe>
+          </div>
+        </div>
+      )}
 
-      //       {/* Iframe AI Chatbot */}
-      //       <iframe
-      //         src="https://chat.unith.ai/none-1579/assistit-24328?api_key=abab404e3143433e923c0b016f302081"
-      //         width="100%"
-      //         height="100%"
-      //         allow="microphone"
-      //         title="Digital Receptionist"
-      //         className="flex-1 border-none bg-steel-lightest"
-      //       ></iframe>
-      //     </div>
-      //   </div>
-      // )}
-
-      // {/* 2. Floating Toggle Button */}
-      // <button
-      //   onClick={() => setIsAvatarOpen(!isAvatarOpen)}
-      //   className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 ${
-      //       isAvatarOpen ? 'bg-steel hover:bg-gray-600' : 'bg-primary hover:bg-primary-dark'
-      //   }`}
-      // >
-      //   {isAvatarOpen ? (
-      //      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      //        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-      //      </svg>
-      //   ) : (
-      //      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      //         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-      //      </svg>
-      //   )}
-
-      //   {/* Notification Dot */}
-      //   {!isAvatarOpen && (
-      //     <span className="absolute top-0 right-0 flex h-3.5 w-3.5 -mt-0.5 -mr-0.5">
-      //       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-      //       <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border-2 border-white"></span>
-      //     </span>
-      //   )}
-      // </button>
+      <button
+        onClick={() => setIsAvatarOpen(!isAvatarOpen)}
+        className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 ${
+            isAvatarOpen ? 'bg-steel hover:bg-gray-600' : 'bg-primary hover:bg-primary-dark'
+        }`}
+      >
+        {isAvatarOpen ? (
+           <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+           </svg>
+        ) : (
+           <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+           </svg>
+        )}
+        {!isAvatarOpen && (
+          <span className="absolute top-0 right-0 flex h-3.5 w-3.5 -mt-0.5 -mr-0.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border-2 border-white"></span>
+          </span>
+        )}
+      </button>
+      */}
 
     </div>
   );
