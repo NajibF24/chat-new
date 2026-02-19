@@ -165,69 +165,69 @@ const Login = ({ setUser }) => {
         </div>
       </div>
 
-      {/* =========================================
-          FLOATING AVATAR WIDGET (DIGITAL ASSISTANT)
-         ========================================= */}
+      // {/* =========================================
+      //     FLOATING AVATAR WIDGET (DIGITAL ASSISTANT)
+      //    ========================================= */}
       
-      {/* 1. Iframe Container */}
-      {isAvatarOpen && (
-        <div className="fixed bottom-24 right-6 z-50 animate-in slide-in-from-bottom-5 duration-300">
-          <div className="bg-white border border-steel-lightest p-1 rounded-2xl shadow-2xl w-[350px] sm:w-[400px] h-[500px] flex flex-col relative overflow-hidden">
+      // {/* 1. Iframe Container */}
+      // {isAvatarOpen && (
+      //   <div className="fixed bottom-24 right-6 z-50 animate-in slide-in-from-bottom-5 duration-300">
+      //     <div className="bg-white border border-steel-lightest p-1 rounded-2xl shadow-2xl w-[350px] sm:w-[400px] h-[500px] flex flex-col relative overflow-hidden">
             
-            {/* Header Popup */}
-            <div className="flex justify-between items-center px-4 py-3 border-b border-steel-lightest bg-white">
-               <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-                  <span className="text-primary text-xs font-bold tracking-widest uppercase">Digital Assistant</span>
-               </div>
-               <button
-                 onClick={() => setIsAvatarOpen(false)}
-                 className="text-steel-light hover:text-steel transition-colors"
-               >
-                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                 </svg>
-               </button>
-            </div>
+      //       {/* Header Popup */}
+      //       <div className="flex justify-between items-center px-4 py-3 border-b border-steel-lightest bg-white">
+      //          <div className="flex items-center gap-2">
+      //             <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+      //             <span className="text-primary text-xs font-bold tracking-widest uppercase">Digital Assistant</span>
+      //          </div>
+      //          <button
+      //            onClick={() => setIsAvatarOpen(false)}
+      //            className="text-steel-light hover:text-steel transition-colors"
+      //          >
+      //            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      //              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+      //            </svg>
+      //          </button>
+      //       </div>
 
-            {/* Iframe AI Chatbot */}
-            <iframe
-              src="https://chat.unith.ai/none-1579/assistit-24328?api_key=abab404e3143433e923c0b016f302081"
-              width="100%"
-              height="100%"
-              allow="microphone"
-              title="Digital Receptionist"
-              className="flex-1 border-none bg-steel-lightest"
-            ></iframe>
-          </div>
-        </div>
-      )}
+      //       {/* Iframe AI Chatbot */}
+      //       <iframe
+      //         src="https://chat.unith.ai/none-1579/assistit-24328?api_key=abab404e3143433e923c0b016f302081"
+      //         width="100%"
+      //         height="100%"
+      //         allow="microphone"
+      //         title="Digital Receptionist"
+      //         className="flex-1 border-none bg-steel-lightest"
+      //       ></iframe>
+      //     </div>
+      //   </div>
+      // )}
 
-      {/* 2. Floating Toggle Button */}
-      <button
-        onClick={() => setIsAvatarOpen(!isAvatarOpen)}
-        className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 ${
-            isAvatarOpen ? 'bg-steel hover:bg-gray-600' : 'bg-primary hover:bg-primary-dark'
-        }`}
-      >
-        {isAvatarOpen ? (
-           <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-           </svg>
-        ) : (
-           <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-           </svg>
-        )}
+      // {/* 2. Floating Toggle Button */}
+      // <button
+      //   onClick={() => setIsAvatarOpen(!isAvatarOpen)}
+      //   className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 ${
+      //       isAvatarOpen ? 'bg-steel hover:bg-gray-600' : 'bg-primary hover:bg-primary-dark'
+      //   }`}
+      // >
+      //   {isAvatarOpen ? (
+      //      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      //        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+      //      </svg>
+      //   ) : (
+      //      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      //         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+      //      </svg>
+      //   )}
 
-        {/* Notification Dot */}
-        {!isAvatarOpen && (
-          <span className="absolute top-0 right-0 flex h-3.5 w-3.5 -mt-0.5 -mr-0.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border-2 border-white"></span>
-          </span>
-        )}
-      </button>
+      //   {/* Notification Dot */}
+      //   {!isAvatarOpen && (
+      //     <span className="absolute top-0 right-0 flex h-3.5 w-3.5 -mt-0.5 -mr-0.5">
+      //       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+      //       <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border-2 border-white"></span>
+      //     </span>
+      //   )}
+      // </button>
 
     </div>
   );
