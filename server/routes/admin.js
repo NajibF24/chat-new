@@ -36,18 +36,45 @@ router.get('/stats', requireAdmin, async (req, res) => {
     ]);
 
     // 3. Bot Popularity (Pie/Doughnut Chart)
-    const botPopularityRaw = await Chat.aggregate([
-        { $match: { role: 'assistant', botId: { $exists: true, $ne: null } } },
-        { $group: { _id: "$botId", count: { $sum: 1 } } },
+// 3. Bot Popularity (Pie/Doughnut Chart)
+    const botPopularity = await Chat.aggregate([
+        { 
+          $match: { 
+            role: 'assistant', 
+            botId: { $exists: true, $ne: null } 
+          } 
+        },
+        {
+          $lookup: {
+            from: 'bots', // Nama collection bot di MongoDB
+            localField: 'botId',
+            foreignField: '_id',
+            as: 'botDetails'
+          }
+        },
+        { 
+          $unwind: {
+            path: '$botDetails',
+            preserveNullAndEmptyArrays: false // Filter otomatis bot yang sudah dihapus
+          }
+        },
+        { 
+          $group: { 
+            _id: "$botId", 
+            name: { $first: "$botDetails.name" }, 
+            count: { $sum: 1 } 
+          } 
+        },
         { $sort: { count: -1 } },
-        { $limit: 5 }
+        { $limit: 5 },
+        {
+          $project: {
+            _id: 0,
+            name: 1,
+            count: 1
+          }
+        }
     ]);
-
-    const botPopularityPopulated = await Bot.populate(botPopularityRaw, { path: "_id", select: "name" });
-    const botPopularity = botPopularityPopulated.map(b => ({
-        name: b._id ? b._id.name : 'Unknown Bot',
-        count: b.count
-    }));
 
     // 4. Top Active Users (Data untuk tabel baru di GYS Dashboard)
     const topUsers = await Chat.aggregate([
