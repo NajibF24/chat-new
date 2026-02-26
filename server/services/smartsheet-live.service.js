@@ -71,33 +71,168 @@ class SmartsheetLiveService {
     const today = new Date();
     const msg = (userMessage || '').toLowerCase();
 
-    // Categorize rows
-    const categorized = this.categorizeRows(flatRows, today);
-
-    // Detect what user is asking
-    const intent = this.detectIntent(msg);
-
     let context = `=== DATA SMARTSHEET: ${sheetName} ===\n`;
     context += `Tanggal hari ini: ${today.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
     context += `Total data: ${flatRows.length} rows\n\n`;
 
-    // Selalu sertakan summary status
+    // ── Detect sheet type ──────────────────────────────────────
+    // Kalau ada kolom Activity/ActivityTime → ini Documentation Tracking
+    const isDocSheet = flatRows.length > 0 && (
+      'Activity' in flatRows[0] ||
+      'ActivityTime' in flatRows[0] ||
+      'Activity Time' in flatRows[0] ||
+      'File Name' in flatRows[0]
+    );
+
+    if (isDocSheet) {
+      return this.buildDocContext(flatRows, msg, today, context);
+    } else {
+      return this.buildProjectContext(flatRows, msg, today, context);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // CONTEXT UNTUK DOCUMENTATION TRACKING SHEET
+  // ─────────────────────────────────────────────────────────────
+  buildDocContext(flatRows, msg, today, context) {
+    // Normalize kolom ActivityTime (bisa 'Activity Time' atau 'ActivityTime')
+    const normalizedRows = flatRows.map(row => {
+      const normalized = { ...row };
+      if (!normalized['ActivityTime'] && normalized['Activity Time']) {
+        normalized['ActivityTime'] = normalized['Activity Time'];
+      }
+      return normalized;
+    });
+
+    // Filter berdasarkan Activity type
+    let filtered = [...normalizedRows];
+
+    if (/hapus|delete|dihapus|deleted/i.test(msg)) {
+      filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'delete');
+    } else if (/edit|diubah|modified|changed/i.test(msg)) {
+      filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'edit');
+    } else if (/upload|add|ditambah|baru|terbaru|latest|recent/i.test(msg)) {
+      filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'add');
+    }
+
+    // Filter berdasarkan waktu
+    if (/minggu ini|this week/i.test(msg)) {
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      filtered = filtered.filter(r => {
+        const d = this.parseDate(r['ActivityTime']);
+        return d && d >= weekAgo;
+      });
+    } else if (/hari ini|today/i.test(msg)) {
+      filtered = filtered.filter(r => {
+        const d = this.parseDate(r['ActivityTime']);
+        return d && d.toDateString() === today.toDateString();
+      });
+    } else if (/bulan ini|this month/i.test(msg)) {
+      filtered = filtered.filter(r => {
+        const d = this.parseDate(r['ActivityTime']);
+        return d && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+      });
+    }
+
+    // Filter berdasarkan Category
+    const catMatch = msg.match(/\b(gen|rhf|trm|bd main drive|bd)\b/i);
+    if (catMatch) {
+      filtered = filtered.filter(r =>
+        (r['Category'] || '').toLowerCase().includes(catMatch[1].toLowerCase())
+      );
+    }
+
+    // Filter berdasarkan Workstream
+    const wsMatch = msg.match(/\b(ele|civ|mec|electrical|civil|mechanical)\b/i);
+    if (wsMatch) {
+      filtered = filtered.filter(r =>
+        (r['Workstream'] || '').toLowerCase().includes(wsMatch[1].toLowerCase())
+      );
+    }
+
+    // Filter berdasarkan nama file/dokumen
+    const searchMatch = msg.match(/(?:cari|search|find|dokumen|file|bernama|nama)\s+['"]?([a-z0-9\s\-\.]{3,40})['"]?/i);
+    if (searchMatch) {
+      const term = searchMatch[1].trim().toLowerCase();
+      filtered = filtered.filter(r => {
+        const haystack = [r['File Name'], r['Document Title'], r['Document Name']]
+          .join(' ').toLowerCase();
+        return haystack.includes(term);
+      });
+    }
+
+    // Filter berdasarkan user
+    const userMatch = msg.match(/(?:by|oleh|dari|user)\s+([a-z][\w\s]{2,20})/i);
+    if (userMatch) {
+      const name = userMatch[1].trim().toLowerCase();
+      filtered = filtered.filter(r => (r['User'] || '').toLowerCase().includes(name));
+    }
+
+    // Sort terbaru dulu
+    filtered.sort((a, b) => {
+      const da = this.parseDate(a['ActivityTime']) || new Date(0);
+      const db = this.parseDate(b['ActivityTime']) || new Date(0);
+      return db - da;
+    });
+
+    // Ambil max 50 rows untuk context
+    const limited = filtered.slice(0, 50);
+    const truncated = filtered.length > 50;
+
+    context += `--- RINGKASAN AKTIVITAS ---\n`;
+    const addCount = normalizedRows.filter(r => r['Activity'] === 'Add').length;
+    const editCount = normalizedRows.filter(r => r['Activity'] === 'Edit').length;
+    const deleteCount = normalizedRows.filter(r => r['Activity'] === 'Delete').length;
+    context += `📥 Add: ${addCount} | ✏️ Edit: ${editCount} | 🗑️ Delete: ${deleteCount}\n\n`;
+
+    context += `--- DOKUMEN (${limited.length}${truncated ? ` dari ${filtered.length}` : ''}) ---\n`;
+
+    // Build tabel dokumen
+    context += `| File Name | Activity | ActivityTime | User | Category | Workstream | Link |\n`;
+    context += `|:---|:---:|:---|:---|:---:|:---:|:---|\n`;
+
+    limited.forEach(row => {
+      const fileName = this.truncate(row['File Name'] || '-', 40);
+      const activity = row['Activity'] || '-';
+      const activityTime = this.formatDocDate(row['ActivityTime']);
+      const user = this.truncate(row['User'] || '-', 20);
+      const category = row['Category'] || '-';
+      const workstream = row['Workstream'] || '-';
+      const link = row['Documents Link'] || row['Link of the document'] || '';
+      const linkStr = link ? `[Buka](${link})` : '-';
+
+      context += `| ${fileName} | ${activity} | ${activityTime} | ${user} | ${category} | ${workstream} | ${linkStr} |\n`;
+    });
+
+    if (truncated) {
+      context += `\n⚠️ Menampilkan 50 dari ${filtered.length} hasil. Gunakan filter lebih spesifik.\n`;
+    }
+
+    return context;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // CONTEXT UNTUK PROJECT INTAKE SHEET
+  // ─────────────────────────────────────────────────────────────
+  buildProjectContext(flatRows, msg, today, context) {
+    const categorized = this.categorizeRows(flatRows, today);
+
     context += `--- RINGKASAN STATUS ---\n`;
     context += `✅ Completed: ${categorized.completed.length}\n`;
     context += `🔴 Overdue: ${categorized.overdue.length}\n`;
     context += `🟢 Active/On Track: ${categorized.active.length}\n`;
     context += `⛔ Canceled: ${categorized.canceled.length}\n\n`;
 
-    // Berikan data yang relevan sesuai intent
-    if (intent === 'overdue' || /overdue|terlambat|delay|melewati/i.test(msg)) {
+    if (/overdue|terlambat|delay|melewati/i.test(msg)) {
       context += `--- PROYEK OVERDUE (${categorized.overdue.length}) ---\n`;
       context += this.rowsToTable(categorized.overdue, today);
 
-    } else if (intent === 'completed' || /selesai|complete|done|finish/i.test(msg)) {
+    } else if (/selesai|complete|done|finish/i.test(msg)) {
       context += `--- PROYEK COMPLETED (${categorized.completed.length}) ---\n`;
       context += this.rowsToTable(categorized.completed, today);
 
-    } else if (intent === 'active' || /aktif|active|on.?track|berjalan/i.test(msg)) {
+    } else if (/aktif|active|on.?track|berjalan/i.test(msg)) {
       context += `--- PROYEK ACTIVE (${categorized.active.length}) ---\n`;
       context += this.rowsToTable(categorized.active, today);
 
@@ -105,18 +240,12 @@ class SmartsheetLiveService {
       context += `--- DATA BUDGET PROYEK ---\n`;
       context += this.rowsToTableWithBudget(flatRows);
 
-    } else if (/pm|project manager|siapa|who/i.test(msg)) {
-      context += `--- SEMUA PROYEK DENGAN PM ---\n`;
-      context += this.rowsToTable(flatRows.filter(r => r['Project Status'] !== 'Complete'), today);
-
     } else {
-      // Default: kirim semua data aktif + overdue
       const relevant = [...categorized.overdue, ...categorized.active];
       context += `--- PROYEK AKTIF & OVERDUE (${relevant.length}) ---\n`;
       context += this.rowsToTable(relevant, today);
-
       if (categorized.completed.length > 0) {
-        context += `\n(${categorized.completed.length} proyek Completed tidak ditampilkan. Minta spesifik untuk melihat.)\n`;
+        context += `\n(${categorized.completed.length} proyek Completed tidak ditampilkan.)\n`;
       }
     }
 
@@ -281,6 +410,15 @@ class SmartsheetLiveService {
       const d = new Date(str);
       return isNaN(d.getTime()) ? null : d;
     } catch { return null; }
+  }
+
+  formatDocDate(str) {
+    const d = this.parseDate(str);
+    if (!d) return '-';
+    return d.toLocaleDateString('id-ID', {
+      day: '2-digit', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
   }
 
   formatDate(str) {
