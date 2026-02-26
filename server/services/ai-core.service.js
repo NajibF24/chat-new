@@ -1,3 +1,7 @@
+// server/services/ai-core.service.js
+// ✅ Updated: Smartsheet sekarang langsung fetch dari API (no cache)
+// API Key & Sheet ID diambil dari konfigurasi bot di MongoDB
+
 import OpenAI from 'openai';
 import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
@@ -8,18 +12,9 @@ import path from 'path';
 import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import Bot from '../models/Bot.js';
-import SmartsheetJSONService from './smartsheet-json.service.js';
-import SmartsheetContextService from './smartsheet-context.service.js';  // ← NEW
+import SmartsheetLiveService from './smartsheet-live.service.js';  // ✅ LIVE, no cache
 import FileManagerService from './file-manager.service.js';
 import KouventaService from './kouventa.service.js';
-
-// Token budget:
-// GPT-4o max: 128K tokens
-// System prompt + history: ~3-5K
-// User message: ~0.5K
-// File attachment: ~2K
-// → Max untuk data Smartsheet: ~15K tokens (aman)
-const MAX_SMARTSHEET_TOKENS = 15000;
 
 class AICoreService {
   constructor() {
@@ -27,56 +22,33 @@ class AICoreService {
     this.fileManager = new FileManagerService();
   }
 
-  // Format array ke markdown table — hanya dipakai untuk data NON-Smartsheet
-  formatToCompactTable(data) {
-    if (!Array.isArray(data) || data.length === 0) return "DATA KOSONG";
-    const allKeys = Object.keys(data[0]);
-    const columns = allKeys.filter(k => !['id', 'rowId', 'createdAt', 'modifiedAt'].includes(k));
-    let table = `| ${columns.join(' | ')} |\n`;
-    table += `| ${columns.map(() => '---').join(' | ')} |\n`;
-    data.forEach(row => {
-      const values = columns.map(col => {
-        const val = row[col];
-        if (val === null || val === undefined || String(val).trim() === '') return '-';
-        return String(val).replace(/\|/g, '/').replace(/\n/g, ' ').trim();
-      });
-      table += `| ${values.join(' | ')} |\n`;
-    });
-    return table;
-  }
-
-  // Flatten Smartsheet row: {data: {"Col": {value: "x"}}} → {"Col": "x"}
-  flattenSmartsheetRows(projects) {
-    return projects.map(p => {
-      const flat = {};
-      Object.entries(p.data || {}).forEach(([colName, cellData]) => {
-        flat[colName] = cellData?.value ?? '';
-      });
-      return flat;
-    });
-  }
-
+  // ─────────────────────────────────────────────────────────────
+  // Deteksi apakah pertanyaan butuh data dari Smartsheet
+  // ─────────────────────────────────────────────────────────────
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
     const dataKeywords = [
       'berikan', 'cari', 'list', 'daftar', 'semua', 'all', 'tampilkan', 'lihat',
       'show', 'get', 'find', 'temukan', 'search',
-      'project', 'dokumen', 'document', 'file', 'tracking', 'revisi', 'version',
+      'project', 'proyek', 'dokumen', 'document', 'file', 'tracking',
       'status', 'progress', 'summary', 'analisa', 'data', 'total', 'berapa',
       'latest', 'terbaru', 'recent', 'this week', 'minggu ini', 'today', 'hari ini',
       'update', 'history', 'riwayat',
       'modified', 'upload', 'added', 'deleted', 'edit', 'activity', 'siapa', 'who',
-      'folder', 'workstream', 'category', 'user',
       'overdue', 'delay', 'terlambat', 'laporan', 'report',
       'health', 'red', 'merah', 'kritis', 'critical',
-      'versi', 'mana', 'semua proyek', 'all project',
+      'budget', 'biaya', 'cost', 'anggaran',
       'statistik', 'stats', 'count', 'jumlah',
+      'pm', 'manager', 'department',
     ];
     return dataKeywords.some(k => lowerMsg.includes(k))
       || message.includes('_')
       || message.includes('.');
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Extract content dari file attachment
+  // ─────────────────────────────────────────────────────────────
   async extractFileContent(attachedFile) {
     const physicalPath = attachedFile.serverPath || attachedFile.path;
     if (!physicalPath || !fs.existsSync(physicalPath)) return "";
@@ -99,10 +71,14 @@ class AICoreService {
     } catch (e) { return ""; }
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // MAIN: Process message dari user
+  // ─────────────────────────────────────────────────────────────
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
+    // Buat thread baru jika belum ada
     if (!threadId) {
       const title = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
       const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
@@ -115,68 +91,64 @@ class AICoreService {
     // ── 1. KOUVENTA ──────────────────────────────────────────────
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
-        const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
+        const kouventa = new KouventaService(
+          bot.kouventaConfig.apiKey,
+          bot.kouventaConfig.endpoint
+        );
         const reply = await kouventa.generateResponse(message || "");
         contextData += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
       } catch (error) {
-        console.error("Kouventa Error:", error);
+        console.error("Kouventa Error:", error.message);
       }
     }
 
-    // ── 2. SMARTSHEET (TOKEN-SAFE) ───────────────────────────────
-    if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled) {
+    // ── 2. SMARTSHEET LIVE FETCH ─────────────────────────────────
+    if (bot.smartsheetConfig?.enabled && this.isDataQuery(message)) {
       try {
-        const service = new SmartsheetJSONService();
+        // ✅ Ambil API Key dari bot config, fallback ke .env
+        const apiKey =
+          bot.smartsheetConfig.apiKey ||
+          process.env.SMARTSHEET_API_KEY;
 
-        // ✅ Ambil sheetId dari konfigurasi BOT, bukan dari .env
+        // ✅ Ambil Sheet ID dari bot config, fallback ke .env
         const sheetId =
           bot.smartsheetConfig.sheetId ||
           bot.smartsheetConfig.primarySheetId ||
           process.env.SMARTSHEET_PRIMARY_SHEET_ID;
 
-        if (!sheetId) {
-          console.warn(`⚠️ Bot "${bot.name}": sheetId tidak dikonfigurasi`);
-          contextData += `\n\n=== DATA SMARTSHEET ===\nSheet ID belum dikonfigurasi di bot ini.\n`;
+        if (!apiKey) {
+          console.warn(`⚠️ Bot "${bot.name}": Smartsheet API Key tidak dikonfigurasi`);
+          contextData += `\n\n=== DATA SMARTSHEET ===\n⚠️ API Key belum dikonfigurasi di bot ini.\n`;
+        } else if (!sheetId) {
+          console.warn(`⚠️ Bot "${bot.name}": Sheet ID tidak dikonfigurasi`);
+          contextData += `\n\n=== DATA SMARTSHEET ===\n⚠️ Sheet ID belum dikonfigurasi di bot ini.\n`;
         } else {
-          console.log(`📊 Bot "${bot.name}" → Sheet ID: ${sheetId}`);
+          console.log(`📊 Bot "${bot.name}" → Fetching Sheet ID: ${sheetId}`);
 
-          const rawData = await service.getData(sheetId);
-          const projectsArray = rawData?.projects || [];
+          // ✅ LIVE FETCH - langsung dari API
+          const smartsheet = new SmartsheetLiveService(apiKey);
+          const sheet = await smartsheet.fetchSheet(sheetId);
+          const flatRows = smartsheet.processToFlatRows(sheet);
 
-          console.log(`📊 Total rows di cache: ${projectsArray.length}`);
+          console.log(`📊 Total rows fetched: ${flatRows.length}`);
 
-          if (projectsArray.length === 0) {
-            contextData += `\n\n=== DATA SMARTSHEET ===\nData kosong. Jalankan: node fetch-smartsheet.js\n`;
+          if (flatRows.length === 0) {
+            contextData += `\n\n=== DATA SMARTSHEET ===\nSheet ditemukan tapi tidak ada data.\n`;
           } else {
-            // ✅ Flatten nested structure
-            const flatRows = this.flattenSmartsheetRows(projectsArray);
+            // ✅ Build context yang relevan dengan pertanyaan user
+            const aiContext = smartsheet.buildAIContext(flatRows, message, sheet.name);
+            contextData += `\n\n${aiContext}\n`;
 
-            // ✅ SMART FILTER: hanya kirim data yang relevan ke AI
-            // Ini yang mencegah context_length_exceeded
-            const smartContext = SmartsheetContextService.buildContext(flatRows, message);
-
-            // Cek estimasi token sebelum dikirim
-            const estimatedTokens = SmartsheetContextService.estimateTokens(smartContext);
-            console.log(`📊 Context tokens estimate: ~${estimatedTokens} (limit: ${MAX_SMARTSHEET_TOKENS})`);
-
-            if (estimatedTokens > MAX_SMARTSHEET_TOKENS) {
-              // Fallback: kirim summary saja
-              console.warn(`⚠️ Context terlalu besar (${estimatedTokens} tokens), fallback ke summary`);
-              const fallbackContext = SmartsheetContextService.buildStatsSummary(flatRows, message);
-              contextData += `\n\n${fallbackContext}\n`;
-              contextData += `\n⚠️ Data terlalu besar untuk ditampilkan penuh. Silakan ajukan pertanyaan yang lebih spesifik (filter per tanggal, user, atau kategori).\n`;
-            } else {
-              contextData += `\n\n${smartContext}\n`;
-            }
+            console.log(`📊 Context built: ~${Math.ceil(aiContext.length / 4)} tokens`);
           }
         }
       } catch (e) {
         console.error(`❌ Smartsheet Error (bot "${bot.name}"):`, e.message);
-        contextData += `\n\n=== DATA SMARTSHEET ===\nGagal memuat data: ${e.message}\n`;
+        contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
       }
     }
 
-    // ── 3. OPENAI ────────────────────────────────────────────────
+    // ── 3. BUILD MESSAGES UNTUK OPENAI ──────────────────────────
     const userContent = [];
     if (message) userContent.push({ type: "text", text: message });
 
@@ -199,16 +171,17 @@ class AICoreService {
 
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
-      `[INFO: HARI INI ${today}]`,
+      `[HARI INI: ${today}]`,
       contextData,
-      'Gunakan data di atas untuk menjawab pertanyaan user. Jika tidak ada data yang relevan, katakan demikian.',
+      contextData
+        ? 'Gunakan data di atas untuk menjawab pertanyaan user secara akurat. Hitung berdasarkan data yang tersedia, jangan mengarang.'
+        : '',
     ].filter(Boolean).join('\n\n');
 
-    // Log total context size untuk monitoring
-    const totalContextChars = systemPrompt.length + (message?.length || 0);
-    const totalContextTokensEst = Math.ceil(totalContextChars / 4);
-    console.log(`📝 Total context estimate: ~${totalContextTokensEst} tokens`);
+    // Log total context size
+    console.log(`📝 Total context: ~${Math.ceil(systemPrompt.length / 4)} tokens`);
 
+    // ── 4. CALL OPENAI ───────────────────────────────────────────
     const completion = await this.openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -217,12 +190,12 @@ class AICoreService {
         { role: 'user', content: userContent }
       ],
       temperature: 0.1,
-      max_tokens: 2000,  // batasi output agar sisa budget cukup
+      max_tokens: 2000,
     });
 
     const aiResponse = completion.choices[0].message.content;
 
-    // ── 4. SAVE ──────────────────────────────────────────────────
+    // ── 5. SAVE CHAT ─────────────────────────────────────────────
     let savedAttachments = [];
     if (attachedFile) {
       savedAttachments.push({
@@ -234,8 +207,18 @@ class AICoreService {
       });
     }
 
-    await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
-    await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
+    await new Chat({
+      userId, botId, threadId,
+      role: 'user',
+      content: message || '',
+      attachedFiles: savedAttachments
+    }).save();
+
+    await new Chat({
+      userId, botId, threadId,
+      role: 'assistant',
+      content: aiResponse
+    }).save();
 
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }
