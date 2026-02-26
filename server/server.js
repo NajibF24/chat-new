@@ -15,7 +15,6 @@ import smartsheetRoutes from './routes/smartsheet.js';
 
 dotenv.config();
 
-// (Opsional) Kita tidak pakai __dirname untuk static file, tapi tetap berguna untuk hal lain
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -26,23 +25,9 @@ connectDB();
 
 app.set('trust proxy', 1);
 
-const allowedOrigins = [
-  'https://chat.gyssteel.com',
-  'http://chat.gyssteel.com',
-  'http://localhost:8080',
-  'http://localhost:3000', // Opsional: Tambahan untuk dev frontend
-  'http://localhost:5173'  // Opsional: Tambahan untuk dev Vite
-];
-
+// CORS: Izinkan akses dari mana saja karena kita berlindung di balik Nginx
 app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
-      callback(null, true);
-    } else {
-      callback(null, true); 
-    }
-  },
+  origin: true, 
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With']
@@ -81,14 +66,13 @@ app.use((req, res, next) => {
 // =================================================================
 // 📂 FILE SERVING CONFIGURATION (DOCKER COMPATIBLE)
 // =================================================================
-// Gunakan process.cwd() agar selalu menunjuk ke /usr/src/app di dalam container
+// Gunakan process.cwd() agar menunjuk ke /usr/src/app (Docker WORKDIR)
 const filesPath = path.join(process.cwd(), 'data', 'files');
-const generatedPath = path.join(filesPath, 'generated'); // ✅ Tambahan: Path khusus DALL-E
+const generatedPath = path.join(filesPath, 'generated'); // ✅ Folder khusus DALL-E
 
-// Log lokasi agar kita tahu di mana server mencari file
 console.log('📂 Serving Static Files from:', filesPath); 
 
-// Pastikan folder ada
+// Pastikan struktur folder ada saat server start
 (async () => {
     try { 
       await fs.mkdir(filesPath, { recursive: true }); 
@@ -100,8 +84,8 @@ console.log('📂 Serving Static Files from:', filesPath);
 })();
 
 // ✅ SERVE FILES STATICALLY
+// Nginx akan meneruskan request /api/files ke sini
 app.use('/api/files', (req, res, next) => {
-  // Allow cross-origin for images agar bisa dimuat di frontend
   res.setHeader('Access-Control-Allow-Origin', '*'); 
   next();
 }, express.static(filesPath));
