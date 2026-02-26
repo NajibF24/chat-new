@@ -217,7 +217,10 @@ const Chat = ({ user, handleLogout }) => {
           ) : (
             messages.map((msg, index) => (
               // 4. MENGGUNAKAN COMPONENT ChatMessage
-              <ChatMessage key={index} message={msg} />
+              <ChatMessage 
+                  key={msg._id || `${msg.role}-${msg.createdAt}-${index}`} // Gunakan ID unik jika ada
+                  message={msg} 
+                />
             ))
           )}
           {loading && <div className="text-xs text-steel animate-pulse">AI is thinking...</div>}

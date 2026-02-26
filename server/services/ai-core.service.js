@@ -11,7 +11,7 @@ import Thread from '../models/Thread.js';
 import Bot from '../models/Bot.js';
 import SmartsheetJSONService from './smartsheet-json.service.js';
 import FileManagerService from './file-manager.service.js';
-import KouventaService from './kouventa.service.js'; //
+import KouventaService from './kouventa.service.js';
 
 class AICoreService {
   constructor() {
@@ -36,29 +36,41 @@ class AICoreService {
   }
 
   // ===========================================================================
-  // 2. UTILS: EKSTRAKSI FILE
+  // 2. UTILS: EKSTRAKSI FILE (FIX: Memastikan Path Fisik yang dibaca)
   // ===========================================================================
   async extractFileContent(attachedFile) {
-      if (!attachedFile || !attachedFile.path) return null;
+      // Gunakan serverPath (lokasi lokal) jika ada, jika tidak gunakan path asli
+      const physicalPath = attachedFile.serverPath || attachedFile.path;
+      
+      if (!physicalPath || !fs.existsSync(physicalPath)) {
+          console.error("❌ File tidak ditemukan di server:", physicalPath);
+          return "";
+      }
+
       const originalName = attachedFile.originalname || '';
       const ext = path.extname(originalName).toLowerCase();
       let content = null;
+
       try {
           if (ext === '.pdf') {
-              const dataBuffer = fs.readFileSync(attachedFile.path);
+              const dataBuffer = fs.readFileSync(physicalPath);
               const data = await pdf(dataBuffer);
               content = data.text;
           } else if (ext === '.docx') {
-              const result = await mammoth.extractRawText({ path: attachedFile.path });
+              const result = await mammoth.extractRawText({ path: physicalPath });
               content = result.value;
           } else if (ext === '.xlsx' || ext === '.xls') {
-              const workbook = XLSX.readFile(attachedFile.path);
+              const workbook = XLSX.readFile(physicalPath);
               content = workbook.SheetNames.map(name => XLSX.utils.sheet_to_csv(workbook.Sheets[name])).join('\n');
           } else {
-               content = fs.readFileSync(attachedFile.path, 'utf8');
+               content = fs.readFileSync(physicalPath, 'utf8');
           }
-          return content ? `\n\n[ISI FILE: ${originalName}]\n${content}\n` : "";
-      } catch (e) { return ""; }
+          
+          return content ? `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 50000)}\n[END FILE]\n` : "";
+      } catch (e) { 
+          console.error("❌ Error reading file content:", e.message);
+          return ""; 
+      }
   }
 
   // ===========================================================================
@@ -68,7 +80,7 @@ class AICoreService {
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
-    // Setup Thread
+    // 1. Setup Thread
     if (!threadId) {
         const title = message ? (message.substring(0, 30)) : `Chat with ${bot.name}`;
         const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
@@ -78,7 +90,7 @@ class AICoreService {
         await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
     }
 
-    // --- DASHBOARD FILES (ISOLASI) ---
+    // 2. DASHBOARD FILES (ISOLASI)
     if (bot.smartsheetConfig?.enabled && !attachedFile && this.fileManager.isFileRequest(message || '')) {
         const query = this.fileManager.extractFileQuery(message || '');
         const foundFiles = await this.fileManager.searchFiles(query);
@@ -92,27 +104,21 @@ class AICoreService {
 
     let contextData = "";
 
-    // --- KOUVENTA INTEGRATION ---
+    // 3. KOUVENTA INTEGRATION
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
         try {
-            console.log("🔍 Mengambil referensi dari Kouventa...");
             const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
-            
-            // Gabungkan teks file (jika ada) ke dalam prompt Kouventa
             let fullPrompt = message || "";
-            if (attachedFile) {
+            if (attachedFile && !attachedFile.mimetype?.startsWith('image/')) {
                 const fileText = await this.extractFileContent(attachedFile);
                 if (fileText) fullPrompt += fileText;
             }
-
             const kouventaReply = await kouventa.generateResponse(fullPrompt);
-            contextData += `\n\n=== REFERENSI KOUVENTA ===\n${kouventaReply}\n=== END REFERENSI ===\n`;
-        } catch (error) {
-            console.error("Kouventa Integration Error:", error);
-        }
+            contextData += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${kouventaReply}\n`;
+        } catch (error) { console.error("Kouventa Error:", error); }
     }
 
-    // --- SMARTSHEET LOGIC ---
+    // 4. SMARTSHEET LOGIC
     if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled) {
         try {
             const service = new SmartsheetJSONService();
@@ -122,27 +128,46 @@ class AICoreService {
         } catch (e) { console.error("Smartsheet Error:", e); }
     }
 
-    // --- OPENAI EXECUTION ---
+    // 5. OPENAI EXECUTION (FIX: Mengirimkan teks PDF ke AI)
     const userContent = [];
     if (message) userContent.push({ type: "text", text: message });
-    if (attachedFile && attachedFile.mimetype?.startsWith('image/')) {
-        const imgBuffer = fs.readFileSync(attachedFile.path);
-        userContent.push({ type: "image_url", image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` } });
+
+    if (attachedFile) {
+        if (attachedFile.mimetype?.startsWith('image/')) {
+            const imgBuffer = fs.readFileSync(attachedFile.path);
+            userContent.push({ type: "image_url", image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` } });
+        } else {
+            // EKSTRAK TEKS PDF/DOCX DAN MASUKKAN KE PROMPT
+            const extractedText = await this.extractFileContent(attachedFile);
+            if (extractedText) {
+                userContent.push({ type: "text", text: extractedText });
+            }
+        }
     }
 
-    const systemPrompt = `${bot.prompt || bot.systemPrompt}\n\n${contextData}`;
-    const messagesPayload = [{ role: 'system', content: systemPrompt }, ...history, { role: 'user', content: userContent }];
+    const systemPrompt = `${bot.prompt || bot.systemPrompt}\n\n${contextData}\nGunkan data/referensi di atas jika relevan dengan pertanyaan user.`;
+    const messagesPayload = [
+        { role: 'system', content: systemPrompt },
+        ...history.map(h => ({ role: h.role, content: h.content })),
+        { role: 'user', content: userContent }
+    ];
 
-    const completion = await this.openai.chat.completions.create({ model: 'gpt-4o', messages: messagesPayload });
+    const completion = await this.openai.chat.completions.create({ 
+        model: 'gpt-4o', 
+        messages: messagesPayload,
+        temperature: 0.2
+    });
     const aiResponse = completion.choices[0].message.content;
 
-    // Save Attachments
+    // 6. SAVE ATTACHMENTS (FIX: Memisahkan URL Browser dan Path Server)
     let savedAttachments = [];
     if (attachedFile) {
         savedAttachments.push({
-            name: attachedFile.originalname,
-            path: attachedFile.url || `/api/files/${attachedFile.filename}`, 
-            type: attachedFile.mimetype?.includes('image') ? 'image' : 'file'
+            name: attachedFile.originalname || attachedFile.filename,
+            path: attachedFile.url || `/api/files/${attachedFile.filename}`, // URL untuk Browser (Klik)
+            serverPath: attachedFile.path, // PATH asli untuk AI (Baca)
+            type: attachedFile.mimetype?.includes('image') ? 'image' : (attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file'),
+            size: (attachedFile.size / 1024).toFixed(1)
         });
     }
 

@@ -15,13 +15,18 @@ body {
 
 /* 2. Stabilisasi Gambar (Mencegah Glitch/Lompatan) */
 img {
-  /* Mencegah gambar yang belum dimuat merusak posisi scroll */
-  content-visibility: auto;
-  
-  /* Memberikan background placeholder selama loading */
-  background-color: #f3f4f6; /* Warna abu-abu terang (steel-lightest) */
+  display: block;
+  max-width: 100%;
+  height: auto;
+  /* Berikan rasio aspek standar agar kontainer tidak 0px saat loading */
+  aspect-ratio: auto; 
+  contain-intrinsic-size: 300px; 
 }
-
+/* Memastikan transisi render tidak kasar */
+.prose img {
+  image-rendering: -webkit-optimize-contrast;
+  backface-visibility: hidden;
+}
 /* 3. Animasi Shimmer (Efek Loading Halus) */
 .image-loading {
   position: relative;
