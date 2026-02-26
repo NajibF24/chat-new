@@ -142,10 +142,16 @@ const Chat = ({ user, handleLogout }) => {
         }
     }
 
+// --- PERBAIKAN: Update state lokal dengan data lengkap ---
     const userMessage = {
         role: 'user',
         content: currentInput,
-        attachedFiles: uploadedFileData ? [{ name: uploadedFileData.originalname }] : []
+        attachedFiles: uploadedFileData ? [{ 
+            name: uploadedFileData.originalname,
+            path: uploadedFileData.url, // Tambahkan URL publik
+            type: uploadedFileData.mimetype?.includes('image') ? 'image' : (uploadedFileData.mimetype?.includes('pdf') ? 'pdf' : 'file'),
+            size: (uploadedFileData.size / 1024).toFixed(1)
+        }] : []
     };
     setMessages(prev => [...prev, userMessage]);
 

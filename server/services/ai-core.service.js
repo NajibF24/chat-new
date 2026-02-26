@@ -280,16 +280,19 @@ ${contextData}
     });
     aiResponse = completion.choices[0].message.content;
 
+// --- PERBAIKAN: Simpan URL Publik ke Database ---
     let savedAttachments = [];
     if (attachedFile) {
         savedAttachments.push({
             name: attachedFile.originalname || attachedFile.filename,
-            path: attachedFile.path,
-            type: attachedFile.mimetype?.includes('image') ? 'image' : 'file',
+            // Gunakan url (URL publik), bukan path (lokasi folder server)
+            path: attachedFile.url || `/api/files/${attachedFile.filename}`, 
+            type: attachedFile.mimetype?.includes('image') ? 'image' : (attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file'),
             size: (attachedFile.size / 1024).toFixed(1)
         });
     }
 
+    // Simpan pesan user dengan attachment yang sudah diperbaiki
     await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
     await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
 
