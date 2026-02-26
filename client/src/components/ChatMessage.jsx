@@ -103,36 +103,49 @@ function ChatMessage({ message }) {
               </p>
 
               <div className="grid grid-cols-1 gap-2">
-                {message.attachedFiles.map((file, idx) => (
-                  <div key={idx} className={`rounded-lg border overflow-hidden ${isUser ? 'bg-white/10 border-white/20' : 'bg-steel-lightest border-steel-light/30'}`}>
+                {message.attachedFiles.map((file, idx) => {
+                  // Penambahan Logika Deteksi Tipe File yang lebih kuat
+                  const fileName = file.name?.toLowerCase() || '';
+                  const isImage = file.type?.includes('image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
+                  const isPDF = file.type?.includes('pdf') || fileName.endsWith('.pdf');
 
-                    {file.type === 'image' ? (
-                      <div className="relative group/img cursor-pointer" onClick={() => window.open(file.path, '_blank')}>
-                        <img
-                          src={file.path}
-                          alt={file.name}
-                          className="w-full h-auto object-contain max-h-[200px] bg-black/5"
-                        />
-                        <div className="p-2 flex justify-between items-center text-[10px]">
-                           <span className={`truncate max-w-[80%] font-medium ${isUser ? 'text-white' : 'text-gray-800'}`}>{file.name}</span>
-                           <span className={`opacity-60 ${isUser ? 'text-white' : 'text-steel'}`}>View ↗</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <a href={file.path} target="_blank" rel="noreferrer" className="flex items-center p-3 hover:bg-black/5 transition-colors">
-                        <div className={`mr-3 w-8 h-8 rounded flex items-center justify-center text-lg ${isUser ? 'bg-white/20' : 'bg-white shadow-sm border border-steel-light/30'}`}>
-                          {file.name?.toLowerCase().endsWith('.pdf') ? '📕' : '📄'}
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                           <div className={`font-bold text-xs truncate ${isUser ? 'text-white' : 'text-primary-dark'}`}>{file.name}</div>
-                           <div className={`text-[9px] opacity-80 ${isUser ? 'text-white/70' : 'text-steel'}`}>{file.size ? `${file.size} KB` : 'Document'}</div>
-                        </div>
-                        <div className={`ml-2 text-xs opacity-60 ${isUser ? 'text-white' : 'text-steel'}`}>⬇</div>
-                      </a>
-                    )}
+                  return (
+                    <div key={idx} className={`rounded-lg border overflow-hidden ${isUser ? 'bg-white/10 border-white/20' : 'bg-steel-lightest border-steel-light/30'}`}>
 
-                  </div>
-                ))}
+                      {isImage ? (
+                        <div className="relative group/img cursor-pointer" onClick={() => window.open(file.path, '_blank')}>
+                          <img
+                            src={file.path}
+                            alt={file.name}
+                            className="w-full h-auto object-contain max-h-[300px] bg-black/5"
+                            onError={(e) => {
+                                e.target.onerror = null; 
+                                e.target.src = 'https://placehold.co/400x300?text=Image+Not+Found';
+                            }}
+                          />
+                          <div className={`p-2 flex justify-between items-center text-[10px] border-t ${isUser ? 'border-white/10' : 'border-steel-light/30'}`}>
+                             <span className={`truncate max-w-[80%] font-medium ${isUser ? 'text-white' : 'text-gray-800'}`}>{file.name}</span>
+                             <span className={`opacity-60 ${isUser ? 'text-white' : 'text-steel'}`}>View ↗</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <a href={file.path} target="_blank" rel="noreferrer" className="flex items-center p-3 hover:bg-black/5 transition-colors">
+                          <div className={`mr-3 w-10 h-10 rounded flex items-center justify-center text-2xl ${isUser ? 'bg-white/20' : 'bg-white shadow-sm border border-steel-light/30'}`}>
+                            {isPDF ? '📕' : '📄'}
+                          </div>
+                          <div className="flex-1 overflow-hidden">
+                             <div className={`font-bold text-xs truncate ${isUser ? 'text-white' : 'text-primary-dark'}`}>{file.name}</div>
+                             <div className={`text-[9px] opacity-80 ${isUser ? 'text-white/70' : 'text-steel'}`}>
+                                {isPDF ? 'PDF Document' : (file.size ? `${file.size} KB` : 'File')}
+                             </div>
+                          </div>
+                          <div className={`ml-2 text-xs opacity-60 ${isUser ? 'text-white' : 'text-steel'}`}>↗</div>
+                        </a>
+                      )}
+
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
