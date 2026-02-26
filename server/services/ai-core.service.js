@@ -22,91 +22,90 @@ class AICoreService {
   // ===========================================================================
   // 1. UTILS: FORMAT DATA SMARTSHEET (COMPRESSION MODE - NO DATA LOSS)
   // ===========================================================================
+ // ===========================================================================
+  // 1. UTILS: FORMAT DATA SMARTSHEET (AGRESSIVE CLEANING & DETECTION)
+  // ===========================================================================
   formatSmartsheetData(data) {
-    if (!Array.isArray(data) || data.length === 0) return "DATA KOSONG.";
+    // 1. Validasi Dasar
+    if (!Array.isArray(data) || data.length === 0) return "DATA KOSONG: Server tidak menerima data dari Smartsheet.";
 
-    // --- A. DETEKSI JENIS SHEET & TENTUKAN KOLOM PENTING ---
-    const firstRow = data[0];
+    // 2. Filter Baris Sampah
+    // Terkadang Smartsheet mengirim baris yang kelihatannya ada (objek ada) tapi semua nilainya null/empty.
+    const cleanRows = data.filter(row => {
+        return Object.values(row).some(val => 
+            val !== null && 
+            val !== undefined && 
+            String(val).trim() !== '' &&
+            String(val).trim() !== 'null'
+        );
+    });
+
+    if (cleanRows.length === 0) return "DATA KOSONG: Sheet terbaca tapi tidak ada isi teks di dalamnya.";
+
+    // 3. Ambil Sampel Baris Pertama untuk Deteksi Kolom
+    const firstRow = cleanRows[0];
     const allKeys = Object.keys(firstRow);
     
-    // Cek apakah ini Sheet Project atau Dokumen
-    const isProjectSheet = allKeys.some(k => k.toLowerCase().includes('project status') || k.toLowerCase().includes('progress'));
+    // 4. Deteksi Jenis Sheet (Project vs Document)
+    const keysLower = allKeys.map(k => k.toLowerCase());
+    const isProjectSheet = keysLower.some(k => k.includes('project name') || k.includes('project status'));
 
     let columnsToKeep = [];
 
     if (isProjectSheet) {
-        // MODE PROJECT: Ambil kolom-kolom krusial untuk manajemen proyek
+        // Kolom Prioritas untuk Ringkasan Project
         columnsToKeep = allKeys.filter(k => {
-            const lower = k.toLowerCase();
-            return lower.includes('name') || 
-                   lower.includes('status') || 
-                   lower.includes('progress') || 
-                   lower.includes('date') || 
-                   lower.includes('manager') || 
-                   lower.includes('health') ||
-                   lower.includes('issues') ||
-                   lower.includes('remarks'); // Remarks penting untuk konteks
+            const low = k.toLowerCase();
+            return low.includes('project name') || 
+                   low.includes('status') || 
+                   low.includes('progress') || 
+                   low.includes('end date') || 
+                   low.includes('manager') || 
+                   low.includes('health');
         });
     } else {
-        // MODE DOKUMEN: Ambil kolom tracking, user, dan link
+        // Kolom Prioritas untuk Tracking Dokumen
         columnsToKeep = allKeys.filter(k => {
-            const lower = k.toLowerCase();
-            return lower.includes('date') || 
-                   lower.includes('title') || 
-                   lower.includes('name') || 
-                   lower.includes('user') || 
-                   lower.includes('activity') || 
-                   lower.includes('link') || 
-                   lower.includes('revision');
+            const low = k.toLowerCase();
+            return low.includes('date') || 
+                   low.includes('title') || 
+                   low.includes('user') || 
+                   low.includes('activity') || 
+                   low.includes('link') || 
+                   low.includes('ref id');
         });
     }
 
-    // Jika filter gagal (nama kolom aneh), pakai semua kolom kecuali ID sistem
+    // Jika filter kolom terlalu ketat sehingga kosong, ambil semua kolom kecuali ID sistem
     if (columnsToKeep.length === 0) {
-        columnsToKeep = allKeys.filter(k => !['id', 'createdAt', 'modifiedAt', 'rowId'].includes(k));
+        columnsToKeep = allKeys.filter(k => !['id', 'rowId', 'createdAt', 'modifiedAt'].includes(k));
     }
 
-    // --- B. KOMPRESI DATA KE FORMAT TEXT (CSV-STYLE) ---
-    // Format: "Kolom1 | Kolom2 | Kolom3"
+    // 5. Konstruksi Header & Body (Format Pipa '|')
+    const headerStr = `| ${columnsToKeep.join(' | ')} |`;
+    const separatorStr = `| ${columnsToKeep.map(() => '---').join(' | ')} |`;
     
-    // 1. Buat Header
-    let formattedString = `[HEADER]: ${columnsToKeep.join(' | ')}\n`;
-
-    // 2. Buat Rows
-    const rows = data.map((row, index) => {
+    const tableRows = cleanRows.map(row => {
         const values = columnsToKeep.map(col => {
             let val = row[col];
-            if (val === null || val === undefined) return '-';
-            val = String(val).trim();
-            // Pangkas teks yang terlalu panjang di satu sel (misal deskripsi 10 paragraf)
-            if (val.length > 200) return val.substring(0, 200) + '...'; 
-            return val;
+            if (val === null || val === undefined || String(val).trim() === '') return '-';
+            // Bersihkan line breaks agar tidak merusak tabel markdown
+            return String(val).replace(/\n/g, ' ').trim();
         });
-        return `${values.join(' | ')}`;
+        return `| ${values.join(' | ')} |`;
     });
 
-    // --- C. PENANGANAN UKURAN DATA (TOKEN SAFETY) ---
-    // Kita gabungkan semua. Jika > 60.000 karakter (sekitar 15k token), kita lakukan strategi peringkasan.
-    // Tapi prioritasnya adalah memuat SEMUA data.
+    // 6. Gabungkan dengan Limit Karakter (Safety Measure)
+    // Kita kirim 300 baris terbaru/aktif jika data sangat besar
+    let finalTable = [headerStr, separatorStr, ...tableRows].join('\n');
     
-    const fullText = rows.join('\n');
-    
-    if (fullText.length > 100000) {
-        // JIKA SANGAT BESAR (> 100k chars), baru kita filter "Completed" lama
-        // Ini jalan terakhir (failsafe)
-        if (isProjectSheet) {
-            // Filter: Tampilkan semua Active, dan 20 Completed terbaru
-            // (Implementasi filtering manual di sini jika perlu, tapi text format biasanya cukup irit)
-            return `DATA TOO LARGE. SHOWING TOP 100 ACTIVE:\n${formattedString}` + rows.slice(0, 100).join('\n') + `\n... (${rows.length - 100} more rows)`;
-        } else {
-            // Untuk dokumen, ambil 150 terakhir
-            return `DATA SUMMARY (Last 150 items):\n${formattedString}` + rows.slice(-150).join('\n');
-        }
+    if (finalTable.length > 120000) {
+        const truncatedRows = tableRows.slice(-150); // Ambil 150 baris terakhir jika terlalu besar
+        finalTable = [headerStr, separatorStr, ...truncatedRows].join('\n') + `\n\n(Note: Data truncated due to size. Showing last 150 records.)`;
     }
 
-    return `DATA SUMMARY (${rows.length} records):\n${formattedString}${fullText}`;
+    return `BERIKUT ADALAH DATA DARI SMARTSHEET:\n\n${finalTable}`;
   }
-
   // ===========================================================================
   // 2. UTILS: DETEKSI JENIS QUERY
   // ===========================================================================
