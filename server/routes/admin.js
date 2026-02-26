@@ -274,7 +274,7 @@ router.delete('/bots/:id', async (req, res) => {
 // ============================================================================
 
 // POST /api/admin/bots/:id/avatar — Upload gambar avatar
-router.post('/bots/:id/avatar', avatarUpload.single('avatar'), async (req, res) => {
+router.post('/bots/:id/avatar', requireAdmin, avatarUpload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
 
@@ -301,7 +301,7 @@ router.post('/bots/:id/avatar', avatarUpload.single('avatar'), async (req, res) 
 });
 
 // PATCH /api/admin/bots/:id/avatar — Update emoji atau icon
-router.patch('/bots/:id/avatar', async (req, res) => {
+router.patch('/bots/:id/avatar', requireAdmin, async (req, res) => {
   try {
     const { type, emoji, icon, bgColor, textColor } = req.body;
 

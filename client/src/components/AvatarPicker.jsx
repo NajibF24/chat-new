@@ -161,10 +161,10 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
         // Upload file
         const formData = new FormData();
         formData.append('avatar', imageFile);
-        const res = await fetch(`/api/bots/${bot._id}/avatar`, {
+        const res = await fetch(`/api/admin/bots/${bot._id}/avatar`, {
           method: 'POST',
           body: formData,
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          credentials: 'include'   // pakai session cookie, bukan token
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
@@ -178,12 +178,10 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
           bgColor,
           textColor: '#ffffff',
         };
-        const res = await fetch(`/api/bots/${bot._id}/avatar`, {
+        const res = await fetch(`/api/admin/bots/${bot._id}/avatar`, {
           method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`
-          },
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',  // pakai session cookie
           body: JSON.stringify(body)
         });
         const data = await res.json();
