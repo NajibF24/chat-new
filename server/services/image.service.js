@@ -28,15 +28,16 @@ export const generateImage = async (prompt) => {
       throw new Error("No image data returned from OpenAI");
     }
 
-    // --- PROSES PENYIMPANAN FILE (Sama seperti sebelumnya) ---
+    // --- PROSES PENYIMPANAN FILE ---
     
     // Nama file unik
     const fileName = `dalle-${uuidv4()}.png`;
     
     // Path folder: server/data/files/generated
+    // Ini harus sinkron dengan server.js
     const uploadDir = path.join(process.cwd(), 'data', 'files', 'generated');
     
-    // Pastikan folder ada
+    // Pastikan folder ada (double check menggunakan fs-extra)
     await fs.ensureDir(uploadDir);
     
     // Simpan file fisik
@@ -46,6 +47,8 @@ export const generateImage = async (prompt) => {
     console.log(`✅ Image saved: ${fileName}`);
 
     // Return URL lokal yang bisa diakses Frontend
+    // Karena di server.js kita map '/api/files' ke 'data/files'
+    // Maka file di 'data/files/generated/abc.png' diakses via '/api/files/generated/abc.png'
     return `/api/files/generated/${fileName}`;
 
   } catch (error) {

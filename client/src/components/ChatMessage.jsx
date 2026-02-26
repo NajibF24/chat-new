@@ -2,6 +2,20 @@ import React, { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+// --- KONFIGURASI API URL ---
+// Ganti 'http://localhost:5000' jika port backend Anda berbeda.
+const API_BASE_URL = 'http://localhost:5000'; 
+
+// Helper untuk memperbaiki URL Gambar/File agar mengarah ke Backend
+const getFileUrl = (path) => {
+  if (!path) return '';
+  // Jika path sudah ada http/https (misal link luar), biarkan
+  if (path.startsWith('http')) return path;
+  // Jika path relatif dimulai dengan /, tambahkan API_BASE_URL
+  if (path.startsWith('/')) return `${API_BASE_URL}${path}`;
+  return path;
+};
+
 // Membungkus dengan memo agar tidak re-render saat user mengetik di input chat
 const ChatMessage = memo(({ message }) => {
   const isUser = message.role === 'user';
@@ -39,7 +53,8 @@ const ChatMessage = memo(({ message }) => {
                 p: ({node, children, ...props}) => {
                   const content = children[0];
                   if (typeof content === 'string' && content.startsWith('[[VIDEO:')) {
-                    const videoUrl = content.replace('[[VIDEO:', '').replace(']]', '');
+                    // FIX: Gunakan getFileUrl
+                    const videoUrl = getFileUrl(content.replace('[[VIDEO:', '').replace(']]', ''));
                     return (
                       <div className={`my-4 rounded-xl overflow-hidden border shadow-lg bg-black aspect-video flex items-center justify-center ${isUser ? 'border-white/20' : 'border-steel-light/30'}`}>
                         <video controls className="w-full h-full" preload="metadata">
@@ -76,14 +91,20 @@ const ChatMessage = memo(({ message }) => {
                 tr: ({node, ...props}) => <tr className="hover:bg-black/5" {...props} />,
                 td: ({node, ...props}) => <td className="px-3 py-2 border-r last:border-r-0" {...props} />,
 
-                // --- IMAGES (Fix Glitch & Reload) ---
+                // --- IMAGES (Fix Glitch & Reload & URL) ---
                 img: ({node, ...props}) => (
                   <div className="relative my-3 bg-gray-100/50 rounded-xl overflow-hidden" style={{ minHeight: '150px' }}>
                     <img
                       {...props}
+                      src={getFileUrl(props.src)} // ✅ FIX: Gunakan helper URL
                       className="max-w-full h-auto max-h-[400px] rounded-lg shadow-sm border border-steel-light/30 bg-white p-1 cursor-pointer transition-opacity duration-300 hover:opacity-90"
                       loading="lazy"
                       onClick={(e) => window.open(e.target.src, '_blank')}
+                      onError={(e) => { 
+                          // Fallback jika gambar error
+                          e.target.style.display = 'none'; 
+                          e.target.parentNode.innerHTML = `<span style="font-size:10px; color:red;">Gagal memuat gambar</span>`; 
+                      }}
                     />
                   </div>
                 ),
@@ -96,7 +117,7 @@ const ChatMessage = memo(({ message }) => {
             </ReactMarkdown>
           </div>
 
-          {/* 2. RENDER ATTACHMENTS (FORMAL STYLE) */}
+          {/* 2. RENDER ATTACHMENTS (FIXED URL) */}
           {message.attachedFiles && message.attachedFiles.length > 0 && (
             <div className={`mt-4 pt-3 border-t ${isUser ? 'border-white/20' : 'border-steel-light/30'}`}>
               <div className="grid grid-cols-1 gap-3">
@@ -104,14 +125,15 @@ const ChatMessage = memo(({ message }) => {
                   const fileName = file.name?.toLowerCase() || '';
                   const isImage = file.type === 'image' || /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
                   const isPDF = file.type === 'pdf' || fileName.endsWith('.pdf');
+                  const fullPath = getFileUrl(file.path); // ✅ FIX: Gunakan helper URL
 
                   return (
                     <div key={idx} className={`rounded-lg border overflow-hidden shadow-sm ${isUser ? 'bg-white/10 border-white/20' : 'bg-steel-lightest border-steel-light/30'}`}>
                       {isImage ? (
-                        <div className="cursor-pointer group" onClick={() => window.open(file.path, '_blank')}>
+                        <div className="cursor-pointer group" onClick={() => window.open(fullPath, '_blank')}>
                           <div style={{ minHeight: '150px' }} className="bg-black/5 flex items-center justify-center">
                             <img 
-                              src={file.path} 
+                              src={fullPath} // ✅ FIX URL
                               alt={file.name} 
                               className="w-full h-auto max-h-[350px] object-contain transition-transform group-hover:scale-[1.01]" 
                               onError={(e) => { e.target.src = 'https://placehold.co/400x300?text=File+Not+Found'; }}
@@ -123,7 +145,7 @@ const ChatMessage = memo(({ message }) => {
                           </div>
                         </div>
                       ) : (
-                        <a href={file.path} target="_blank" rel="noreferrer" className="flex items-center p-3 hover:bg-black/5 transition-colors">
+                        <a href={fullPath} target="_blank" rel="noreferrer" className="flex items-center p-3 hover:bg-black/5 transition-colors">
                           <div className="mr-3 text-2xl">{isPDF ? '📕' : '📄'}</div>
                           <div className="flex-1 overflow-hidden">
                             <div className="font-bold text-xs truncate">{file.name}</div>

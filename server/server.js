@@ -29,7 +29,9 @@ app.set('trust proxy', 1);
 const allowedOrigins = [
   'https://chat.gyssteel.com',
   'http://chat.gyssteel.com',
-  'http://localhost:8080'
+  'http://localhost:8080',
+  'http://localhost:3000', // Opsional: Tambahan untuk dev frontend
+  'http://localhost:5173'  // Opsional: Tambahan untuk dev Vite
 ];
 
 app.use(cors({
@@ -81,13 +83,20 @@ app.use((req, res, next) => {
 // =================================================================
 // Gunakan process.cwd() agar selalu menunjuk ke /usr/src/app di dalam container
 const filesPath = path.join(process.cwd(), 'data', 'files');
+const generatedPath = path.join(filesPath, 'generated'); // ✅ Tambahan: Path khusus DALL-E
 
 // Log lokasi agar kita tahu di mana server mencari file
 console.log('📂 Serving Static Files from:', filesPath); 
 
 // Pastikan folder ada
 (async () => {
-    try { await fs.mkdir(filesPath, { recursive: true }); } catch (e) {}
+    try { 
+      await fs.mkdir(filesPath, { recursive: true }); 
+      await fs.mkdir(generatedPath, { recursive: true }); // ✅ Buat folder generated
+      console.log('✅ Directories ensured:', filesPath, generatedPath);
+    } catch (e) { 
+      console.error('❌ Failed to create directories:', e); 
+    }
 })();
 
 // ✅ SERVE FILES STATICALLY
