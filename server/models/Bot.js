@@ -13,19 +13,33 @@ const botSchema = new mongoose.Schema({
   // Starter Questions
   starterQuestions: { type: [String], default: [] },
 
+  // ✅ AVATAR CONFIG
+  avatar: {
+    type: {
+      type: String,
+      enum: ['image', 'emoji', 'icon'],
+      default: 'emoji'
+    },
+    imageUrl:  { type: String, default: null },   // path gambar upload
+    emoji:     { type: String, default: '🤖' },   // karakter emoji
+    icon:      { type: String, default: null },    // SVG string
+    bgColor:   { type: String, default: '#6366f1' },
+    textColor: { type: String, default: '#ffffff' },
+  },
+
   // ✅ KONFIGURASI SMARTSHEET
   smartsheetConfig: {
-    enabled: { type: Boolean, default: false },
-    apiKey: { type: String, default: '' }, // Opsional (jika ingin override ENV)
-    sheetId: { type: String, default: '' }, // ✅ INI FIELD KUNCI (Target Sheet ID)
-    primarySheetId: { type: String, default: '' }, // Field cadangan
+    enabled:       { type: Boolean, default: false },
+    apiKey:        { type: String,  default: '' },
+    sheetId:       { type: String,  default: '' },
+    primarySheetId:{ type: String,  default: '' },
   },
 
   // ✅ KONFIGURASI KOUVENTA
   kouventaConfig: {
-    enabled: { type: Boolean, default: false },
-    apiKey: { type: String, default: '' },
-    endpoint: { type: String, default: '' }
+    enabled:  { type: Boolean, default: false },
+    apiKey:   { type: String,  default: '' },
+    endpoint: { type: String,  default: '' }
   },
 
   createdAt: { type: Date, default: Date.now }

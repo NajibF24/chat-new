@@ -25,11 +25,10 @@ connectDB();
 
 app.set('trust proxy', 1);
 
-// CORS: Izinkan akses dari mana saja karena kita berlindung di balik Nginx
 app.use(cors({
-  origin: true, 
+  origin: true,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],  // ✅ tambah PATCH untuk avatar
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With']
 }));
 
@@ -46,7 +45,7 @@ app.use(session({
     ttl: 24 * 60 * 60
   }),
   cookie: {
-    secure: false, 
+    secure: false,
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
     sameSite: 'lax',
@@ -64,33 +63,41 @@ app.use((req, res, next) => {
 });
 
 // =================================================================
-// 📂 FILE SERVING CONFIGURATION (DOCKER COMPATIBLE)
+// 📂 FILE & AVATAR DIRECTORY SETUP
 // =================================================================
-// Gunakan process.cwd() agar menunjuk ke /usr/src/app (Docker WORKDIR)
+
 const filesPath = path.join(process.cwd(), 'data', 'files');
-const generatedPath = path.join(filesPath, 'generated'); // ✅ Folder khusus DALL-E
+const generatedPath = path.join(filesPath, 'generated');
+const avatarsPath = path.join(process.cwd(), 'uploads', 'avatars'); // ✅ folder avatar
 
-console.log('📂 Serving Static Files from:', filesPath); 
+console.log('📂 Serving files from:', filesPath);
+console.log('🖼️  Serving avatars from:', avatarsPath);
 
-// Pastikan struktur folder ada saat server start
+// Buat semua folder yang dibutuhkan saat server start
 (async () => {
-    try { 
-      await fs.mkdir(filesPath, { recursive: true }); 
-      await fs.mkdir(generatedPath, { recursive: true }); // ✅ Buat folder generated
-      console.log('✅ Directories ensured:', filesPath, generatedPath);
-    } catch (e) { 
-      console.error('❌ Failed to create directories:', e); 
-    }
+  try {
+    await fs.mkdir(filesPath,    { recursive: true });
+    await fs.mkdir(generatedPath,{ recursive: true });
+    await fs.mkdir(avatarsPath,  { recursive: true }); // ✅ pastikan folder avatar ada
+    console.log('✅ Directories ensured');
+  } catch (e) {
+    console.error('❌ Failed to create directories:', e);
+  }
 })();
 
-// ✅ SERVE FILES STATICALLY
-// Nginx akan meneruskan request /api/files ke sini
+// Serve file uploads biasa
 app.use('/api/files', (req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*'); 
+  res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 }, express.static(filesPath));
-// =================================================================
 
+// ✅ Serve avatar images — dipanggil dari frontend via /api/avatars/<filename>
+app.use('/api/avatars', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+}, express.static(avatarsPath));
+
+// =================================================================
 
 // Routes
 app.use('/api/auth', authRoutes);

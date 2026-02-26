@@ -1,27 +1,18 @@
 import React, { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import BotAvatar from './BotAvatar';
 
-// --- HELPER URL ---
-// Kita tidak menggunakan localhost:5000 lagi.
-// Kita gunakan path relatif agar request melalui Nginx (Proxy).
 const getFileUrl = (path) => {
   if (!path) return '';
-  // 1. Jika URL eksternal (http/https), biarkan.
   if (path.startsWith('http') || path.startsWith('https')) return path;
-  
-  // 2. Jika path sudah dimulai dengan /api, biarkan (sudah benar).
   if (path.startsWith('/api')) return path;
-
-  // 3. Jika path dimulai dengan /, pastikan tidak double slash saat digabung
   if (path.startsWith('/')) return path;
-
-  // 4. Default fallback (jika backend hanya kirim nama file)
   return `/api/files/${path}`;
 };
 
-// Membungkus dengan memo agar tidak re-render saat user mengetik
-const ChatMessage = memo(({ message }) => {
+// ✅ Tambah prop `bot` untuk menampilkan avatar bot yang benar
+const ChatMessage = memo(({ message, bot }) => {
   const isUser = message.role === 'user';
 
   return (
@@ -29,17 +20,19 @@ const ChatMessage = memo(({ message }) => {
       <div className={`flex max-w-[95%] md:max-w-[85%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
 
         {/* Avatar */}
-        <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center shadow-md font-bold text-xs ${
-          isUser ? 'bg-primary-dark text-white ml-3' : 'bg-white border border-steel-light/30 text-primary-dark mr-3'
-        }`}>
-          {isUser ? (
+        {isUser ? (
+          // User avatar — tetap pakai inisial
+          <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center shadow-md font-bold text-xs bg-primary-dark text-white ml-3">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
-          ) : (
-            <span className="tracking-tighter">GYS</span>
-          )}
-        </div>
+          </div>
+        ) : (
+          // ✅ Bot avatar — pakai BotAvatar component
+          <div className="flex-shrink-0 mr-3 mt-0.5">
+            <BotAvatar bot={bot} size="sm" />
+          </div>
+        )}
 
         {/* Message Bubble */}
         <div className={`px-5 py-4 shadow-sm relative overflow-hidden transition-all ${
@@ -48,12 +41,10 @@ const ChatMessage = memo(({ message }) => {
             : 'bg-white text-gray-800 border border-steel-light/30 rounded-2xl rounded-tl-sm'
         }`}>
 
-          {/* RENDER CONTENT */}
           <div className={`prose prose-sm max-w-none leading-relaxed ${isUser ? 'prose-invert text-white' : 'text-gray-800'}`}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                // --- VIDEO PLAYER ---
                 p: ({node, children, ...props}) => {
                   const content = children[0];
                   if (typeof content === 'string' && content.startsWith('[[VIDEO:')) {
@@ -69,26 +60,15 @@ const ChatMessage = memo(({ message }) => {
                   }
                   return <p className="mb-2 last:mb-0" {...props}>{children}</p>;
                 },
-
-                // --- IMAGES ---
                 img: ({node, ...props}) => (
                   <div className="relative my-3 bg-gray-100/50 rounded-xl overflow-hidden" style={{ minHeight: '150px' }}>
-                    <img
-                      {...props}
-                      src={getFileUrl(props.src)} // ✅ Gunakan Helper URL
-                      alt={props.alt || "Attachment"}
+                    <img {...props} src={getFileUrl(props.src)} alt={props.alt || "Attachment"}
                       className="max-w-full h-auto max-h-[400px] rounded-lg shadow-sm border border-steel-light/30 bg-white p-1 cursor-pointer transition-opacity duration-300 hover:opacity-90"
-                      loading="lazy"
-                      onClick={(e) => window.open(e.target.src, '_blank')}
-                      onError={(e) => { 
-                          e.target.style.display = 'none'; 
-                          e.target.parentNode.innerHTML = `<div style="padding:10px; color:red; font-size:11px; text-align:center;">⚠️ Gagal memuat gambar<br/>(${props.src})</div>`; 
-                      }}
+                      loading="lazy" onClick={(e) => window.open(e.target.src, '_blank')}
+                      onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.innerHTML = `<div style="padding:10px; color:red; font-size:11px; text-align:center;">⚠️ Gagal memuat gambar<br/>(${props.src})</div>`; }}
                     />
                   </div>
                 ),
-
-                // Standard Components
                 ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
                 ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1" {...props} />,
                 h1: ({node, ...props}) => <h1 className={`text-lg font-bold mt-4 mb-2 border-b pb-1 ${isUser ? 'border-white/20' : 'border-steel-light/30'}`} {...props} />,
@@ -114,7 +94,7 @@ const ChatMessage = memo(({ message }) => {
             </ReactMarkdown>
           </div>
 
-          {/* ATTACHMENTS (File Uploads) */}
+          {/* Attachments */}
           {message.attachedFiles && message.attachedFiles.length > 0 && (
             <div className={`mt-4 pt-3 border-t ${isUser ? 'border-white/20' : 'border-steel-light/30'}`}>
               <div className="grid grid-cols-1 gap-3">
@@ -122,18 +102,12 @@ const ChatMessage = memo(({ message }) => {
                   const fileName = file.name?.toLowerCase() || '';
                   const isImage = file.type === 'image' || /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
                   const fullPath = getFileUrl(file.path);
-
                   return (
                     <div key={idx} className={`rounded-lg border overflow-hidden shadow-sm ${isUser ? 'bg-white/10 border-white/20' : 'bg-steel-lightest border-steel-light/30'}`}>
                       {isImage ? (
                         <div className="cursor-pointer group" onClick={() => window.open(fullPath, '_blank')}>
                           <div style={{ minHeight: '150px' }} className="bg-black/5 flex items-center justify-center">
-                            <img 
-                              src={fullPath} 
-                              alt={file.name} 
-                              className="w-full h-auto max-h-[350px] object-contain transition-transform group-hover:scale-[1.01]" 
-                              onError={(e) => { e.target.src = 'https://placehold.co/400x300?text=File+Not+Found'; }}
-                            />
+                            <img src={fullPath} alt={file.name} className="w-full h-auto max-h-[350px] object-contain transition-transform group-hover:scale-[1.01]" onError={(e) => { e.target.src = 'https://placehold.co/400x300?text=File+Not+Found'; }} />
                           </div>
                           <div className="p-2 flex justify-between items-center text-[10px] bg-white/5">
                             <span className="truncate font-medium">{file.name}</span>

@@ -9,8 +9,17 @@ import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import Bot from '../models/Bot.js';
 import SmartsheetJSONService from './smartsheet-json.service.js';
+import SmartsheetContextService from './smartsheet-context.service.js';  // ← NEW
 import FileManagerService from './file-manager.service.js';
 import KouventaService from './kouventa.service.js';
+
+// Token budget:
+// GPT-4o max: 128K tokens
+// System prompt + history: ~3-5K
+// User message: ~0.5K
+// File attachment: ~2K
+// → Max untuk data Smartsheet: ~15K tokens (aman)
+const MAX_SMARTSHEET_TOKENS = 15000;
 
 class AICoreService {
   constructor() {
@@ -18,17 +27,14 @@ class AICoreService {
     this.fileManager = new FileManagerService();
   }
 
-  // Format array of flat objects to markdown table
+  // Format array ke markdown table — hanya dipakai untuk data NON-Smartsheet
   formatToCompactTable(data) {
     if (!Array.isArray(data) || data.length === 0) return "DATA KOSONG";
-
     const allKeys = Object.keys(data[0]);
     const columns = allKeys.filter(k => !['id', 'rowId', 'createdAt', 'modifiedAt'].includes(k));
-
     let table = `| ${columns.join(' | ')} |\n`;
     table += `| ${columns.map(() => '---').join(' | ')} |\n`;
-
-    data.forEach((row) => {
+    data.forEach(row => {
       const values = columns.map(col => {
         const val = row[col];
         if (val === null || val === undefined || String(val).trim() === '') return '-';
@@ -36,13 +42,10 @@ class AICoreService {
       });
       table += `| ${values.join(' | ')} |\n`;
     });
-
     return table;
   }
 
-  // Flatten Smartsheet row format:
-  // { rowNumber: 1, data: { "Col Name": { value: "x" } } }
-  // → { "Col Name": "x" }
+  // Flatten Smartsheet row: {data: {"Col": {value: "x"}}} → {"Col": "x"}
   flattenSmartsheetRows(projects) {
     return projects.map(p => {
       const flat = {};
@@ -66,7 +69,8 @@ class AICoreService {
       'folder', 'workstream', 'category', 'user',
       'overdue', 'delay', 'terlambat', 'laporan', 'report',
       'health', 'red', 'merah', 'kritis', 'critical',
-      'versi', 'mana', 'semua proyek', 'all project'
+      'versi', 'mana', 'semua proyek', 'all project',
+      'statistik', 'stats', 'count', 'jumlah',
     ];
     return dataKeywords.some(k => lowerMsg.includes(k))
       || message.includes('_')
@@ -81,16 +85,16 @@ class AICoreService {
     try {
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
-        return `\n\n[ISI FILE: ${originalName}]\n${data.text.substring(0, 30000)}\n[END FILE]\n`;
+        return `\n\n[ISI FILE: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.docx') {
         const result = await mammoth.extractRawText({ path: physicalPath });
-        return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 30000)}\n[END FILE]\n`;
+        return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
         const content = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
-        return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 30000)}\n[END FILE]\n`;
+        return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
       } else {
-        return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 30000)}\n[END FILE]\n`;
+        return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
       }
     } catch (e) { return ""; }
   }
@@ -108,7 +112,7 @@ class AICoreService {
 
     let contextData = "";
 
-    // 1. KOUVENTA
+    // ── 1. KOUVENTA ──────────────────────────────────────────────
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
         const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
@@ -119,44 +123,51 @@ class AICoreService {
       }
     }
 
-    // 2. SMARTSHEET
+    // ── 2. SMARTSHEET (TOKEN-SAFE) ───────────────────────────────
     if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled) {
       try {
         const service = new SmartsheetJSONService();
 
-        // ✅ FIX: Ambil sheetId dari konfigurasi BOT, BUKAN hardcode dari .env
-        // Tiap bot punya sheetId sendiri yang diset di admin dashboard
+        // ✅ Ambil sheetId dari konfigurasi BOT, bukan dari .env
         const sheetId =
           bot.smartsheetConfig.sheetId ||
           bot.smartsheetConfig.primarySheetId ||
-          process.env.SMARTSHEET_PRIMARY_SHEET_ID; // fallback saja
+          process.env.SMARTSHEET_PRIMARY_SHEET_ID;
 
         if (!sheetId) {
           console.warn(`⚠️ Bot "${bot.name}": sheetId tidak dikonfigurasi`);
-          contextData += `\n\n=== DATA SMARTSHEET ===\nSheet ID belum dikonfigurasi. Set di admin dashboard → Edit Bot → Smartsheet Config.\n`;
+          contextData += `\n\n=== DATA SMARTSHEET ===\nSheet ID belum dikonfigurasi di bot ini.\n`;
         } else {
           console.log(`📊 Bot "${bot.name}" → Sheet ID: ${sheetId}`);
 
-          // getData() return: { metadata, columns, projects: [...], statistics }
           const rawData = await service.getData(sheetId);
-
-          // ✅ FIX: Gunakan rawData.projects (array), bukan rawData langsung (object)
           const projectsArray = rawData?.projects || [];
-          console.log(`📊 Loaded ${projectsArray.length} rows dari sheet ${sheetId}`);
+
+          console.log(`📊 Total rows di cache: ${projectsArray.length}`);
 
           if (projectsArray.length === 0) {
-            contextData += `\n\n=== DATA SMARTSHEET (Sheet: ${sheetId}) ===\nData kosong. Jalankan: node fetch-smartsheet.js untuk inisialisasi cache.\n`;
+            contextData += `\n\n=== DATA SMARTSHEET ===\nData kosong. Jalankan: node fetch-smartsheet.js\n`;
           } else {
-            // ✅ FIX: Flatten nested {data: {col: {value: x}}} → {col: x}
+            // ✅ Flatten nested structure
             const flatRows = this.flattenSmartsheetRows(projectsArray);
 
-            const sheetName = rawData.metadata?.name || `Sheet ${sheetId}`;
-            const updatedAt = rawData.metadata?.fetchedAt
-              ? new Date(rawData.metadata.fetchedAt).toLocaleString('id-ID')
-              : new Date().toLocaleString('id-ID');
+            // ✅ SMART FILTER: hanya kirim data yang relevan ke AI
+            // Ini yang mencegah context_length_exceeded
+            const smartContext = SmartsheetContextService.buildContext(flatRows, message);
 
-            const compactTable = this.formatToCompactTable(flatRows);
-            contextData += `\n\n=== DATA SMARTSHEET ===\nSumber: ${sheetName} | Total: ${projectsArray.length} baris | Update: ${updatedAt}\n\n${compactTable}\n`;
+            // Cek estimasi token sebelum dikirim
+            const estimatedTokens = SmartsheetContextService.estimateTokens(smartContext);
+            console.log(`📊 Context tokens estimate: ~${estimatedTokens} (limit: ${MAX_SMARTSHEET_TOKENS})`);
+
+            if (estimatedTokens > MAX_SMARTSHEET_TOKENS) {
+              // Fallback: kirim summary saja
+              console.warn(`⚠️ Context terlalu besar (${estimatedTokens} tokens), fallback ke summary`);
+              const fallbackContext = SmartsheetContextService.buildStatsSummary(flatRows, message);
+              contextData += `\n\n${fallbackContext}\n`;
+              contextData += `\n⚠️ Data terlalu besar untuk ditampilkan penuh. Silakan ajukan pertanyaan yang lebih spesifik (filter per tanggal, user, atau kategori).\n`;
+            } else {
+              contextData += `\n\n${smartContext}\n`;
+            }
           }
         }
       } catch (e) {
@@ -165,7 +176,7 @@ class AICoreService {
       }
     }
 
-    // 3. OPENAI
+    // ── 3. OPENAI ────────────────────────────────────────────────
     const userContent = [];
     if (message) userContent.push({ type: "text", text: message });
 
@@ -185,21 +196,33 @@ class AICoreService {
     const today = new Date().toLocaleDateString('id-ID', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
-    const systemPrompt = `${bot.prompt || bot.systemPrompt}\n\n[INFO: HARI INI ${today}]\n\n${contextData}\nGunakan data di atas untuk menjawab pertanyaan user dengan akurat.`;
+
+    const systemPrompt = [
+      bot.prompt || bot.systemPrompt || '',
+      `[INFO: HARI INI ${today}]`,
+      contextData,
+      'Gunakan data di atas untuk menjawab pertanyaan user. Jika tidak ada data yang relevan, katakan demikian.',
+    ].filter(Boolean).join('\n\n');
+
+    // Log total context size untuk monitoring
+    const totalContextChars = systemPrompt.length + (message?.length || 0);
+    const totalContextTokensEst = Math.ceil(totalContextChars / 4);
+    console.log(`📝 Total context estimate: ~${totalContextTokensEst} tokens`);
 
     const completion = await this.openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
-        ...history.slice(-5).map(h => ({ role: h.role, content: h.content })),
+        ...history.slice(-4).map(h => ({ role: h.role, content: h.content })),
         { role: 'user', content: userContent }
       ],
-      temperature: 0.1
+      temperature: 0.1,
+      max_tokens: 2000,  // batasi output agar sisa budget cukup
     });
 
     const aiResponse = completion.choices[0].message.content;
 
-    // 4. SAVE
+    // ── 4. SAVE ──────────────────────────────────────────────────
     let savedAttachments = [];
     if (attachedFile) {
       savedAttachments.push({
