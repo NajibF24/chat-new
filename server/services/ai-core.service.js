@@ -44,11 +44,21 @@ class AICoreService {
     return table;
   }
 
-  isDataQuery(message) {
-    const lowerMsg = (message || '').toLowerCase();
-    const dataKeywords = ['berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 'summary', 'analisa', 'data', 'total', 'berapa', 'mana', 'versi', 'latest', 'terbaru', 'revisi', 'dokumen', 'file', 'tracking', 'update', 'history', 'riwayat', 'overdue'];
-    return dataKeywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
-  }
+  // ✅ SESUDAH - tambah keyword overdue/laporan
+    isDataQuery(message) {
+        const lowerMsg = (message || '').toLowerCase();
+        const dataKeywords = [
+            'berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status',
+            'progress', 'summary', 'analisa', 'data', 'total', 'berapa', 'mana',
+            'versi', 'latest', 'terbaru', 'revisi', 'dokumen', 'file', 'tracking',
+            'update', 'history', 'riwayat', 'overdue', 'delay', 'terlambat',
+            'laporan', 'report', 'health', 'red', 'merah', 'kritis', 'critical',
+            'tampilkan', 'lihat', 'show', 'get', 'semua proyek', 'all project'
+        ];
+        return dataKeywords.some(k => lowerMsg.includes(k)) 
+            || message.includes('_') 
+            || message.includes('.');
+    }
 
   async extractFileContent(attachedFile) {
       const physicalPath = attachedFile.serverPath || attachedFile.path;
@@ -97,16 +107,44 @@ class AICoreService {
     }
 
     // 2. SMARTSHEET LOGIC (FIXED: READ ALL AS TABLE)
+// ✅ SESUDAH (BENAR)
     if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled) {
         try {
             const service = new SmartsheetJSONService();
             const sheetId = bot.smartsheetConfig.sheetId || bot.smartsheetConfig.primarySheetId;
-            const rawData = await service.getData(sheetId);
             
-            // ✅ Ubah JSON ke Tabel agar muat banyak data
-            const compactTable = this.formatToCompactTable(rawData);
-            contextData += `\n\n=== DATA SMARTSHEET (Source: ${sheetId}) ===\n${compactTable}\n`;
-        } catch (e) { console.error("Smartsheet Error:", e); }
+            if (!sheetId) {
+                console.warn("⚠️ Smartsheet: sheetId tidak dikonfigurasi di bot");
+            } else {
+                const rawData = await service.getData(sheetId);
+                
+                // ✅ FIX: rawData adalah object {metadata, projects, statistics}
+                // Kita butuh rawData.projects yang berupa array
+                const projectsArray = rawData?.projects || [];
+                
+                console.log(`📊 Smartsheet: ${projectsArray.length} projects loaded from sheet ${sheetId}`);
+                
+                if (projectsArray.length === 0) {
+                    console.warn("⚠️ Smartsheet: projects array kosong");
+                    contextData += `\n\n=== DATA SMARTSHEET ===\nData belum tersedia. Cache mungkin belum diinisialisasi.\n`;
+                } else {
+                    // Flatten projects: ubah {data: {kolom: {value: ...}}} → {kolom: value}
+                    const flatProjects = projectsArray.map(p => {
+                        const flat = {};
+                        Object.entries(p.data || {}).forEach(([col, cell]) => {
+                            flat[col] = cell?.value ?? '';
+                        });
+                        return flat;
+                    });
+                    
+                    const compactTable = this.formatToCompactTable(flatProjects);
+                    contextData += `\n\n=== DATA SMARTSHEET (Sheet: ${sheetId}, Total: ${projectsArray.length} rows) ===\n${compactTable}\n`;
+                }
+            }
+        } catch (e) { 
+            console.error("Smartsheet Error:", e.message); 
+            contextData += `\n\n=== DATA SMARTSHEET ===\nError loading data: ${e.message}\n`;
+        }
     }
 
     // 3. OPENAI EXECUTION
