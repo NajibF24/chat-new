@@ -130,12 +130,36 @@ class SmartsheetLiveService {
     const result = { completed: [], overdue: [], active: [], canceled: [] };
 
     flatRows.forEach(row => {
-      const status = (row['Project Status'] || '').trim();
-      const progress = parseFloat(row['Overall Progress (%)']) || 0;
-      const targetEnd = this.parseDate(row['Target End Date']);
+      // Support both possible column name variants
+      const status = (
+        row['Project Status'] ||
+        row['Status'] || ''
+      ).trim();
+
+      const progressRaw = (
+        row['Overall Progress (%)'] ||
+        row['Progress'] ||
+        row['Overall Progress'] ||
+        0
+      );
+
+      // Progress bisa berupa float 0-1 (dari Smartsheet) atau 0-100
+      const progress = parseFloat(progressRaw) || 0;
+      const progressNormalized = progress > 1 ? progress / 100 : progress;
+
+      const targetEnd = this.parseDate(
+        row['Target End Date'] ||
+        row['Target End'] ||
+        row['Due Date'] ||
+        null
+      );
 
       // Completed
-      if (status === 'Complete' || status === 'Completed' || progress >= 1.0) {
+      if (
+        status === 'Complete' ||
+        status === 'Completed' ||
+        progressNormalized >= 1.0
+      ) {
         result.completed.push(row);
         return;
       }
@@ -174,22 +198,38 @@ class SmartsheetLiveService {
     table += `|:---|:---|:---|:---:|:---|:---:|:---:|\n`;
 
     rows.forEach(row => {
-      const name = this.truncate(row['Project Name'] || row['Project ID'] || '-', 35);
-      const pm = this.truncate(row['Project Manager'] || '-', 20);
-      const status = row['Project Status'] || '-';
-      const progressRaw = parseFloat(row['Overall Progress (%)']) || 0;
-      const progress = `${Math.round(progressRaw * 100)}%`;
-      const health = row['Schedule Health'] || '-';
-      const healthEmoji = health === 'Green' ? '🟢' : health === 'Yellow' ? '🟡' : health === 'Red' ? '🔴' : '-';
-      const targetEnd = row['Target End Date'] ? this.formatDate(row['Target End Date']) : '-';
+      const name = this.truncate(
+        row['Project Name'] || row['Project ID'] || '-', 35
+      );
+      const pm = this.truncate(
+        row['Project Manager'] || row['PM'] || '-', 25
+      );
+      const status = row['Project Status'] || row['Status'] || '-';
+
+      // Progress: Smartsheet kirim 0-1 float, convert ke %
+      const progressRaw = parseFloat(
+        row['Overall Progress (%)'] || row['Progress'] || 0
+      );
+      const progressPct = progressRaw > 1
+        ? Math.round(progressRaw)
+        : Math.round(progressRaw * 100);
+      const progress = `${progressPct}%`;
+
+      const health = row['Schedule Health'] || row['Health'] || '-';
+      const healthEmoji = health === 'Green' ? '🟢'
+        : health === 'Yellow' ? '🟡'
+        : health === 'Red' ? '🔴' : '-';
+
+      const targetEndRaw = row['Target End Date'] || row['Target End'] || null;
+      const targetEnd = targetEndRaw ? this.formatDate(targetEndRaw) : '-';
 
       let daysOverdue = '-';
       if (row._daysOverdue) {
-        daysOverdue = `${row._daysOverdue}d`;
-      } else if (today && row['Target End Date']) {
-        const endDate = this.parseDate(row['Target End Date']);
+        daysOverdue = `${row._daysOverdue} hari`;
+      } else if (today && targetEndRaw) {
+        const endDate = this.parseDate(targetEndRaw);
         if (endDate && endDate < today) {
-          daysOverdue = `${Math.floor((today - endDate) / (1000 * 60 * 60 * 24))}d`;
+          daysOverdue = `${Math.floor((today - endDate) / (1000 * 60 * 60 * 24))} hari`;
         }
       }
 
