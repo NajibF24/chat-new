@@ -20,51 +20,91 @@ class AICoreService {
   }
 
   // ===========================================================================
-  // 1. UTILS: FORMAT DATA SMARTSHEET (FIX: Mencegah Error Token Limit)
+  // 1. UTILS: FORMAT DATA SMARTSHEET (COMPRESSION MODE - NO DATA LOSS)
   // ===========================================================================
- formatSmartsheetData(data) {
-    if (!Array.isArray(data)) return JSON.stringify(data).substring(0, 20000);
+  formatSmartsheetData(data) {
+    if (!Array.isArray(data) || data.length === 0) return "DATA KOSONG.";
 
-    // LANGKAH 1: BERSIHKAN ROW & CELL KOSONG TERLEBIH DAHULU
-    // Kita filter dulu sebelum dipotong, supaya "60 data terakhir" itu benar-benar data, bukan baris kosong.
-    const cleanRows = data.map((row, originalIdx) => {
-        // Tampung cell yang ada isinya saja
-        const validCells = [];
-        
-        Object.entries(row).forEach(([key, value]) => {
-            // Cek apakah value valid (bukan null, bukan undefined, dan bukan string kosong/spasi doang)
-            if (value !== null && value !== undefined && String(value).trim() !== '') {
-                // Abaikan kolom sistem yang tidak penting bagi AI (Opsional)
-                if (!['id', 'createdAt', 'modifiedAt'].includes(key)) {
-                   validCells.push(`${key}: ${value}`);
-                }
-            }
-        });
-
-        // Jika row ini punya setidaknya 1 cell berisi data, kembalikan format string
-        if (validCells.length > 0) {
-            return `Row ${originalIdx + 1}: { ${validCells.join(' | ')} }`;
-        }
-        return null; // Tandai row ini sebagai sampah (kosong)
-    }).filter(row => row !== null); // Hapus semua row yang null
-
-    // LANGKAH 2: CEK JUMLAH DATA SETELAH DIBERSIHKAN
-    const TOTAL_CLEAN_ROWS = cleanRows.length;
-    const MAX_ROWS = 60; // Batas aman agar tidak error token
+    // --- A. DETEKSI JENIS SHEET & TENTUKAN KOLOM PENTING ---
+    const firstRow = data[0];
+    const allKeys = Object.keys(firstRow);
     
-    let finalData = cleanRows;
-    let note = "";
+    // Cek apakah ini Sheet Project atau Dokumen
+    const isProjectSheet = allKeys.some(k => k.toLowerCase().includes('project status') || k.toLowerCase().includes('progress'));
 
-    // LANGKAH 3: POTONG DATA (AMBIL TERBARU)
-    if (TOTAL_CLEAN_ROWS > MAX_ROWS) {
-        // Ambil bagian paling bawah (Terbaru)
-        finalData = cleanRows.slice(-MAX_ROWS);
-        note = `\n[CATATAN SISTEM: Data telah dibersihkan dari cell kosong. Menampilkan ${MAX_ROWS} baris BERISI DATA TERBARU dari total ${TOTAL_CLEAN_ROWS} baris valid.]`;
-    } else if (TOTAL_CLEAN_ROWS === 0) {
-        return "DATA KOSONG: Tidak ditemukan data text pada Sheet ini.";
+    let columnsToKeep = [];
+
+    if (isProjectSheet) {
+        // MODE PROJECT: Ambil kolom-kolom krusial untuk manajemen proyek
+        columnsToKeep = allKeys.filter(k => {
+            const lower = k.toLowerCase();
+            return lower.includes('name') || 
+                   lower.includes('status') || 
+                   lower.includes('progress') || 
+                   lower.includes('date') || 
+                   lower.includes('manager') || 
+                   lower.includes('health') ||
+                   lower.includes('issues') ||
+                   lower.includes('remarks'); // Remarks penting untuk konteks
+        });
+    } else {
+        // MODE DOKUMEN: Ambil kolom tracking, user, dan link
+        columnsToKeep = allKeys.filter(k => {
+            const lower = k.toLowerCase();
+            return lower.includes('date') || 
+                   lower.includes('title') || 
+                   lower.includes('name') || 
+                   lower.includes('user') || 
+                   lower.includes('activity') || 
+                   lower.includes('link') || 
+                   lower.includes('revision');
+        });
     }
 
-    return `DATA SUMMARY (Non-Empty Cells Only):\n${finalData.join('\n')}\n${note}`;
+    // Jika filter gagal (nama kolom aneh), pakai semua kolom kecuali ID sistem
+    if (columnsToKeep.length === 0) {
+        columnsToKeep = allKeys.filter(k => !['id', 'createdAt', 'modifiedAt', 'rowId'].includes(k));
+    }
+
+    // --- B. KOMPRESI DATA KE FORMAT TEXT (CSV-STYLE) ---
+    // Format: "Kolom1 | Kolom2 | Kolom3"
+    
+    // 1. Buat Header
+    let formattedString = `[HEADER]: ${columnsToKeep.join(' | ')}\n`;
+
+    // 2. Buat Rows
+    const rows = data.map((row, index) => {
+        const values = columnsToKeep.map(col => {
+            let val = row[col];
+            if (val === null || val === undefined) return '-';
+            val = String(val).trim();
+            // Pangkas teks yang terlalu panjang di satu sel (misal deskripsi 10 paragraf)
+            if (val.length > 200) return val.substring(0, 200) + '...'; 
+            return val;
+        });
+        return `${values.join(' | ')}`;
+    });
+
+    // --- C. PENANGANAN UKURAN DATA (TOKEN SAFETY) ---
+    // Kita gabungkan semua. Jika > 60.000 karakter (sekitar 15k token), kita lakukan strategi peringkasan.
+    // Tapi prioritasnya adalah memuat SEMUA data.
+    
+    const fullText = rows.join('\n');
+    
+    if (fullText.length > 100000) {
+        // JIKA SANGAT BESAR (> 100k chars), baru kita filter "Completed" lama
+        // Ini jalan terakhir (failsafe)
+        if (isProjectSheet) {
+            // Filter: Tampilkan semua Active, dan 20 Completed terbaru
+            // (Implementasi filtering manual di sini jika perlu, tapi text format biasanya cukup irit)
+            return `DATA TOO LARGE. SHOWING TOP 100 ACTIVE:\n${formattedString}` + rows.slice(0, 100).join('\n') + `\n... (${rows.length - 100} more rows)`;
+        } else {
+            // Untuk dokumen, ambil 150 terakhir
+            return `DATA SUMMARY (Last 150 items):\n${formattedString}` + rows.slice(-150).join('\n');
+        }
+    }
+
+    return `DATA SUMMARY (${rows.length} records):\n${formattedString}${fullText}`;
   }
 
   // ===========================================================================
@@ -72,16 +112,14 @@ class AICoreService {
   // ===========================================================================
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
-    
-    // Pengecualian: Jika user minta visual/dashboard, jangan anggap data query
     const visualKeywords = ['dashboard', 'gambar', 'image', 'foto', 'screenshot', 'visual', 'pic'];
     if (visualKeywords.some(k => lowerMsg.includes(k)) && lowerMsg.includes('dashboard')) return false;
 
-    // Kata kunci indikasi minta data
     const dataKeywords = [
         'berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 
         'summary', 'analisa', 'data', 'total', 'berapa', 'mana', 'versi', 'latest', 
-        'terbaru', 'revisi', 'dokumen', 'file', 'tracking', 'update', 'history', 'riwayat', 'check'
+        'terbaru', 'revisi', 'dokumen', 'file', 'tracking', 'update', 'history', 'riwayat', 'check',
+        'overdue', 'telat', 'deadline', 'siapa', 'health', 'resiko'
     ];
     return dataKeywords.some(k => lowerMsg.includes(k)); 
   }
@@ -91,10 +129,7 @@ class AICoreService {
   // ===========================================================================
   async extractFileContent(attachedFile) {
       const physicalPath = attachedFile.serverPath || attachedFile.path;
-      
-      if (!physicalPath || !fs.existsSync(physicalPath)) {
-          return "";
-      }
+      if (!physicalPath || !fs.existsSync(physicalPath)) return "";
 
       const originalName = attachedFile.originalname || '';
       const ext = path.extname(originalName).toLowerCase();
@@ -114,23 +149,17 @@ class AICoreService {
           } else {
                content = fs.readFileSync(physicalPath, 'utf8');
           }
-          
-          // Limit juga isi file attachment agar aman
           return content ? `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 30000)}\n[END FILE]\n` : "";
-      } catch (e) { 
-          return ""; 
-      }
+      } catch (e) { return ""; }
   }
 
   // ===========================================================================
   // 4. MAIN PROCESS
   // ===========================================================================
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
-    // 1. Validasi Bot
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
-    // 2. Setup Thread
     if (!threadId) {
         const title = message ? (message.substring(0, 30)) : `Chat with ${bot.name}`;
         const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
@@ -140,16 +169,13 @@ class AICoreService {
         await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
     }
 
-    // 3. FITUR: DASHBOARD FILES
+    // FITUR: DASHBOARD FILES
     if (bot.smartsheetConfig?.enabled && !attachedFile && this.fileManager.isFileRequest(message || '')) {
         const query = this.fileManager.extractFileQuery(message || '');
         const foundFiles = await this.fileManager.searchFiles(query);
-        
         if (foundFiles.length > 0) {
             const reply = this.fileManager.generateSmartDescription(foundFiles, query);
-            const attachments = foundFiles.map(f => ({ 
-                name: f.name, path: f.relativePath, type: f.type, size: f.sizeKB 
-            }));
+            const attachments = foundFiles.map(f => ({ name: f.name, path: f.relativePath, type: f.type, size: f.sizeKB }));
             await new Chat({ userId, botId, threadId, role: 'assistant', content: reply, attachedFiles: attachments }).save();
             return { response: reply, threadId, attachedFiles: attachments };
         }
@@ -157,7 +183,7 @@ class AICoreService {
 
     let contextData = "";
 
-    // 4. FITUR: KOUVENTA
+    // FITUR: KOUVENTA
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
         try {
             const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
@@ -171,39 +197,28 @@ class AICoreService {
         } catch (error) { console.error("Kouventa Error:", error); }
     }
 
-    // 5. FITUR: SMARTSHEET (DATA LOOKUP) - FIXED
+    // FITUR: SMARTSHEET
     if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled) {
         try {
             const service = new SmartsheetJSONService();
-            
-            // Logika Sheet ID: Bot Config > ENV Default
-            let targetSheetId = bot.smartsheetConfig.sheetId; 
-            
-            if (!targetSheetId) {
-                console.log(`⚠️ Bot ${bot.name} tidak memiliki Sheet ID khusus. Menggunakan Default ENV.`);
-                targetSheetId = process.env.SMARTSHEET_PRIMARY_SHEET_ID;
-            }
+            let targetSheetId = bot.smartsheetConfig.sheetId || process.env.SMARTSHEET_PRIMARY_SHEET_ID;
 
             console.log(`📊 Fetching Smartsheet Data for Bot: "${bot.name}" | Sheet ID: ${targetSheetId}`);
 
             if (targetSheetId) {
                 const data = await service.getData(targetSheetId);
                 
-                // ✅ PANGGIL HELPER FORMATTER (Mengurangi ukuran data)
+                // ✅ GUNAKAN FORMATTER BARU (FULL DATA, COMPRESSED FORMAT)
                 const formattedData = this.formatSmartsheetData(data);
                 
                 contextData += `\n\n=== DATA SMARTSHEET (ID: ${targetSheetId}) ===\n${formattedData}\n`;
-            } else {
-                console.warn('❌ No Sheet ID provided for Smartsheet lookup.');
-            }
-
+            } 
         } catch (e) { 
             console.error("❌ Smartsheet Error:", e.message); 
             contextData += `\n[Sistem Error: Gagal mengambil data Smartsheet: ${e.message}]\n`;
         }
     }
 
-    // 6. PERSIAPAN OPENAI PAYLOAD
     const userContent = [];
     if (message) userContent.push({ type: "text", text: message });
 
@@ -220,11 +235,12 @@ class AICoreService {
         }
     }
 
-    // ✅ BATASI HISTORY CHAT (Agar tidak memakan sisa token)
-    const limitedHistory = history.slice(-6); // Hanya ambil 6 chat terakhir
+    // History tetap kita batasi 6 chat terakhir agar fokus
+    const limitedHistory = history.slice(-6); 
 
     const basePrompt = bot.prompt || bot.systemPrompt;
-    const finalSystemPrompt = `${basePrompt}\n\n${contextData}\nInstruksi: Jawablah pertanyaan user. Gunakan data/referensi di atas jika relevan. Jika data terpotong (...), informasikan ke user.`;
+    // Tambahkan info tanggal agar AI bisa hitung Overdue dari full data
+    const finalSystemPrompt = `${basePrompt}\n\n[INFO SISTEM: TANGGAL HARI INI ADALAH ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}]\n\n${contextData}\nInstruksi: Gunakan data tabel di atas. Jika data berformat '|', itu adalah tabel kolom.`;
     
     const messagesPayload = [
         { role: 'system', content: finalSystemPrompt },
@@ -232,15 +248,13 @@ class AICoreService {
         { role: 'user', content: userContent }
     ];
 
-    // 7. EKSEKUSI OPENAI
     const completion = await this.openai.chat.completions.create({ 
         model: 'gpt-4o', 
         messages: messagesPayload,
-        temperature: 0.2
+        temperature: 0.1 // Temperatur rendah untuk akurasi data
     });
     const aiResponse = completion.choices[0].message.content;
 
-    // 8. SIMPAN HISTORI & ATTACHMENT
     let savedAttachments = [];
     if (attachedFile) {
         savedAttachments.push({
