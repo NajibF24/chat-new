@@ -11,12 +11,16 @@ import {
   Title,
   Tooltip,
   Legend,
-  ArcElement
+  ArcElement,
+  Filler // ✅ FIX 1: Import Plugin Filler agar opsi 'fill: true' tidak error
 } from 'chart.js';
 import { Line, Doughnut } from 'react-chartjs-2';
 
-// Register ChartJS
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, ArcElement);
+// ✅ FIX 1: Register Filler
+ChartJS.register(
+  CategoryScale, LinearScale, PointElement, LineElement, 
+  BarElement, Title, Tooltip, Legend, ArcElement, Filler
+);
 
 function AdminDashboard({ user, handleLogout }) {
   const navigate = useNavigate();
@@ -37,13 +41,20 @@ function AdminDashboard({ user, handleLogout }) {
   // --- FORMS STATE ---
   const [showBotModal, setShowBotModal] = useState(false);
   const [editingBot, setEditingBot] = useState(null);
-  const [botForm, setBotForm] = useState({
-      name: '', description: '', systemPrompt: '',
+  
+  // ✅ FIX 3: Definisi State Awal Bot yang Lengkap (Mencegah error saat Create New Bot)
+  const initialBotState = {
+      name: '', 
+      description: '', 
+      systemPrompt: 'Anda adalah asisten AI profesional.',
+      prompt: '', // Field baru untuk custom prompt backend
       starterQuestions: [],
       smartsheetConfig: { enabled: false, apiKey: '', sheetId: '' },
       kouventaConfig: { enabled: false, apiKey: '', endpoint: '' },
       onedriveConfig: { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '' }
-  });
+  };
+
+  const [botForm, setBotForm] = useState(initialBotState);
 
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -69,21 +80,31 @@ function AdminDashboard({ user, handleLogout }) {
   };
 
   const fetchUsers = async () => {
-    try { const res = await axios.get('/api/admin/users'); setUsers(res.data.users); }
-    catch (error) { console.error(error); }
+    try { 
+        const res = await axios.get('/api/admin/users'); 
+        // Safeguard: Pastikan users selalu array
+        setUsers(res.data.users || []); 
+    }
+    catch (error) { console.error(error); setUsers([]); }
   };
 
   const fetchBots = async () => {
-    try { const res = await axios.get('/api/admin/bots'); setBots(res.data.bots); }
-    catch (error) { console.error(error); }
+    try { 
+        const res = await axios.get('/api/admin/bots'); 
+        // ✅ FIX 2: Handle response format (Array langsung vs Object)
+        // Mencegah error "map of undefined" jika backend mengembalikan array langsung
+        const botData = Array.isArray(res.data) ? res.data : (res.data.bots || []);
+        setBots(botData); 
+    }
+    catch (error) { console.error("Fetch Bots Error:", error); setBots([]); }
   };
 
   const fetchChatLogs = async () => {
     setLoading(true);
     try {
       const res = await axios.get(`/api/admin/chat-logs?page=${logPage}&limit=20`);
-      setChatLogs(res.data.chats);
-      setLogTotalPages(res.data.totalPages);
+      setChatLogs(res.data.chats || []);
+      setLogTotalPages(res.data.totalPages || 1);
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
@@ -107,12 +128,20 @@ function AdminDashboard({ user, handleLogout }) {
   };
 
   // === BOT LOGIC ===
+  const handleCreateBot = () => {
+      setEditingBot(null);
+      setBotForm(initialBotState); // ✅ Reset form dengan state yang bersih & lengkap
+      setShowBotModal(true);
+  };
+
   const handleEditBot = (bot) => {
       setEditingBot(bot);
+      // ✅ Populate form dengan data yang ada, fallback ke default jika kosong
       setBotForm({
           name: bot.name,
-          description: bot.description,
+          description: bot.description || '',
           systemPrompt: bot.systemPrompt || '',
+          prompt: bot.prompt || '', // Field prompt baru
           starterQuestions: bot.starterQuestions || [],
           smartsheetConfig: { enabled: false, apiKey: '', sheetId: '', ...bot.smartsheetConfig },
           kouventaConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
@@ -145,7 +174,7 @@ function AdminDashboard({ user, handleLogout }) {
   // === USER LOGIC ===
   const handleEditUser = (u) => {
       setEditingUser(u);
-      setUserForm({ username: u.username, password: '', isAdmin: u.isAdmin, assignedBots: u.assignedBots.map(b => b._id) });
+      setUserForm({ username: u.username, password: '', isAdmin: u.isAdmin, assignedBots: u.assignedBots ? u.assignedBots.map(b => b._id) : [] });
       setShowUserModal(true);
   };
 
@@ -169,27 +198,22 @@ function AdminDashboard({ user, handleLogout }) {
     }));
   };
 
-  // === CHART DATA CONFIG (100% GYS BRAND ALIGNED) ===
-
-  // 1. Activity Trend Data
+  // === CHART DATA CONFIG ===
   const lineChartData = {
     labels: stats?.activityTrend?.map(d => d._id) || [],
     datasets: [{
         label: 'Daily Messages',
         data: stats?.activityTrend?.map(d => d.count) || [],
-        borderColor: '#007857', // Primary Color
-        backgroundColor: 'rgba(0, 120, 87, 0.15)', // Primary Color Transparan
+        borderColor: '#007857',
+        backgroundColor: 'rgba(0, 120, 87, 0.15)',
         tension: 0.3,
-        fill: true,
-        pointBackgroundColor: '#004E36' // Primary Dark
+        fill: true, // ✅ Ini sekarang aman karena Filler sudah diregister
+        pointBackgroundColor: '#004E36'
     }]
   };
 
-  // 2. Bot Popularity Data
   const botLabels = stats?.botPopularity?.map(b => b.name) || [];
   const botData = stats?.botPopularity?.map(b => b.count) || [];
-  
-  // Palet resmi: Hijau Gelap, Hijau, Hijau Terang, Abu Gelap, Abu, Abu Terang
   const pieColors = ['#004E36', '#007857', '#48AE92', '#6E6F72', '#A5A7AA', '#F0F1F1'];
 
   const pieChartData = {
@@ -204,32 +228,15 @@ function AdminDashboard({ user, handleLogout }) {
 
   // ================= RENDER =================
   return (
-    // Background menggunakan steel-lightest
     <div className="min-h-screen bg-steel-lightest/50 text-gray-800 font-sans">
-
-      {/* HEADER: Putih Bersih */}
+      {/* HEADER */}
       <nav className="bg-white border-b border-steel-light/30 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
             <div className="flex items-center gap-3">
-                
-                {/* Logo GYS */}
-                <img
-                  src="/assets/gys-logo.webp"
-                  alt="GYS Logo"
-                  className="h-9 w-auto object-contain"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    document.getElementById('admin-logo-fallback').style.display = 'flex';
-                  }}
-                />
-                {/* Fallback jika gambar gagal dimuat */}
-                <div id="admin-logo-fallback" className="hidden w-9 h-9 bg-primary-dark rounded items-center justify-center font-bold text-white shadow-sm text-lg">
-                   G
-                </div>
-                
+                <img src="/assets/gys-logo.webp" alt="GYS Logo" className="h-9 w-auto object-contain" onError={(e) => { e.target.style.display = 'none'; document.getElementById('admin-logo-fallback').style.display = 'flex'; }} />
+                <div id="admin-logo-fallback" className="hidden w-9 h-9 bg-primary-dark rounded items-center justify-center font-bold text-white shadow-sm text-lg">G</div>
                 <h1 className="text-xl font-bold text-primary-dark tracking-wide">GYS Admin Portal</h1>
             </div>
-            
             <div className="flex items-center gap-4">
                 <span className="text-sm font-medium text-steel">Welcome, {user.username}</span>
                 <button onClick={() => navigate('/')} className="px-3 py-1.5 text-xs bg-steel-lightest hover:bg-steel-light/30 text-primary-dark rounded border border-steel-light/50 transition-colors font-bold">Back to Chat</button>
@@ -237,18 +244,10 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
         </div>
 
-        {/* TABS: Style Industrial */}
-        {/* ... (bagian tabs tetap sama) ... */}
-
-        {/* TABS: Style Industrial */}
+        {/* TABS */}
         <div className="max-w-7xl mx-auto px-6 mt-2">
             <div className="flex space-x-1">
-                {[
-                    {id: 'dashboard', label: '📊 Dashboard'},
-                    {id: 'users', label: '👥 Users'},
-                    {id: 'chats', label: '👁️ Logs'},
-                    {id: 'bots', label: '🤖 Bots'}
-                ].map(tab => (
+                {[{id:'dashboard',label:'📊 Dashboard'},{id:'users',label:'👥 Users'},{id:'chats',label:'👁️ Logs'},{id:'bots',label:'🤖 Bots'}].map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                         className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === tab.id ? 'border-primary-dark text-primary-dark' : 'border-transparent text-steel hover:text-gray-800 hover:border-steel-light/50'}`}>
                         {tab.label}
@@ -259,77 +258,29 @@ function AdminDashboard({ user, handleLogout }) {
       </nav>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-
         {/* === TAB: DASHBOARD === */}
         {activeTab === 'dashboard' && stats && (
             <div className="space-y-8">
-                {/* 1. Stats Cards (GYS Brand Colors) */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <StatCard title="Total Users" value={stats.totalUsers} icon="👥" color="text-primary-dark" bg="bg-primary-dark/10" border="border-l-4 border-l-primary-dark" />
                     <StatCard title="Active Bots" value={stats.totalBots} icon="🤖" color="text-primary" bg="bg-primary/10" border="border-l-4 border-l-primary" />
                     <StatCard title="Total Chats" value={stats.totalChats} icon="💬" color="text-primary-light" bg="bg-primary-light/20" border="border-l-4 border-l-primary-light" />
                     <StatCard title="Total Threads" value={stats.totalThreads} icon="📂" color="text-steel" bg="bg-steel/10" border="border-l-4 border-l-steel" />
                 </div>
-
-                {/* 2. Charts Section (White Cards) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Trend Line Chart */}
                     <div className="lg:col-span-2 bg-white p-6 rounded-lg border border-steel-light/30 shadow-sm">
                         <h3 className="text-lg font-bold text-primary-dark mb-4">Weekly Activity</h3>
-                        <div className="h-64">
-                            <Line data={lineChartData} options={{
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                scales: { y: { grid: { color: '#F0F1F1' } }, x: { grid: { display: false } } },
-                                plugins: { legend: { display: false } }
-                            }} />
-                        </div>
+                        <div className="h-64"><Line data={lineChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#F0F1F1' } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }} /></div>
                     </div>
-
-                    {/* Popularity Doughnut Chart */}
                     <div className="bg-white p-6 rounded-lg border border-steel-light/30 shadow-sm flex flex-col items-center">
                         <h3 className="text-lg font-bold text-primary-dark mb-4">Bot Popularity</h3>
-                        <div className="h-48 w-full flex justify-center">
-                            <Doughnut data={pieChartData} options={{
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: { legend: { position: 'right', labels: { color: '#6E6F72', boxWidth: 12, padding: 15 } } },
-                                cutout: '65%'
-                            }} />
-                        </div>
+                        <div className="h-48 w-full flex justify-center"><Doughnut data={pieChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#6E6F72', boxWidth: 12, padding: 15 } } }, cutout: '65%' }} /></div>
                     </div>
                 </div>
-
-                {/* 3. Top Users Table (White Card) */}
                 <div className="bg-white rounded-lg shadow-sm border border-steel-light/30 overflow-hidden">
-                    <div className="px-6 py-4 border-b border-steel-light/30 bg-steel-lightest/50">
-                        <h3 className="font-bold text-primary-dark">🏆 Top Contributors</h3>
-                    </div>
+                    <div className="px-6 py-4 border-b border-steel-light/30 bg-steel-lightest/50"><h3 className="font-bold text-primary-dark">🏆 Top Contributors</h3></div>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left text-gray-800">
-                            <thead className="bg-steel-lightest text-steel uppercase text-xs">
-                                <tr>
-                                    <th className="px-6 py-3">Rank</th>
-                                    <th className="px-6 py-3">Username</th>
-                                    <th className="px-6 py-3">Email</th>
-                                    <th className="px-6 py-3 text-right">Messages</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-steel-light/30">
-                                {stats.topUsers && stats.topUsers.length > 0 ? (
-                                    stats.topUsers.map((u, idx) => (
-                                        <tr key={idx} className="hover:bg-steel-lightest/50 transition-colors">
-                                            <td className="px-6 py-3 font-bold text-steel">#{idx + 1}</td>
-                                            <td className="px-6 py-3 font-semibold text-gray-800">{u.username}</td>
-                                            <td className="px-6 py-3 text-steel-light">{u.email || '-'}</td>
-                                            <td className="px-6 py-3 text-right font-mono text-primary font-bold">{u.count}</td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr><td colSpan="4" className="px-6 py-4 text-center text-steel-light">No activity data yet.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
+                        <table className="w-full text-sm text-left text-gray-800"><thead className="bg-steel-lightest text-steel uppercase text-xs"><tr><th className="px-6 py-3">Rank</th><th className="px-6 py-3">Username</th><th className="px-6 py-3">Email</th><th className="px-6 py-3 text-right">Messages</th></tr></thead><tbody className="divide-y divide-steel-light/30">{stats.topUsers && stats.topUsers.length > 0 ? (stats.topUsers.map((u, idx) => (<tr key={idx} className="hover:bg-steel-lightest/50 transition-colors"><td className="px-6 py-3 font-bold text-steel">#{idx + 1}</td><td className="px-6 py-3 font-semibold text-gray-800">{u.username}</td><td className="px-6 py-3 text-steel-light">{u.email || '-'}</td><td className="px-6 py-3 text-right font-mono text-primary font-bold">{u.count}</td></tr>))) : (<tr><td colSpan="4" className="px-6 py-4 text-center text-steel-light">No activity data yet.</td></tr>)}</tbody></table>
                     </div>
                 </div>
             </div>
@@ -340,27 +291,10 @@ function AdminDashboard({ user, handleLogout }) {
             <div className="bg-white rounded-lg shadow-sm border border-steel-light/30 overflow-hidden">
                 <div className="px-6 py-4 border-b border-steel-light/30 flex justify-between items-center bg-steel-lightest/50">
                     <h2 className="font-bold text-primary-dark">User Management</h2>
-                    <button onClick={() => { setEditingUser(null); setUserForm({username:'', password:'', isAdmin:false, assignedBots:[]}); setShowUserModal(true); }}
-                        className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded hover:bg-primary transition-colors shadow-sm">+ Add User</button>
+                    <button onClick={() => { setEditingUser(null); setUserForm({username:'', password:'', isAdmin:false, assignedBots:[]}); setShowUserModal(true); }} className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded hover:bg-primary transition-colors shadow-sm">+ Add User</button>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-800">
-                        <thead className="bg-steel-lightest text-steel uppercase text-xs">
-                            <tr><th className="px-6 py-3">User</th><th className="px-6 py-3">Role</th><th className="px-6 py-3">Bots Access</th><th className="px-6 py-3 text-right">Actions</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-steel-light/30">
-                            {users.map(u => (
-                                <tr key={u._id} className="hover:bg-steel-lightest/50">
-                                    <td className="px-6 py-3 font-medium text-gray-800">{u.username}</td>
-                                    <td className="px-6 py-3">{u.isAdmin ? <span className="bg-primary-dark text-white px-2 py-0.5 rounded text-xs font-bold">ADMIN</span> : 'User'}</td>
-                                    <td className="px-6 py-3">{u.assignedBots.length} assigned</td>
-                                    <td className="px-6 py-3 text-right">
-                                        <button onClick={() => handleEditUser(u)} className="text-primary hover:text-primary-dark font-bold hover:underline">Edit</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <table className="w-full text-sm text-left text-gray-800"><thead className="bg-steel-lightest text-steel uppercase text-xs"><tr><th className="px-6 py-3">User</th><th className="px-6 py-3">Role</th><th className="px-6 py-3">Bots Access</th><th className="px-6 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-steel-light/30">{users.map(u => (<tr key={u._id} className="hover:bg-steel-lightest/50"><td className="px-6 py-3 font-medium text-gray-800">{u.username}</td><td className="px-6 py-3">{u.isAdmin ? <span className="bg-primary-dark text-white px-2 py-0.5 rounded text-xs font-bold">ADMIN</span> : 'User'}</td><td className="px-6 py-3">{u.assignedBots?.length || 0} assigned</td><td className="px-6 py-3 text-right"><button onClick={() => handleEditUser(u)} className="text-primary hover:text-primary-dark font-bold hover:underline">Edit</button></td></tr>))}</tbody></table>
                 </div>
             </div>
         )}
@@ -371,52 +305,28 @@ function AdminDashboard({ user, handleLogout }) {
                 <div className="px-6 py-4 border-b border-steel-light/30 flex justify-between items-center bg-steel-lightest/50">
                     <h2 className="font-bold text-primary-dark">Chat Logs</h2>
                     <div className="flex items-center gap-2">
-                        <input type="month" value={exportFilter} onChange={(e) => setExportFilter(e.target.value)}
-                            className="bg-white border border-steel-light/50 rounded text-sm text-gray-800 px-3 py-1.5 focus:border-primary-dark outline-none" />
-                        <button onClick={handleExport} className="px-4 py-2 bg-primary text-white text-sm font-bold rounded flex items-center gap-2 hover:bg-primary-dark transition-colors shadow-sm">
-                            <span>⬇</span> Export CSV
-                        </button>
+                        <input type="month" value={exportFilter} onChange={(e) => setExportFilter(e.target.value)} className="bg-white border border-steel-light/50 rounded text-sm text-gray-800 px-3 py-1.5 focus:border-primary-dark outline-none" />
+                        <button onClick={handleExport} className="px-4 py-2 bg-primary text-white text-sm font-bold rounded flex items-center gap-2 hover:bg-primary-dark transition-colors shadow-sm"><span>⬇</span> Export CSV</button>
                     </div>
                 </div>
                 <div className="flex-1 overflow-auto">
-                    <table className="w-full text-sm text-left text-gray-800">
-                        <thead className="bg-steel-lightest text-steel uppercase text-xs sticky top-0">
-                            <tr><th className="px-6 py-3">Time</th><th className="px-6 py-3">User</th><th className="px-6 py-3">Bot</th><th className="px-6 py-3">Message</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-steel-light/30">
-                            {chatLogs.map(log => (
-                                <tr key={log._id} className="hover:bg-steel-lightest/50">
-                                    <td className="px-6 py-3 whitespace-nowrap text-xs text-steel">{new Date(log.createdAt).toLocaleString()}</td>
-                                    <td className="px-6 py-3 font-medium text-gray-800">{log.userId?.username || 'Unknown'}</td>
-                                    <td className="px-6 py-3 text-primary font-bold">{log.botId?.name || 'System'}</td>
-                                    <td className="px-6 py-3 truncate max-w-xs text-steel" title={log.content}>
-                                        {log.content || (log.attachedFiles?.length ? '📎 Attachment' : '-')}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <table className="w-full text-sm text-left text-gray-800"><thead className="bg-steel-lightest text-steel uppercase text-xs sticky top-0"><tr><th className="px-6 py-3">Time</th><th className="px-6 py-3">User</th><th className="px-6 py-3">Bot</th><th className="px-6 py-3">Message</th></tr></thead><tbody className="divide-y divide-steel-light/30">{chatLogs.map(log => (<tr key={log._id} className="hover:bg-steel-lightest/50"><td className="px-6 py-3 whitespace-nowrap text-xs text-steel">{new Date(log.createdAt).toLocaleString()}</td><td className="px-6 py-3 font-medium text-gray-800">{log.userId?.username || 'Unknown'}</td><td className="px-6 py-3 text-primary font-bold">{log.botId?.name || 'System'}</td><td className="px-6 py-3 truncate max-w-xs text-steel" title={log.content}>{log.content || (log.attachedFiles?.length ? '📎 Attachment' : '-')}</td></tr>))}</tbody></table>
                 </div>
-                <div className="p-3 border-t border-steel-light/30 bg-steel-lightest/50 flex justify-between items-center text-xs text-steel">
-                    <span>Page {logPage} of {logTotalPages}</span>
-                    <div className="space-x-2">
-                        <button disabled={logPage===1} onClick={()=>setLogPage(p=>p-1)} className="px-3 py-1 bg-white border border-steel-light/50 rounded hover:bg-steel-lightest disabled:opacity-50 text-gray-700 font-bold">Prev</button>
-                        <button disabled={logPage===logTotalPages} onClick={()=>setLogPage(p=>p+1)} className="px-3 py-1 bg-white border border-steel-light/50 rounded hover:bg-steel-lightest disabled:opacity-50 text-gray-700 font-bold">Next</button>
-                    </div>
-                </div>
+                <div className="p-3 border-t border-steel-light/30 bg-steel-lightest/50 flex justify-between items-center text-xs text-steel"><span>Page {logPage} of {logTotalPages}</span><div className="space-x-2"><button disabled={logPage===1} onClick={()=>setLogPage(p=>p-1)} className="px-3 py-1 bg-white border border-steel-light/50 rounded hover:bg-steel-lightest disabled:opacity-50 text-gray-700 font-bold">Prev</button><button disabled={logPage===logTotalPages} onClick={()=>setLogPage(p=>p+1)} className="px-3 py-1 bg-white border border-steel-light/50 rounded hover:bg-steel-lightest disabled:opacity-50 text-gray-700 font-bold">Next</button></div></div>
             </div>
         )}
 
         {/* === TAB: BOTS === */}
         {activeTab === 'bots' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div onClick={() => { setEditingBot(null); setBotForm({name:'', description:'', systemPrompt:'', starterQuestions:[], smartsheetConfig:{enabled:false}, kouventaConfig:{enabled:false}, onedriveConfig:{enabled:false}}); setShowBotModal(true); }}
-                     className="bg-steel-lightest/30 rounded-lg border-2 border-dashed border-steel-light/50 p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary-dark hover:bg-white transition-all min-h-[200px] group">
+                {/* Ganti onClick untuk menggunakan handler baru */}
+                <div onClick={handleCreateBot} className="bg-steel-lightest/30 rounded-lg border-2 border-dashed border-steel-light/50 p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary-dark hover:bg-white transition-all min-h-[200px] group">
                     <div className="w-12 h-12 bg-steel-lightest text-steel rounded-full flex items-center justify-center mb-3 text-2xl font-bold group-hover:bg-primary-dark group-hover:text-white transition-colors border border-steel-light/30">+</div>
                     <span className="font-semibold text-steel group-hover:text-primary-dark transition-colors">Create New Bot</span>
                 </div>
 
-                {bots.map(bot => (
+                {/* ✅ FIX 2: Safeguard render bots array */}
+                {Array.isArray(bots) && bots.map(bot => (
                     <div key={bot._id} className="bg-white rounded-lg shadow-sm border border-steel-light/30 p-6 hover:shadow-md transition-all relative">
                         <div className="flex justify-between items-start mb-4">
                             <h3 className="font-bold text-lg text-primary-dark">{bot.name}</h3>
@@ -462,17 +372,35 @@ function AdminDashboard({ user, handleLogout }) {
                         </div>
                     </div>
 
-                    <div className={botForm.kouventaConfig.enabled ? "opacity-50 pointer-events-none" : ""}>
-                        <label className="text-xs font-bold text-steel block mb-1">System Prompt</label>
-                        <textarea className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded p-2 text-gray-800 text-sm h-32 font-mono focus:border-primary-dark outline-none" value={botForm.systemPrompt} onChange={e=>setBotForm({...botForm, systemPrompt:e.target.value})} />
-                        {botForm.kouventaConfig.enabled && <p className="text-xs text-primary mt-1">Managed by Kouventa.</p>}
+                    {/* ✅ PROMPT FIELD BARU */}
+                    <div>
+                        <label className="text-xs font-bold text-steel block mb-1">System Prompt / Instructions (Main)</label>
+                        <textarea className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded p-2 text-gray-800 text-sm h-32 font-mono focus:border-primary-dark outline-none" 
+                            placeholder="Contoh: Anda adalah asisten HR yang membantu menjawab pertanyaan cuti..."
+                            value={botForm.prompt} 
+                            onChange={e=>setBotForm({...botForm, prompt:e.target.value})} />
+                        <p className="text-[10px] text-steel mt-1">Ini adalah prompt utama yang akan digunakan oleh AI.</p>
                     </div>
+
+                    {/* Hidden SystemPrompt untuk kompatibilitas */}
+                    <div className="hidden"><input value={botForm.systemPrompt} readOnly /></div>
 
                     <div className="space-y-4">
                         {/* Smartsheet */}
                         <div className="border border-steel-light/30 rounded-lg p-4 bg-steel-lightest/50">
                             <div className="flex justify-between mb-3"><span className="font-bold text-gray-800 text-sm">Smartsheet Integration</span><input type="checkbox" checked={botForm.smartsheetConfig.enabled} onChange={e=>setBotForm({...botForm, smartsheetConfig:{...botForm.smartsheetConfig, enabled:e.target.checked}})} /></div>
-                            {botForm.smartsheetConfig.enabled && <div className="space-y-2"><input placeholder="Sheet ID" className="w-full bg-white border border-steel-light/50 rounded p-2 text-xs text-gray-800 outline-none focus:border-primary" value={botForm.smartsheetConfig.sheetId} onChange={e=>setBotForm({...botForm, smartsheetConfig:{...botForm.smartsheetConfig, sheetId:e.target.value}})} /><input type="password" placeholder="API Key" className="w-full bg-white border border-steel-light/50 rounded p-2 text-xs text-gray-800 outline-none focus:border-primary" value={botForm.smartsheetConfig.apiKey} onChange={e=>setBotForm({...botForm, smartsheetConfig:{...botForm.smartsheetConfig, apiKey:e.target.value}})} /></div>}
+                            {botForm.smartsheetConfig.enabled && (
+                                <div className="space-y-2">
+                                    <input placeholder="Sheet ID (Contoh: 3743772018954116)" className="w-full bg-white border border-steel-light/50 rounded p-2 text-xs text-gray-800 outline-none focus:border-primary" 
+                                        value={botForm.smartsheetConfig.sheetId} 
+                                        onChange={e=>setBotForm({...botForm, smartsheetConfig:{...botForm.smartsheetConfig, sheetId:e.target.value}})} 
+                                    />
+                                    <input type="password" placeholder="API Key (Optional, default use server env)" className="w-full bg-white border border-steel-light/50 rounded p-2 text-xs text-gray-800 outline-none focus:border-primary" 
+                                        value={botForm.smartsheetConfig.apiKey} 
+                                        onChange={e=>setBotForm({...botForm, smartsheetConfig:{...botForm.smartsheetConfig, apiKey:e.target.value}})} 
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         {/* OneDrive */}
@@ -498,7 +426,7 @@ function AdminDashboard({ user, handleLogout }) {
         </div>
       )}
 
-      {/* --- MODAL USER --- */}
+      {/* --- MODAL USER (Tidak Berubah) --- */}
       {showUserModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 border border-steel-light/30">
@@ -524,7 +452,6 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
           </div>
       )}
-
     </div>
   );
 }

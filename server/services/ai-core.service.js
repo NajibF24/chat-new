@@ -22,32 +22,49 @@ class AICoreService {
   // ===========================================================================
   // 1. UTILS: FORMAT DATA SMARTSHEET (FIX: Mencegah Error Token Limit)
   // ===========================================================================
-  formatSmartsheetData(data) {
+ formatSmartsheetData(data) {
     if (!Array.isArray(data)) return JSON.stringify(data).substring(0, 20000);
 
-    const TOTAL_ROWS = data.length;
-    // ✅ BATASI HANYA 60 BARIS TERBARU (Agar tidak crash 350k token)
-    const MAX_ROWS = 60; 
+    // LANGKAH 1: BERSIHKAN ROW & CELL KOSONG TERLEBIH DAHULU
+    // Kita filter dulu sebelum dipotong, supaya "60 data terakhir" itu benar-benar data, bukan baris kosong.
+    const cleanRows = data.map((row, originalIdx) => {
+        // Tampung cell yang ada isinya saja
+        const validCells = [];
+        
+        Object.entries(row).forEach(([key, value]) => {
+            // Cek apakah value valid (bukan null, bukan undefined, dan bukan string kosong/spasi doang)
+            if (value !== null && value !== undefined && String(value).trim() !== '') {
+                // Abaikan kolom sistem yang tidak penting bagi AI (Opsional)
+                if (!['id', 'createdAt', 'modifiedAt'].includes(key)) {
+                   validCells.push(`${key}: ${value}`);
+                }
+            }
+        });
+
+        // Jika row ini punya setidaknya 1 cell berisi data, kembalikan format string
+        if (validCells.length > 0) {
+            return `Row ${originalIdx + 1}: { ${validCells.join(' | ')} }`;
+        }
+        return null; // Tandai row ini sebagai sampah (kosong)
+    }).filter(row => row !== null); // Hapus semua row yang null
+
+    // LANGKAH 2: CEK JUMLAH DATA SETELAH DIBERSIHKAN
+    const TOTAL_CLEAN_ROWS = cleanRows.length;
+    const MAX_ROWS = 60; // Batas aman agar tidak error token
     
-    let processedData = data;
+    let finalData = cleanRows;
     let note = "";
 
-    if (TOTAL_ROWS > MAX_ROWS) {
-        // Ambil data paling bawah (terbaru)
-        processedData = data.slice(-MAX_ROWS);
-        note = `\n[CATATAN SISTEM: Data dipotong. Menampilkan ${MAX_ROWS} baris terbaru dari total ${TOTAL_ROWS} baris untuk efisiensi.]`;
+    // LANGKAH 3: POTONG DATA (AMBIL TERBARU)
+    if (TOTAL_CLEAN_ROWS > MAX_ROWS) {
+        // Ambil bagian paling bawah (Terbaru)
+        finalData = cleanRows.slice(-MAX_ROWS);
+        note = `\n[CATATAN SISTEM: Data telah dibersihkan dari cell kosong. Menampilkan ${MAX_ROWS} baris BERISI DATA TERBARU dari total ${TOTAL_CLEAN_ROWS} baris valid.]`;
+    } else if (TOTAL_CLEAN_ROWS === 0) {
+        return "DATA KOSONG: Tidak ditemukan data text pada Sheet ini.";
     }
 
-    // Ubah format JSON ke String yang lebih hemat token
-    const simplified = processedData.map((row, idx) => {
-        const cleanRow = Object.entries(row)
-            .filter(([_, v]) => v !== null && v !== "" && v !== undefined) // Hapus field kosong
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(' | ');
-        return `Row ${TOTAL_ROWS - MAX_ROWS + idx + 1}: { ${cleanRow} }`;
-    }).join('\n');
-
-    return `DATA SUMMARY:\n${simplified}\n${note}`;
+    return `DATA SUMMARY (Non-Empty Cells Only):\n${finalData.join('\n')}\n${note}`;
   }
 
   // ===========================================================================
