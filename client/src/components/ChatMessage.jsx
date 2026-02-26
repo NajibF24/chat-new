@@ -79,14 +79,25 @@ function ChatMessage({ message }) {
 
                 // --- IMAGES ---
                 img: ({node, ...props}) => (
-                  <img
-                    {...props}
-                    className={`max-w-full h-auto rounded-lg shadow-sm border my-3 cursor-zoom-in hover:scale-[1.01] transition-transform bg-white p-1 ${isUser ? 'border-white/20' : 'border-steel-light/30'}`}
-                    loading="lazy"
-                    onClick={(e) => window.open(e.target.src, '_blank')}
-                  />
+                  <div className="relative my-3">
+                    <img
+                      {...props}
+                      className={`
+                        max-w-full h-auto 
+                        max-h-[400px]           /* Batasi tinggi maksimal agar tidak memenuhi layar */
+                        rounded-xl shadow-md 
+                        border border-steel-light/30 
+                        bg-white p-1 
+                        cursor-pointer 
+                        transition-all duration-300
+                        hover:brightness-95    /* Efek hover yang lebih stabil daripada scale */
+                      `}
+                      loading="lazy"
+                      // Menghilangkan scale[1.01] yang sering menyebabkan jitter/glitch
+                      onClick={(e) => window.open(e.target.src, '_blank')}
+                    />
+                  </div>
                 ),
-
                 // --- LINKS ---
                 a: ({node, ...props}) => <a className={`${isUser ? 'text-white underline decoration-white/50' : 'text-primary-light'} underline font-bold hover:opacity-80`} target="_blank" rel="noreferrer" {...props} />,
               }}
