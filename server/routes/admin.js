@@ -171,39 +171,102 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
 // 🤖 BOT MANAGEMENT (EXISTING - KEPT AS IS)
 // ============================================================================
 
-router.get('/bots', requireAdmin, async (req, res) => {
+
+// 1. Get All Bots
+router.get('/bots', async (req, res) => {
   try {
-    const bots = await Bot.find();
-    res.json({ bots });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+    const bots = await Bot.find({});
+    res.json(bots);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-router.post('/bots', requireAdmin, async (req, res) => {
+// 2. Create Bot
+router.post('/bots', async (req, res) => {
   try {
-    const newBot = new Bot(req.body);
+    // Ambil data dari Body
+    const { 
+        name, description, systemPrompt, prompt, 
+        starterQuestions, smartsheetConfig, kouventaConfig 
+    } = req.body;
+    
+    // ✅ PASTIKAN STRUKTUR DATA TERSIMPAN BENAR
+    const newBot = new Bot({
+      name,
+      description,
+      systemPrompt: systemPrompt || "Anda adalah asisten AI.",
+      prompt: prompt || "",
+      starterQuestions: starterQuestions || [],
+      
+      // Simpan Config Smartsheet
+      smartsheetConfig: {
+        enabled: smartsheetConfig?.enabled || false,
+        sheetId: smartsheetConfig?.sheetId || '', // ✅ PENTING: Simpan Sheet ID
+        apiKey: smartsheetConfig?.apiKey || '',
+      },
+
+      // Simpan Config Kouventa
+      kouventaConfig: {
+        enabled: kouventaConfig?.enabled || false,
+        apiKey: kouventaConfig?.apiKey || '',
+        endpoint: kouventaConfig?.endpoint || ''
+      }
+    });
+
     await newBot.save();
-    res.status(201).json({ bot: newBot });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+    res.json(newBot);
+  } catch (error) {
+    console.error("Create Bot Error:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-router.put('/bots/:id', requireAdmin, async (req, res) => {
+// 3. Update Bot
+router.put('/bots/:id', async (req, res) => {
   try {
-    const { name, description, systemPrompt, starterQuestions, smartsheetConfig, kouventaConfig, onedriveConfig } = req.body;
-    const bot = await Bot.findByIdAndUpdate(
-      req.params.id,
-      { name, description, systemPrompt, starterQuestions, smartsheetConfig, kouventaConfig, onedriveConfig },
-      { new: true }
-    );
-    if (!bot) return res.status(404).json({ error: 'Bot not found' });
-    res.json({ bot });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+    const { 
+        name, description, systemPrompt, prompt, 
+        starterQuestions, smartsheetConfig, kouventaConfig 
+    } = req.body;
+
+    const updateData = {
+        name, 
+        description, 
+        systemPrompt,
+        prompt,
+        starterQuestions,
+        
+        // ✅ UPDATE FIELD SMARTSHEET
+        smartsheetConfig: {
+            enabled: smartsheetConfig?.enabled || false,
+            sheetId: smartsheetConfig?.sheetId || '', // ✅ Update Sheet ID
+            apiKey: smartsheetConfig?.apiKey || '',
+        },
+        
+        kouventaConfig: {
+            enabled: kouventaConfig?.enabled || false,
+            apiKey: kouventaConfig?.apiKey || '',
+            endpoint: kouventaConfig?.endpoint || ''
+        }
+    };
+
+    const updatedBot = await Bot.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    res.json(updatedBot);
+  } catch (error) {
+    console.error("Update Bot Error:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-router.delete('/bots/:id', requireAdmin, async (req, res) => {
+// 4. Delete Bot
+router.delete('/bots/:id', async (req, res) => {
   try {
     await Bot.findByIdAndDelete(req.params.id);
     res.json({ message: 'Bot deleted' });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================================================

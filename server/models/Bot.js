@@ -1,51 +1,34 @@
 import mongoose from 'mongoose';
 
 const botSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    unique: true
-  },
+  name: { type: String, required: true, unique: true },
   description: String,
 
-  // ✅ FIELD PENTING (Baru): Untuk menyimpan Custom Prompt dari Dashboard Admin
-  // Ini yang akan diprioritaskan oleh AICoreService agar tidak "tabrakan"
-  prompt: { 
-    type: String, 
-    default: "" 
-  },
+  // Prompt Utama (Prioritas)
+  prompt: { type: String, default: "" },
 
-  // Field lama (tetap kita simpan untuk backward compatibility)
-  systemPrompt: {
-    type: String,
-    default: "Anda adalah asisten AI profesional yang siap membantu."
-  },
+  // Fallback Prompt (Backward Compatibility)
+  systemPrompt: { type: String, default: "Anda adalah asisten AI profesional." },
 
-  // ✅ FITUR ANDA: Starter Questions (Tetap Ada)
-  starterQuestions: {
-    type: [String],
-    default: [] 
-  },
+  // Starter Questions
+  starterQuestions: { type: [String], default: [] },
 
-  // ✅ CONFIG SMARTSHEET (Disesuaikan agar kompatibel dengan Service)
+  // ✅ KONFIGURASI SMARTSHEET
   smartsheetConfig: {
     enabled: { type: Boolean, default: false },
-    apiKey: { type: String, default: '' }, 
-    sheetId: { type: String, default: '' }, // Service akan membaca ini
-    primarySheetId: { type: String }, // Cadangan jika script lain pakai nama ini
+    apiKey: { type: String, default: '' }, // Opsional (jika ingin override ENV)
+    sheetId: { type: String, default: '' }, // ✅ INI FIELD KUNCI (Target Sheet ID)
+    primarySheetId: { type: String, default: '' }, // Field cadangan
   },
 
-  // ✅ KOUVENTA CONFIG (Tetap Ada)
+  // ✅ KONFIGURASI KOUVENTA
   kouventaConfig: {
     enabled: { type: Boolean, default: false },
     apiKey: { type: String, default: '' },
     endpoint: { type: String, default: '' }
   },
 
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  createdAt: { type: Date, default: Date.now }
 });
 
 export default mongoose.model('Bot', botSchema);

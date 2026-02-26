@@ -4,7 +4,7 @@ import mammoth from 'mammoth';
 import XLSX from 'xlsx';
 import fs from 'fs';
 import path from 'path';
-import officeParser from 'officeparser';
+import { fileURLToPath } from 'url';
 
 import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
@@ -24,26 +24,28 @@ class AICoreService {
   // ===========================================================================
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
+    
+    // Pengecualian: Jika user minta visual/dashboard, jangan anggap data query
     const visualKeywords = ['dashboard', 'gambar', 'image', 'foto', 'screenshot', 'visual', 'pic'];
     if (visualKeywords.some(k => lowerMsg.includes(k)) && lowerMsg.includes('dashboard')) return false;
 
+    // Kata kunci indikasi minta data
     const dataKeywords = [
         'berikan', 'cari', 'list', 'daftar', 'semua', 'project', 'status', 'progress', 
         'summary', 'analisa', 'data', 'total', 'berapa', 'mana', 'versi', 'latest', 
-        'terbaru', 'revisi', 'dokumen', 'file', 'tracking', 'update', 'history', 'riwayat'
+        'terbaru', 'revisi', 'dokumen', 'file', 'tracking', 'update', 'history', 'riwayat', 'check'
     ];
-    return dataKeywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.'); 
+    return dataKeywords.some(k => lowerMsg.includes(k)); 
   }
 
   // ===========================================================================
-  // 2. UTILS: EKSTRAKSI FILE (FIX: Memastikan Path Fisik yang dibaca)
+  // 2. UTILS: EKSTRAKSI FILE CONTENT
   // ===========================================================================
   async extractFileContent(attachedFile) {
-      // Gunakan serverPath (lokasi lokal) jika ada, jika tidak gunakan path asli
+      // Prioritaskan serverPath (path fisik)
       const physicalPath = attachedFile.serverPath || attachedFile.path;
       
       if (!physicalPath || !fs.existsSync(physicalPath)) {
-          console.error("❌ File tidak ditemukan di server:", physicalPath);
           return "";
       }
 
@@ -77,10 +79,11 @@ class AICoreService {
   // 3. MAIN PROCESS
   // ===========================================================================
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
+    // 1. Validasi Bot
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
-    // 1. Setup Thread
+    // 2. Setup Thread (Buat baru atau update)
     if (!threadId) {
         const title = message ? (message.substring(0, 30)) : `Chat with ${bot.name}`;
         const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
@@ -90,13 +93,22 @@ class AICoreService {
         await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
     }
 
-    // 2. DASHBOARD FILES (ISOLASI)
+    // 3. FITUR: DASHBOARD FILES (ISOLASI)
+    // Jika user minta "lihat dashboard X", cari file fisik di folder dashboard
     if (bot.smartsheetConfig?.enabled && !attachedFile && this.fileManager.isFileRequest(message || '')) {
         const query = this.fileManager.extractFileQuery(message || '');
         const foundFiles = await this.fileManager.searchFiles(query);
+        
         if (foundFiles.length > 0) {
             const reply = this.fileManager.generateSmartDescription(foundFiles, query);
-            const attachments = foundFiles.map(f => ({ name: f.name, path: f.relativePath, type: f.type, size: f.sizeKB }));
+            const attachments = foundFiles.map(f => ({ 
+                name: f.name, 
+                path: f.relativePath, 
+                type: f.type, 
+                size: f.sizeKB 
+            }));
+            
+            // Simpan respon assistant langsung (tanpa ke OpenAI)
             await new Chat({ userId, botId, threadId, role: 'assistant', content: reply, attachedFiles: attachments }).save();
             return { response: reply, threadId, attachedFiles: attachments };
         }
@@ -104,40 +116,70 @@ class AICoreService {
 
     let contextData = "";
 
-    // 3. KOUVENTA INTEGRATION
+    // 4. FITUR: KOUVENTA (Enterprise Search)
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
         try {
             const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
             let fullPrompt = message || "";
+            
+            // Jika ada file teks terlampir, sertakan dalam pencarian context
             if (attachedFile && !attachedFile.mimetype?.startsWith('image/')) {
                 const fileText = await this.extractFileContent(attachedFile);
                 if (fileText) fullPrompt += fileText;
             }
+            
             const kouventaReply = await kouventa.generateResponse(fullPrompt);
             contextData += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${kouventaReply}\n`;
-        } catch (error) { console.error("Kouventa Error:", error); }
+        } catch (error) { 
+            console.error("Kouventa Error:", error); 
+        }
     }
 
-    // 4. SMARTSHEET LOGIC
+    // 5. FITUR: SMARTSHEET (DATA LOOKUP) - FIXED LOGIC
     if (this.isDataQuery(message) && bot.smartsheetConfig?.enabled) {
         try {
             const service = new SmartsheetJSONService();
-            const sheetId = bot.smartsheetConfig.sheetId || bot.smartsheetConfig.primarySheetId;
-            const data = await service.getData(sheetId);
-            contextData += `\n\n=== DATA SMARTSHEET ===\n${JSON.stringify(data)}\n`;
-        } catch (e) { console.error("Smartsheet Error:", e); }
+            
+            // ✅ PRIORITAS PENGAMBILAN SHEET ID
+            // 1. Ambil dari Config Bot (Specific ID untuk Bot ini)
+            // 2. Jika kosong, Fallback ke ENV (Default ID)
+            let targetSheetId = bot.smartsheetConfig.sheetId; 
+            
+            if (!targetSheetId) {
+                console.log(`⚠️ Bot ${bot.name} tidak memiliki Sheet ID khusus. Menggunakan Default ENV.`);
+                targetSheetId = process.env.SMARTSHEET_PRIMARY_SHEET_ID;
+            }
+
+            console.log(`📊 Fetching Smartsheet Data for Bot: "${bot.name}" | Sheet ID: ${targetSheetId}`);
+
+            if (targetSheetId) {
+                const data = await service.getData(targetSheetId);
+                // Convert JSON ke string context
+                contextData += `\n\n=== DATA REAL-TIME DARI SMARTSHEET (ID: ${targetSheetId}) ===\n${JSON.stringify(data)}\n`;
+            } else {
+                console.warn('❌ No Sheet ID provided for Smartsheet lookup.');
+            }
+
+        } catch (e) { 
+            console.error("❌ Smartsheet Error:", e.message); 
+            contextData += `\n[Sistem Error: Gagal mengambil data Smartsheet: ${e.message}]\n`;
+        }
     }
 
-    // 5. OPENAI EXECUTION (FIX: Mengirimkan teks PDF ke AI)
+    // 6. PERSIAPAN OPENAI PAYLOAD
     const userContent = [];
     if (message) userContent.push({ type: "text", text: message });
 
     if (attachedFile) {
         if (attachedFile.mimetype?.startsWith('image/')) {
+            // Jika gambar, kirim sebagai base64 ke GPT-4 Vision
             const imgBuffer = fs.readFileSync(attachedFile.path);
-            userContent.push({ type: "image_url", image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` } });
+            userContent.push({ 
+                type: "image_url", 
+                image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` } 
+            });
         } else {
-            // EKSTRAK TEKS PDF/DOCX DAN MASUKKAN KE PROMPT
+            // Jika dokumen (PDF/Doc/Excel), ekstrak teksnya
             const extractedText = await this.extractFileContent(attachedFile);
             if (extractedText) {
                 userContent.push({ type: "text", text: extractedText });
@@ -145,34 +187,53 @@ class AICoreService {
         }
     }
 
-    const systemPrompt = `${bot.prompt || bot.systemPrompt}\n\n${contextData}\nGunkan data/referensi di atas jika relevan dengan pertanyaan user.`;
+    // Gabungkan System Prompt + Context Data
+    // Menggunakan 'prompt' (field baru) jika ada, fallback ke 'systemPrompt' (lama)
+    const basePrompt = bot.prompt || bot.systemPrompt;
+    const finalSystemPrompt = `${basePrompt}\n\n${contextData}\nInstruksi: Jawablah pertanyaan user. Gunakan data/referensi di atas jika relevan. Jika tidak ada data yang cocok, jawab berdasarkan pengetahuan umum atau minta detail lebih lanjut.`;
+    
     const messagesPayload = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: finalSystemPrompt },
         ...history.map(h => ({ role: h.role, content: h.content })),
         { role: 'user', content: userContent }
     ];
 
+    // 7. EKSEKUSI OPENAI
     const completion = await this.openai.chat.completions.create({ 
         model: 'gpt-4o', 
         messages: messagesPayload,
-        temperature: 0.2
+        temperature: 0.2 // Rendah agar lebih akurat membaca data
     });
     const aiResponse = completion.choices[0].message.content;
 
-    // 6. SAVE ATTACHMENTS (FIX: Memisahkan URL Browser dan Path Server)
+    // 8. SIMPAN HISTORI CHAT & ATTACHMENT
     let savedAttachments = [];
     if (attachedFile) {
         savedAttachments.push({
             name: attachedFile.originalname || attachedFile.filename,
-            path: attachedFile.url || `/api/files/${attachedFile.filename}`, // URL untuk Browser (Klik)
-            serverPath: attachedFile.path, // PATH asli untuk AI (Baca)
+            // URL Web (untuk diklik di frontend)
+            path: attachedFile.url || `/api/files/${attachedFile.filename}`,
+            // Path Fisik (untuk keperluan backend lain)
+            serverPath: attachedFile.path,
             type: attachedFile.mimetype?.includes('image') ? 'image' : (attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file'),
             size: (attachedFile.size / 1024).toFixed(1)
         });
     }
 
-    await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
-    await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
+    // Simpan pesan User
+    await new Chat({ 
+        userId, botId, threadId, 
+        role: 'user', 
+        content: message || '', 
+        attachedFiles: savedAttachments 
+    }).save();
+
+    // Simpan balasan Assistant
+    await new Chat({ 
+        userId, botId, threadId, 
+        role: 'assistant', 
+        content: aiResponse 
+    }).save();
 
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }
