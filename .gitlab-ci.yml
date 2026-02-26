@@ -17,18 +17,17 @@ stages:
   - deploy
 
 # ==========================================================
-# 1. BUILD STAGE (Dipisah antara Server & Client)
+# 1. BUILD STAGE
 # ==========================================================
 
 build_server:
   stage: build
   tags:
     - portal-ai
-  only:
-    - main
   rules:
-    - changes:
-        - server/**/* # Hanya jalan jika ada perubahan di folder server
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - server/**/*
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
@@ -41,11 +40,10 @@ build_client:
   stage: build
   tags:
     - portal-ai
-  only:
-    - main
   rules:
-    - changes:
-        - client/**/* # Hanya jalan jika ada perubahan di folder client
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - client/**/*
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
@@ -55,17 +53,16 @@ build_client:
     - docker push $CLIENT_IMAGE_LATEST
 
 # ==========================================================
-# 2. DEPLOY STAGE (Dipisah agar tidak mengganggu satu sama lain)
+# 2. DEPLOY STAGE
 # ==========================================================
 
 deploy_server:
   stage: deploy
   tags:
     - portal-ai
-  only:
-    - main
   rules:
-    - changes:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
         - server/**/*
   needs: ["build_server"]
   before_script:
@@ -74,7 +71,6 @@ deploy_server:
     - echo "🚀 Updating Server Service..."
     - echo "$DOT_ENV_FILE" > .env
     - docker pull $SERVER_IMAGE_LATEST
-    # Hanya restart service server tanpa mematikan yang lain
     - docker compose up -d --no-deps --force-recreate server
     - docker image prune -f
 
@@ -82,10 +78,9 @@ deploy_client:
   stage: deploy
   tags:
     - portal-ai
-  only:
-    - main
   rules:
-    - changes:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
         - client/**/*
   needs: ["build_client"]
   before_script:
@@ -94,6 +89,5 @@ deploy_client:
     - echo "🚀 Updating Client Service..."
     - echo "$DOT_ENV_FILE" > .env
     - docker pull $CLIENT_IMAGE_LATEST
-    # Hanya restart service client tanpa mematikan yang lain
     - docker compose up -d --no-deps --force-recreate client
     - docker image prune -f
