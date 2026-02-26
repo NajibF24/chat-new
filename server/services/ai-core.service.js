@@ -19,41 +19,37 @@ class AICoreService {
     this.fileManager = new FileManagerService();
   }
 
+
   // ===========================================================================
-  // 1. UTILS: FORMAT DATA SMARTSHEET (COMPRESSION MODE - NO DATA LOSS)
-  // ===========================================================================
- // ===========================================================================
-  // 1. UTILS: FORMAT DATA SMARTSHEET (AGRESSIVE CLEANING & DETECTION)
+  // 1. UTILS: FORMAT DATA SMARTSHEET (SUPER ROBUST MODE)
   // ===========================================================================
   formatSmartsheetData(data) {
-    // 1. Validasi Dasar
-    if (!Array.isArray(data) || data.length === 0) return "DATA KOSONG: Server tidak menerima data dari Smartsheet.";
+    // 1. Validasi Awal
+    if (!Array.isArray(data) || data.length === 0) return "DATA KOSONG: Server tidak menerima data.";
 
-    // 2. Filter Baris Sampah
-    // Terkadang Smartsheet mengirim baris yang kelihatannya ada (objek ada) tapi semua nilainya null/empty.
+    // 2. Pembersihan Baris (Agresif)
     const cleanRows = data.filter(row => {
-        return Object.values(row).some(val => 
-            val !== null && 
-            val !== undefined && 
-            String(val).trim() !== '' &&
-            String(val).trim() !== 'null'
-        );
+        // Baris dianggap valid jika ada setidaknya satu kolom yang punya isi teks asli
+        // dan bukan merupakan duplikasi dari nama kolom itu sendiri (Header Ganda)
+        return Object.entries(row).some(([key, val]) => {
+            if (val === null || val === undefined) return false;
+            const stringVal = String(val).trim();
+            return stringVal !== '' && stringVal !== 'null' && stringVal !== key;
+        });
     });
 
-    if (cleanRows.length === 0) return "DATA KOSONG: Sheet terbaca tapi tidak ada isi teks di dalamnya.";
+    if (cleanRows.length === 0) return "DATA KOSONG: File terbaca tapi tidak ditemukan isi data yang valid (Hanya ditemukan header).";
 
-    // 3. Ambil Sampel Baris Pertama untuk Deteksi Kolom
+    // 3. Identifikasi Kolom Utama (Berdasarkan File Project Intake Sheet Anda)
     const firstRow = cleanRows[0];
     const allKeys = Object.keys(firstRow);
     
-    // 4. Deteksi Jenis Sheet (Project vs Document)
-    const keysLower = allKeys.map(k => k.toLowerCase());
-    const isProjectSheet = keysLower.some(k => k.includes('project name') || k.includes('project status'));
+    // Deteksi apakah ini sheet project atau log dokumen
+    const isProjectSheet = allKeys.some(k => k.toLowerCase().includes('project name'));
 
     let columnsToKeep = [];
-
     if (isProjectSheet) {
-        // Kolom Prioritas untuk Ringkasan Project
+        // Fokus pada kolom yang Anda butuhkan untuk ringkasan project
         columnsToKeep = allKeys.filter(k => {
             const low = k.toLowerCase();
             return low.includes('project name') || 
@@ -61,50 +57,47 @@ class AICoreService {
                    low.includes('progress') || 
                    low.includes('end date') || 
                    low.includes('manager') || 
-                   low.includes('health');
+                   low.includes('health') ||
+                   low.includes('issues');
         });
     } else {
-        // Kolom Prioritas untuk Tracking Dokumen
+        // Fokus pada kolom untuk tracking dokumen
         columnsToKeep = allKeys.filter(k => {
             const low = k.toLowerCase();
-            return low.includes('date') || 
-                   low.includes('title') || 
-                   low.includes('user') || 
-                   low.includes('activity') || 
-                   low.includes('link') || 
-                   low.includes('ref id');
+            return low.includes('date') || low.includes('title') || low.includes('user') || low.includes('link');
         });
     }
 
-    // Jika filter kolom terlalu ketat sehingga kosong, ambil semua kolom kecuali ID sistem
+    // Jika filter kolom gagal, ambil semua kolom kecuali ID internal
     if (columnsToKeep.length === 0) {
         columnsToKeep = allKeys.filter(k => !['id', 'rowId', 'createdAt', 'modifiedAt'].includes(k));
     }
 
-    // 5. Konstruksi Header & Body (Format Pipa '|')
+    // 4. Bangun Tabel Markdown (GPT-4o sangat mahir membaca format ini)
     const headerStr = `| ${columnsToKeep.join(' | ')} |`;
-    const separatorStr = `| ${columnsToKeep.map(() => '---').join(' | ')} |`;
+    const dividerStr = `| ${columnsToKeep.map(() => '---').join(' | ')} |`;
     
     const tableRows = cleanRows.map(row => {
         const values = columnsToKeep.map(col => {
-            let val = row[col];
+            const val = row[col];
             if (val === null || val === undefined || String(val).trim() === '') return '-';
-            // Bersihkan line breaks agar tidak merusak tabel markdown
-            return String(val).replace(/\n/g, ' ').trim();
+            // Bersihkan simbol yang bisa merusak tabel markdown
+            return String(val).replace(/\|/g, '/').replace(/\n/g, ' ').trim();
         });
         return `| ${values.join(' | ')} |`;
     });
 
-    // 6. Gabungkan dengan Limit Karakter (Safety Measure)
-    // Kita kirim 300 baris terbaru/aktif jika data sangat besar
-    let finalTable = [headerStr, separatorStr, ...tableRows].join('\n');
+    // 5. Penggabungan & Batasan Ukuran (Token Safety)
+    // Utamakan memuat data sebanyak mungkin dalam format ringkas
+    let finalTable = [headerStr, dividerStr, ...tableRows].join('\n');
     
-    if (finalTable.length > 120000) {
-        const truncatedRows = tableRows.slice(-150); // Ambil 150 baris terakhir jika terlalu besar
-        finalTable = [headerStr, separatorStr, ...truncatedRows].join('\n') + `\n\n(Note: Data truncated due to size. Showing last 150 records.)`;
+    // Jika data terlalu besar (> 100k karakter), ambil 200 baris terbaru
+    if (finalTable.length > 100000) {
+        const truncated = tableRows.slice(-200);
+        finalTable = [headerStr, dividerStr, ...truncated].join('\n') + `\n\n(Note: Data sangat besar, menampilkan 200 baris terbaru).`;
     }
 
-    return `BERIKUT ADALAH DATA DARI SMARTSHEET:\n\n${finalTable}`;
+    return `BERIKUT ADALAH DATA SMARTSHEET YANG BERHASIL DIAMBIL:\n\n${finalTable}`;
   }
   // ===========================================================================
   // 2. UTILS: DETEKSI JENIS QUERY
