@@ -7,22 +7,36 @@ export const AI_PROVIDERS = {
     label:  'OpenAI',
     icon:   '🟢',
     models: [
-      // GPT-5 family
-      { id: 'gpt-5',                 label: 'GPT-5 (Most Capable)',        context: 1000000, tier: 'flagship'   },
+      // GPT-5.x family
+      { id: 'gpt-5.2',               label: 'GPT-5.2',               context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5.2-pro',           label: 'GPT-5.2 Pro',           context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5.2-codex',         label: 'GPT-5.2 Codex',         context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5.1',               label: 'GPT-5.1',               context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5.1-codex-max',     label: 'GPT-5.1 Codex Max',     context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5.1-codex',         label: 'GPT-5.1 Codex',         context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5.1-codex-mini',    label: 'GPT-5.1 Codex Mini',    context: 1000000, tier: 'efficient' },
+      { id: 'gpt-5',                 label: 'GPT-5',                 context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5-pro',             label: 'GPT-5 Pro',             context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5-codex',           label: 'GPT-5 Codex',           context: 1000000, tier: 'flagship'  },
+      { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            context: 1000000, tier: 'efficient' },
+      { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            context: 1000000, tier: 'efficient' },
+      // GPT-4o family
+      { id: 'gpt-4o',                label: 'GPT-4o',                context: 128000,  tier: 'stable'    },
+      { id: 'gpt-4o-2024-11-20',     label: 'GPT-4o (Nov 2024)',     context: 128000,  tier: 'stable'    },
+      { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           context: 128000,  tier: 'efficient' },
       // GPT-4.1 family
-      { id: 'gpt-4.1',               label: 'GPT-4.1 (Recommended)',        context: 1000000, tier: 'flagship'   },
-      { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini (Fast & Cheap)',  context: 1000000, tier: 'efficient'  },
-      { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano (Fastest)',        context: 1000000, tier: 'efficient'  },
+      { id: 'gpt-4.1',               label: 'GPT-4.1',               context: 1000000, tier: 'stable'    },
+      { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          context: 1000000, tier: 'efficient' },
+      { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          context: 1000000, tier: 'efficient' },
       // o-series reasoning
-      { id: 'o3',                    label: 'o3 (Deep Reasoning)',           context: 200000,  tier: 'reasoning'  },
-      { id: 'o4-mini',               label: 'o4-mini (Fast Reasoning)',      context: 200000,  tier: 'reasoning'  },
-      { id: 'o3-mini',               label: 'o3-mini (Reasoning Efficient)', context: 200000,  tier: 'reasoning'  },
-      // GPT-4o family (stable)
-      { id: 'gpt-4o',                label: 'GPT-4o',                        context: 128000,  tier: 'stable'     },
-      { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',                   context: 128000,  tier: 'stable'     },
+      { id: 'o3',                    label: 'o3 (Deep Reasoning)',    context: 200000,  tier: 'reasoning' },
+      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',    context: 200000,  tier: 'reasoning' },
+      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',    context: 200000,  tier: 'reasoning' },
       // Legacy
-      { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo (Legacy)',          context: 128000,  tier: 'legacy'     },
-      { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo (Budget)',        context: 16385,   tier: 'legacy'     },
+      { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo',           context: 128000,  tier: 'legacy'    },
+      { id: 'gpt-4',                 label: 'GPT-4',                 context: 8192,    tier: 'legacy'    },
+      { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo',         context: 16385,   tier: 'legacy'    },
+      { id: 'gpt-3.5-turbo-16k',     label: 'GPT-3.5 Turbo 16K',     context: 16385,   tier: 'legacy'    },
     ],
     capabilities: ['webSearch', 'codeInterpreter', 'imageGeneration', 'canvas', 'fileSearch'],
     envKey: 'OPENAI_API_KEY',
@@ -31,9 +45,9 @@ export const AI_PROVIDERS = {
     label:  'Anthropic (Claude)',
     icon:   '🟠',
     models: [
-      { id: 'claude-opus-4-6',            label: 'Claude Opus 4.6 (Most Powerful)', context: 200000, tier: 'flagship'  },
-      { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6 (Balanced)',    context: 200000, tier: 'flagship'  },
-      { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku 4.5 (Fast)',         context: 200000, tier: 'efficient' },
+      { id: 'claude-opus-4-6',            label: 'Claude Opus 4.6',  context: 200000, tier: 'flagship'  },
+      { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6',context: 200000, tier: 'flagship'  },
+      { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku 4.5', context: 200000, tier: 'efficient' },
     ],
     capabilities: ['fileSearch'],
     envKey: 'ANTHROPIC_API_KEY',
@@ -42,11 +56,11 @@ export const AI_PROVIDERS = {
     label:  'Google Gemini',
     icon:   '🔵',
     models: [
-      { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro (Best)',   context: 1000000, tier: 'flagship'  },
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Fast)', context: 1000000, tier: 'efficient' },
-      { id: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro',          context: 1000000, tier: 'stable'    },
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash',        context: 1000000, tier: 'stable'    },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash',        context: 1000000, tier: 'stable'    },
+      { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   context: 1000000, tier: 'flagship'  },
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', context: 1000000, tier: 'efficient' },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', context: 1000000, tier: 'stable'    },
+      { id: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro',   context: 1000000, tier: 'stable'    },
+      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', context: 1000000, tier: 'stable'    },
     ],
     capabilities: [],
     envKey: 'GOOGLE_API_KEY',
@@ -89,6 +103,39 @@ export const BOT_CAPABILITIES = {
 };
 
 // ─────────────────────────────────────────────────────────────
+// Helper: Detect which parameter convention a model uses
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Models that use `max_completion_tokens` instead of `max_tokens`:
+ *   - All GPT-5.x variants (gpt-5, gpt-5.1, gpt-5.2, gpt-5-pro, gpt-5-mini, etc.)
+ *   - All o-series reasoning models (o1, o3, o4, o4-mini, o3-mini, etc.)
+ *
+ * Models that do NOT support `temperature`:
+ *   - o-series reasoning models only
+ */
+function getModelParams(model, temp, maxTok) {
+  const isReasoningModel = /^o\d/.test(model);           // o1, o3, o4, o3-mini, o4-mini …
+  const isGpt5Plus       = /^gpt-5/.test(model);         // gpt-5, gpt-5.1, gpt-5.2, gpt-5-pro …
+  const useCompletionTokens = isReasoningModel || isGpt5Plus;
+
+  const params = {};
+
+  if (useCompletionTokens) {
+    params.max_completion_tokens = maxTok;
+  } else {
+    params.max_tokens = maxTok;
+  }
+
+  // Reasoning models don't support temperature
+  if (!isReasoningModel) {
+    params.temperature = temp;
+  }
+
+  return params;
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN SERVICE
 // ─────────────────────────────────────────────────────────────
 class AIProviderService {
@@ -109,9 +156,9 @@ class AIProviderService {
     const tools = [];
     const model = providerConfig?.model || '';
 
-    // Web Search — supported on gpt-4o-search, gpt-4.1+, gpt-5, o-series
+    // Web Search — supported on gpt-4o, gpt-4.1+, gpt-5+, o-series
     const supportsWebSearch = capabilities.webSearch &&
-      (model.includes('4.1') || model.includes('gpt-5') || model.includes('o3') || model.includes('o4') || model.includes('4o'));
+      (model.includes('4.1') || model.startsWith('gpt-5') || /^o\d/.test(model) || model.includes('4o'));
     if (supportsWebSearch) {
       tools.push({ type: 'web_search_preview' });
     }
@@ -162,8 +209,8 @@ class AIProviderService {
     if (endpoint) clientConfig.baseURL = endpoint;
     const openai = new OpenAI(clientConfig);
 
-    const isReasoningModel = model.startsWith('o3') || model.startsWith('o4');
-    const tools = this.buildTools({ provider: 'openai', model }, capabilities);
+    const tools      = this.buildTools({ provider: 'openai', model }, capabilities);
+    const tokenParams = getModelParams(model, temp, maxTok);
 
     const body = {
       model,
@@ -172,16 +219,8 @@ class AIProviderService {
         ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
         { role: 'user', content: userContent },
       ],
+      ...tokenParams,
     };
-
-    // Reasoning models use max_completion_tokens, not max_tokens
-    // and don't support temperature
-    if (isReasoningModel) {
-      body.max_completion_tokens = maxTok;
-    } else {
-      body.temperature = temp;
-      body.max_tokens  = maxTok;
-    }
 
     if (tools) body.tools = tools;
 
@@ -206,7 +245,7 @@ class AIProviderService {
             content: JSON.stringify({ status: 'ok', results: [] }),
           })),
         ],
-        ...(isReasoningModel ? { max_completion_tokens: maxTok } : { temperature: temp, max_tokens: maxTok }),
+        ...tokenParams,
       });
       text = followUp.choices[0].message?.content || '';
     }
