@@ -415,7 +415,14 @@ function AdminDashboard({ user, handleLogout }) {
                 <p className="text-sm text-steel">{bots.length} bot aktif</p>
               </div>
               <div className="flex gap-3">
-                <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Cari bot..." className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44" />
+                <input
+                  value={botSearch}
+                  onChange={e => setBotSearch(e.target.value)}
+                  placeholder="Cari bot..."
+                  autoComplete="off"
+                  name="bot-search-gys"
+                  className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44"
+                />
                 <button onClick={handleCreateBot} className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded-lg hover:bg-primary transition-colors flex items-center gap-2">
                   <span className="text-lg leading-none">+</span> Create Bot
                 </button>
