@@ -8,25 +8,27 @@ const knowledgeFileSchema = new mongoose.Schema({
   size:         { type: Number, default: 0 },
   path:         { type: String, required: true },
   uploadedAt:   { type: Date, default: Date.now },
-  // Extracted text content for RAG
   content:      { type: String, default: '' },
-  // Summary for quick reference
   summary:      { type: String, default: '' },
 }, { _id: true });
 
 // ── AI Provider Config Sub-Schema ────────────────────────────
 const aiProviderSchema = new mongoose.Schema({
-  // Provider: 'openai' | 'anthropic' | 'google' | 'custom'
-  provider:   { type: String, enum: ['openai', 'anthropic', 'google', 'custom'], default: 'openai' },
-  // Model ID (e.g. 'gpt-4o', 'claude-opus-4-6', 'gemini-1.5-pro')
-  model:      { type: String, default: 'gpt-4o' },
-  // API Key override (leave empty to use server .env key)
-  apiKey:     { type: String, default: '' },
-  // Custom endpoint (for 'custom' provider or Azure OpenAI)
-  endpoint:   { type: String, default: '' },
-  // Generation parameters
-  temperature:  { type: Number, default: 0.1 },
-  maxTokens:    { type: Number, default: 2000 },
+  provider:    { type: String, enum: ['openai', 'anthropic', 'google', 'custom'], default: 'openai' },
+  model:       { type: String, default: 'gpt-4.1' },
+  apiKey:      { type: String, default: '' },
+  endpoint:    { type: String, default: '' },
+  temperature: { type: Number, default: 0.1 },
+  maxTokens:   { type: Number, default: 2000 },
+}, { _id: false });
+
+// ── Bot Capabilities Sub-Schema ───────────────────────────────
+const capabilitiesSchema = new mongoose.Schema({
+  webSearch:       { type: Boolean, default: false },  // Browse internet
+  codeInterpreter: { type: Boolean, default: false },  // Run Python code
+  imageGeneration: { type: Boolean, default: false },  // DALL-E image gen
+  canvas:          { type: Boolean, default: false },  // Canvas / document editing mode
+  fileSearch:      { type: Boolean, default: false },  // Vector search over files
 }, { _id: false });
 
 // ── Main Bot Schema ───────────────────────────────────────────
@@ -34,19 +36,23 @@ const botSchema = new mongoose.Schema({
   name:        { type: String, required: true, unique: true },
   description: { type: String, default: '' },
 
-  // ── Prompts ──────────────────────────────────────────────
-  prompt:       { type: String, default: '' },        // Main/primary prompt
-  systemPrompt: { type: String, default: 'Anda adalah asisten AI profesional.' }, // Fallback
+  // Personality / tone / instructions
+  persona:      { type: String, default: '' },   // Short persona tag line e.g. "Helpful HR expert"
+  tone:         { type: String, enum: ['professional', 'friendly', 'formal', 'concise', 'detailed', 'custom'], default: 'professional' },
 
-  // ── Starter Questions ────────────────────────────────────
+  prompt:       { type: String, default: '' },
+  systemPrompt: { type: String, default: 'Anda adalah asisten AI profesional.' },
+
   starterQuestions: { type: [String], default: [] },
 
-  // ── AI Provider Configuration ────────────────────────────
+  // ── AI Provider ──────────────────────────────────────────
   aiProvider: { type: aiProviderSchema, default: () => ({}) },
+
+  // ── Capabilities (ChatGPT-style toggles) ─────────────────
+  capabilities: { type: capabilitiesSchema, default: () => ({}) },
 
   // ── Knowledge Base (RAG) ─────────────────────────────────
   knowledgeFiles: { type: [knowledgeFileSchema], default: [] },
-  // How to use knowledge: 'always' | 'relevant' | 'disabled'
   knowledgeMode: {
     type: String,
     enum: ['always', 'relevant', 'disabled'],

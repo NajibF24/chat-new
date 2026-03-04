@@ -32,7 +32,9 @@
     "officeparser": "^4.1.1",
     "@google/generative-ai": "^0.21.0",
     "fs-extra": "^11.2.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "adm-zip": "^0.5.10",
+    "officeparser": "^4.0.7"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

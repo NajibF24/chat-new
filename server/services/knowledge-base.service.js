@@ -1,13 +1,23 @@
-import fs    from 'fs';
-import path  from 'path';
-import pdf   from 'pdf-parse';
+import fs      from 'fs';
+import path    from 'path';
+import pdf     from 'pdf-parse';
 import mammoth from 'mammoth';
-import XLSX  from 'xlsx';
+import XLSX    from 'xlsx';
+
+// ── Optional PPT parser (officeparser covers .pptx / .ppt) ───
+let officeparserParsePptx = null;
+try {
+  const op = await import('officeparser');
+  officeparserParsePptx = op.parseOffice || op.default?.parseOffice || null;
+} catch {
+  // officeparser not available – PPT extraction will fall back to placeholder
+}
 
 class KnowledgeBaseService {
 
   /**
    * Extract text content from a file.
+   * Supported: PDF, DOCX, DOC, XLSX, XLS, CSV, TXT, MD, PPTX, PPT
    * Returns { content: string, summary: string }
    */
   async extractContent(filePath, originalName, mimetype) {
@@ -45,11 +55,19 @@ class KnowledgeBaseService {
         });
         content = parts.join('\n\n');
 
+      // ── PPTX / PPT ────────────────────────────────────────
+      } else if (
+        ext === '.pptx' || ext === '.ppt' ||
+        mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+        mimetype === 'application/vnd.ms-powerpoint'
+      ) {
+        content = await this._extractPptContent(filePath, originalName);
+
       // ── CSV ───────────────────────────────────────────────
       } else if (ext === '.csv' || mimetype === 'text/csv') {
         content = fs.readFileSync(filePath, 'utf8');
 
-      // ── Plain Text ────────────────────────────────────────
+      // ── Plain Text / Markdown ─────────────────────────────
       } else if (
         ext === '.txt' || ext === '.md' ||
         (mimetype && mimetype.startsWith('text/'))
@@ -72,7 +90,6 @@ class KnowledgeBaseService {
       }
 
       const summary = this._generateSummary(content, originalName);
-
       return { content: content.trim(), summary };
 
     } catch (err) {
@@ -81,6 +98,53 @@ class KnowledgeBaseService {
         content: `[Error membaca file "${originalName}": ${err.message}]`,
         summary: `File: ${originalName} (gagal dibaca)`,
       };
+    }
+  }
+
+  // ── PPT / PPTX extraction ─────────────────────────────────
+  async _extractPptContent(filePath, originalName) {
+    // Strategy 1: officeparser (best for PPTX)
+    if (officeparserParsePptx) {
+      try {
+        return await new Promise((resolve, reject) => {
+          officeparserParsePptx(filePath, (data, err) => {
+            if (err) reject(err);
+            else resolve(data || '');
+          });
+        });
+      } catch (e) {
+        console.warn('officeparser PPT failed, trying XLSX fallback:', e.message);
+      }
+    }
+
+    // Strategy 2: XLSX can partially read PPTX (extracts shared strings)
+    try {
+      const workbook = XLSX.readFile(filePath, { type: 'file', raw: false });
+      if (workbook.SheetNames.length > 0) {
+        const parts = workbook.SheetNames.map(n => XLSX.utils.sheet_to_txt(workbook.Sheets[n]));
+        return `[Konten PowerPoint: ${originalName}]\n\n` + parts.join('\n\n');
+      }
+    } catch { /* ignore */ }
+
+    // Strategy 3: Read raw XML from PPTX (it's a zip)
+    try {
+      const AdmZip = (await import('adm-zip')).default;
+      const zip    = new AdmZip(filePath);
+      const slides = zip.getEntries()
+        .filter(e => e.entryName.match(/^ppt\/slides\/slide\d+\.xml$/))
+        .sort((a, b) => a.entryName.localeCompare(b.entryName));
+
+      const texts = slides.map((entry, idx) => {
+        const xml   = entry.getData().toString('utf8');
+        // Extract text between <a:t> tags
+        const matches = xml.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) || [];
+        const slideText = matches.map(m => m.replace(/<[^>]*>/g, '')).join(' ');
+        return `[Slide ${idx + 1}]\n${slideText}`;
+      });
+
+      return texts.join('\n\n') || `[PowerPoint: ${originalName} — tidak ada teks yang dapat diekstrak]`;
+    } catch (e) {
+      return `[PowerPoint: ${originalName} — ekstraksi tidak tersedia: ${e.message}]`;
     }
   }
 
@@ -100,7 +164,6 @@ class KnowledgeBaseService {
         score: this._relevanceScore(f.content, f.originalName, userMessage),
       }));
 
-      // Include if score > 0, else fall back to all files
       const relevant = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score);
       filesToInclude  = relevant.length > 0 ? relevant.map(s => s.file) : knowledgeFiles;
     }
@@ -112,7 +175,7 @@ class KnowledgeBaseService {
 
     for (const f of filesToInclude) {
       context += `--- File: ${f.originalName} ---\n`;
-      context += (f.content || '(kosong)').substring(0, 15000); // max 15K chars per file in context
+      context += (f.content || '(kosong)').substring(0, 15000);
       context += `\n\n`;
     }
 
@@ -120,9 +183,6 @@ class KnowledgeBaseService {
     return context;
   }
 
-  /**
-   * Simple relevance score: count keyword hits in content
-   */
   _relevanceScore(content = '', fileName = '', userMessage = '') {
     const msg   = userMessage.toLowerCase();
     const text  = (content + ' ' + fileName).toLowerCase();
@@ -130,9 +190,6 @@ class KnowledgeBaseService {
     return words.reduce((acc, w) => acc + (text.includes(w) ? 1 : 0), 0);
   }
 
-  /**
-   * Create a short summary of extracted content
-   */
   _generateSummary(content, fileName) {
     const lines    = content.split('\n').filter(l => l.trim().length > 20);
     const preview  = lines.slice(0, 3).join(' ').substring(0, 200);

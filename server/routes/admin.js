@@ -1,4 +1,4 @@
-// server/routes/admin.js — Enhanced with AI Provider + Knowledge Base management
+// server/routes/admin.js — Enhanced: capabilities, PPT support, new model catalog
 
 import express    from 'express';
 import bcrypt     from 'bcryptjs';
@@ -36,7 +36,7 @@ const avatarUpload = multer({
   },
 });
 
-// ── Multer: Knowledge Files ───────────────────────────────────
+// ── Multer: Knowledge Files (+ PPTX/PPT support) ─────────────
 const knowledgeStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = `uploads/knowledge/${req.params.id}`;
@@ -44,14 +44,14 @@ const knowledgeStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const ext    = path.extname(file.originalname);
-    const base   = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ext  = path.extname(file.originalname);
+    const base = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
     cb(null, `${base}-${Date.now()}${ext}`);
   },
 });
 const knowledgeUpload = multer({
   storage: knowledgeStorage,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB per file
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (_, file, cb) => {
     const allowed = [
       'application/pdf',
@@ -59,15 +59,28 @@ const knowledgeUpload = multer({
       'application/msword',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
+      // ✅ NEW: PowerPoint MIME types
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-powerpoint',
+      'application/mspowerpoint',
       'text/plain',
       'text/csv',
       'text/markdown',
     ];
-    const allowedExt = ['.pdf','.docx','.doc','.xlsx','.xls','.txt','.csv','.md'];
+    const allowedExt = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.txt', '.csv', '.md'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(file.mimetype) || allowedExt.includes(ext)) cb(null, true);
-    else cb(new Error(`Format file tidak didukung: ${file.originalname}. Gunakan PDF, DOCX, XLSX, TXT, CSV.`));
+    else cb(new Error(`Format tidak didukung: ${file.originalname}. Gunakan PDF, DOCX, XLSX, PPTX, TXT, CSV.`));
   },
+});
+
+// ── Helper: sanitize capabilities object ─────────────────────
+const sanitizeCapabilities = (caps = {}) => ({
+  webSearch:       Boolean(caps.webSearch),
+  codeInterpreter: Boolean(caps.codeInterpreter),
+  imageGeneration: Boolean(caps.imageGeneration),
+  canvas:          Boolean(caps.canvas),
+  fileSearch:      Boolean(caps.fileSearch),
 });
 
 // ============================================================
@@ -76,15 +89,10 @@ const knowledgeUpload = multer({
 router.get('/stats', requireAdmin, async (req, res) => {
   try {
     const [totalUsers, totalBots, totalChats, totalThreads] = await Promise.all([
-      User.countDocuments(),
-      Bot.countDocuments(),
-      Chat.countDocuments(),
-      Thread.countDocuments(),
+      User.countDocuments(), Bot.countDocuments(), Chat.countDocuments(), Thread.countDocuments(),
     ]);
-
     const last7Days = new Date();
     last7Days.setDate(last7Days.getDate() - 7);
-
     const [activityTrend, botPopularity, topUsers] = await Promise.all([
       Chat.aggregate([
         { $match: { createdAt: { $gte: last7Days } } },
@@ -96,36 +104,27 @@ router.get('/stats', requireAdmin, async (req, res) => {
         { $lookup: { from: 'bots', localField: 'botId', foreignField: '_id', as: 'botDetails' } },
         { $unwind: { path: '$botDetails', preserveNullAndEmptyArrays: false } },
         { $group: { _id: '$botId', name: { $first: '$botDetails.name' }, count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-        { $limit: 5 },
-        { $project: { _id: 0, name: 1, count: 1 } },
+        { $sort: { count: -1 } }, { $limit: 5 }, { $project: { _id: 0, name: 1, count: 1 } },
       ]),
       Chat.aggregate([
         { $match: { role: 'user' } },
         { $group: { _id: '$userId', msgCount: { $sum: 1 } } },
-        { $sort: { msgCount: -1 } },
-        { $limit: 5 },
+        { $sort: { msgCount: -1 } }, { $limit: 5 },
         { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'userInfo' } },
-        { $project: { username: { $arrayElemAt: ['$userInfo.username', 0] }, email: { $arrayElemAt: ['$userInfo.email', 0] }, count: '$msgCount' } },
+        { $project: { username: { $arrayElemAt: ['$userInfo.username', 0] }, count: '$msgCount' } },
       ]),
     ]);
-
     res.json({ totalUsers, totalBots, totalChats, totalThreads, activityTrend, botPopularity, topUsers });
-  } catch (error) {
-    console.error('Stats Error:', error);
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error) { console.error('Stats Error:', error); res.status(500).json({ error: error.message }); }
 });
 
 // ============================================================
-// 📋 AI PROVIDERS CATALOG (for frontend dropdown)
+// 📋 AI PROVIDERS CATALOG
 // ============================================================
-router.get('/ai-providers', requireAdmin, (req, res) => {
-  res.json(AI_PROVIDERS);
-});
+router.get('/ai-providers', requireAdmin, (req, res) => { res.json(AI_PROVIDERS); });
 
 // ============================================================
-// 🧪 TEST AI PROVIDER CONNECTION
+// 🧪 TEST AI CONNECTION
 // ============================================================
 router.post('/bots/:id/test-ai', requireAdmin, async (req, res) => {
   try {
@@ -133,30 +132,22 @@ router.post('/bots/:id/test-ai', requireAdmin, async (req, res) => {
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
     const result = await AIProviderService.testConnection(bot.aiProvider || {});
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ ok: false, message: err.message });
-  }
+  } catch (err) { res.status(500).json({ ok: false, message: err.message }); }
 });
 
-// Also allow testing with inline config (before saving bot)
 router.post('/test-ai-config', requireAdmin, async (req, res) => {
   try {
-    const { provider, model, apiKey, endpoint } = req.body;
-    const result = await AIProviderService.testConnection({ provider, model, apiKey, endpoint });
+    const result = await AIProviderService.testConnection(req.body);
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ ok: false, message: err.message });
-  }
+  } catch (err) { res.status(500).json({ ok: false, message: err.message }); }
 });
 
 // ============================================================
 // 👥 USER MANAGEMENT
 // ============================================================
 router.get('/users', requireAdmin, async (req, res) => {
-  try {
-    const users = await User.find().populate('assignedBots').select('-password');
-    res.json({ users });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+  try { const users = await User.find().populate('assignedBots').select('-password'); res.json({ users }); }
+  catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post('/users', requireAdmin, async (req, res) => {
@@ -166,8 +157,7 @@ router.post('/users', requireAdmin, async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Username already exists' });
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new User({ username, password: hashedPassword, isAdmin: isAdmin || false, assignedBots: assignedBots || [] });
-    await user.save();
-    await user.populate('assignedBots');
+    await user.save(); await user.populate('assignedBots');
     res.status(201).json({ user });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -196,70 +186,50 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
 // 🤖 BOT MANAGEMENT
 // ============================================================
 
-// GET all bots (strip sensitive api keys before sending)
 router.get('/bots', async (req, res) => {
   try {
     const bots = await Bot.find({}).lean();
-    // Mask API keys for security
     const sanitized = bots.map(b => ({
       ...b,
-      aiProvider: b.aiProvider
-        ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' }
-        : {},
-      smartsheetConfig: b.smartsheetConfig
-        ? { ...b.smartsheetConfig, apiKey: b.smartsheetConfig.apiKey ? '***' : '' }
-        : {},
-      // Return knowledge file metadata but not full content (for perf)
+      aiProvider: b.aiProvider ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' } : {},
+      smartsheetConfig: b.smartsheetConfig ? { ...b.smartsheetConfig, apiKey: b.smartsheetConfig.apiKey ? '***' : '' } : {},
       knowledgeFiles: (b.knowledgeFiles || []).map(f => ({
         _id: f._id, filename: f.filename, originalName: f.originalName,
-        mimetype: f.mimetype, size: f.size, uploadedAt: f.uploadedAt,
-        summary: f.summary,
+        mimetype: f.mimetype, size: f.size, uploadedAt: f.uploadedAt, summary: f.summary,
       })),
     }));
     res.json(sanitized);
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// CREATE bot
 router.post('/bots', requireAdmin, async (req, res) => {
   try {
     const {
-      name, description, systemPrompt, prompt,
-      starterQuestions, smartsheetConfig, kouventaConfig, onedriveConfig,
-      avatar, aiProvider, knowledgeMode,
+      name, description, persona, tone,
+      systemPrompt, prompt, starterQuestions,
+      smartsheetConfig, kouventaConfig, onedriveConfig,
+      avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
 
     const newBot = new Bot({
-      name, description,
+      name, description, persona: persona || '',
+      tone: tone || 'professional',
       systemPrompt: systemPrompt || 'Anda adalah asisten AI profesional.',
       prompt: prompt || '',
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
       aiProvider: {
         provider:    aiProvider?.provider    || 'openai',
-        model:       aiProvider?.model       || 'gpt-4o',
+        model:       aiProvider?.model       || 'gpt-4.1',
         apiKey:      aiProvider?.apiKey      || '',
         endpoint:    aiProvider?.endpoint    || '',
         temperature: aiProvider?.temperature ?? 0.1,
         maxTokens:   aiProvider?.maxTokens   ?? 2000,
       },
-      smartsheetConfig: {
-        enabled: smartsheetConfig?.enabled || false,
-        sheetId: smartsheetConfig?.sheetId || '',
-        apiKey:  smartsheetConfig?.apiKey  || '',
-      },
-      kouventaConfig: {
-        enabled:  kouventaConfig?.enabled  || false,
-        apiKey:   kouventaConfig?.apiKey   || '',
-        endpoint: kouventaConfig?.endpoint || '',
-      },
-      onedriveConfig: {
-        enabled:      onedriveConfig?.enabled      || false,
-        folderUrl:    onedriveConfig?.folderUrl    || '',
-        tenantId:     onedriveConfig?.tenantId     || '',
-        clientId:     onedriveConfig?.clientId     || '',
-        clientSecret: onedriveConfig?.clientSecret || '',
-      },
+      capabilities: sanitizeCapabilities(capabilities),
+      smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
+      kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
+      onedriveConfig:   { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...onedriveConfig },
       avatar: {
         type:      avatar?.type      || 'emoji',
         emoji:     avatar?.emoji     || '🤖',
@@ -272,28 +242,28 @@ router.post('/bots', requireAdmin, async (req, res) => {
 
     await newBot.save();
     res.json(newBot);
-  } catch (error) {
-    console.error('Create Bot Error:', error);
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error) { console.error('Create Bot Error:', error); res.status(500).json({ error: error.message }); }
 });
 
-// UPDATE bot
 router.put('/bots/:id', requireAdmin, async (req, res) => {
   try {
     const {
-      name, description, systemPrompt, prompt,
-      starterQuestions, smartsheetConfig, kouventaConfig, onedriveConfig,
-      avatar, aiProvider, knowledgeMode,
+      name, description, persona, tone,
+      systemPrompt, prompt, starterQuestions,
+      smartsheetConfig, kouventaConfig, onedriveConfig,
+      avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
 
     const existing = await Bot.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Bot not found' });
 
     const updateData = {
-      name, description, systemPrompt, prompt,
+      name, description, persona: persona || '',
+      tone: tone || 'professional',
+      systemPrompt, prompt,
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
+      capabilities: sanitizeCapabilities(capabilities),
       smartsheetConfig: {
         enabled: smartsheetConfig?.enabled || false,
         sheetId: smartsheetConfig?.sheetId || '',
@@ -314,11 +284,10 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       updatedAt: new Date(),
     };
 
-    // AI Provider — preserve existing apiKey if masked
     if (aiProvider) {
       updateData.aiProvider = {
         provider:    aiProvider.provider    || 'openai',
-        model:       aiProvider.model       || 'gpt-4o',
+        model:       aiProvider.model       || 'gpt-4.1',
         apiKey:      aiProvider.apiKey === '***' ? existing.aiProvider?.apiKey : (aiProvider.apiKey || ''),
         endpoint:    aiProvider.endpoint    || '',
         temperature: aiProvider.temperature ?? 0.1,
@@ -326,7 +295,6 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       };
     }
 
-    // Avatar: only update if not image type (image handled by separate route)
     if (avatar && avatar.type !== 'image') {
       updateData.avatar = {
         type:      avatar.type,
@@ -340,13 +308,9 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
 
     const updated = await Bot.findByIdAndUpdate(req.params.id, updateData, { new: true });
     res.json(updated);
-  } catch (error) {
-    console.error('Update Bot Error:', error);
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error) { console.error('Update Bot Error:', error); res.status(500).json({ error: error.message }); }
 });
 
-// DELETE bot
 router.delete('/bots/:id', requireAdmin, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
@@ -354,10 +318,8 @@ router.delete('/bots/:id', requireAdmin, async (req, res) => {
       const imgPath = `uploads/avatars/${path.basename(bot.avatar.imageUrl)}`;
       if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
     }
-    // Remove knowledge files folder
     const kDir = `uploads/knowledge/${req.params.id}`;
     if (fs.existsSync(kDir)) fs.rmSync(kDir, { recursive: true });
-
     await Bot.findByIdAndDelete(req.params.id);
     res.json({ message: 'Bot deleted' });
   } catch (error) { res.status(500).json({ error: error.message }); }
@@ -386,24 +348,15 @@ router.patch('/bots/:id/avatar', requireAdmin, async (req, res) => {
     const { type, emoji, icon, bgColor, textColor } = req.body;
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
-    bot.avatar = {
-      ...bot.avatar?.toObject?.() || bot.avatar || {},
-      type:      type      || 'emoji',
-      emoji:     emoji     ?? bot.avatar?.emoji     ?? '🤖',
-      icon:      icon      ?? bot.avatar?.icon      ?? null,
-      bgColor:   bgColor   ?? bot.avatar?.bgColor   ?? '#6366f1',
-      textColor: textColor ?? bot.avatar?.textColor ?? '#ffffff',
-    };
+    bot.avatar = { ...bot.avatar?.toObject?.() || bot.avatar || {}, type: type || 'emoji', emoji: emoji ?? bot.avatar?.emoji ?? '🤖', icon: icon ?? bot.avatar?.icon ?? null, bgColor: bgColor ?? bot.avatar?.bgColor ?? '#6366f1', textColor: textColor ?? bot.avatar?.textColor ?? '#ffffff' };
     await bot.save();
     res.json({ message: 'Avatar updated', bot });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 // ============================================================
-// 📚 KNOWLEDGE BASE — Upload / Delete / List
+// 📚 KNOWLEDGE BASE — Upload / Delete (+ PPT support)
 // ============================================================
-
-// Upload one or more knowledge files to a bot
 router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 10), async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
@@ -411,65 +364,37 @@ router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 
     if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
 
     const results = [];
-
     for (const file of req.files) {
-      console.log(`📚 Processing knowledge file: ${file.originalname}`);
-      const { content, summary } = await KnowledgeBaseService.extractContent(
-        file.path, file.originalname, file.mimetype
-      );
-
-      const kFile = {
-        filename:     file.filename,
-        originalName: file.originalname,
-        mimetype:     file.mimetype,
-        size:         file.size,
-        path:         file.path,
-        content,
-        summary,
-        uploadedAt:   new Date(),
-      };
-
-      bot.knowledgeFiles.push(kFile);
+      console.log(`📚 Processing knowledge file: ${file.originalname} (${file.mimetype})`);
+      const { content, summary } = await KnowledgeBaseService.extractContent(file.path, file.originalname, file.mimetype);
+      bot.knowledgeFiles.push({
+        filename: file.filename, originalName: file.originalname,
+        mimetype: file.mimetype, size: file.size, path: file.path,
+        content, summary, uploadedAt: new Date(),
+      });
       results.push({ originalName: file.originalname, size: file.size, summary });
     }
 
     await bot.save();
     console.log(`✅ Knowledge files saved for bot "${bot.name}": ${results.length} files`);
-
-    res.json({
-      message: `${results.length} file berhasil diproses`,
-      files: results,
-      totalFiles: bot.knowledgeFiles.length,
-    });
-  } catch (error) {
-    console.error('Knowledge upload error:', error);
-    res.status(500).json({ error: error.message });
-  }
+    res.json({ message: `${results.length} file berhasil diproses`, files: results, totalFiles: bot.knowledgeFiles.length });
+  } catch (error) { console.error('Knowledge upload error:', error); res.status(500).json({ error: error.message }); }
 });
 
-// Delete a knowledge file
 router.delete('/bots/:id/knowledge/:fileId', requireAdmin, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
-
-    const fileIndex = bot.knowledgeFiles.findIndex(f => f._id.toString() === req.params.fileId);
-    if (fileIndex === -1) return res.status(404).json({ error: 'File not found' });
-
-    const fileRecord = bot.knowledgeFiles[fileIndex];
-    // Remove physical file
-    if (fileRecord.path && fs.existsSync(fileRecord.path)) {
-      fs.unlinkSync(fileRecord.path);
-    }
-
-    bot.knowledgeFiles.splice(fileIndex, 1);
+    const idx = bot.knowledgeFiles.findIndex(f => f._id.toString() === req.params.fileId);
+    if (idx === -1) return res.status(404).json({ error: 'File not found' });
+    const fileRecord = bot.knowledgeFiles[idx];
+    if (fileRecord.path && fs.existsSync(fileRecord.path)) fs.unlinkSync(fileRecord.path);
+    bot.knowledgeFiles.splice(idx, 1);
     await bot.save();
-
     res.json({ message: 'File dihapus', totalFiles: bot.knowledgeFiles.length });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// Re-process / refresh a knowledge file's extracted content
 router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
@@ -477,10 +402,8 @@ router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, r
     const kFile = bot.knowledgeFiles.id(req.params.fileId);
     if (!kFile) return res.status(404).json({ error: 'File not found' });
     if (!fs.existsSync(kFile.path)) return res.status(400).json({ error: 'Physical file not found, please re-upload' });
-
     const { content, summary } = await KnowledgeBaseService.extractContent(kFile.path, kFile.originalName, kFile.mimetype);
-    kFile.content = content;
-    kFile.summary = summary;
+    kFile.content = content; kFile.summary = summary;
     await bot.save();
     res.json({ message: 'File berhasil diproses ulang', summary });
   } catch (error) { res.status(500).json({ error: error.message }); }
@@ -491,9 +414,9 @@ router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, r
 // ============================================================
 router.get('/chat-logs', requireAdmin, async (req, res) => {
   try {
-    const page  = parseInt(req.query.page)  || 1;
+    const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     const total = await Chat.countDocuments({});
     const chats = await Chat.find({}).populate('userId', 'username').populate('botId', 'name').sort({ createdAt: -1 }).skip(skip).limit(limit);
     res.json({ chats, totalPages: Math.ceil(total / limit), currentPage: page, totalLogs: total });
@@ -506,7 +429,7 @@ router.get('/export-chats', requireAdmin, async (req, res) => {
     let query = {};
     let fileName = `chat-logs-all-${new Date().toISOString().slice(0, 10)}.csv`;
     if (month && year) {
-      const m = parseInt(month); const y = parseInt(year);
+      const m = parseInt(month), y = parseInt(year);
       query.createdAt = { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) };
       fileName = `chat-logs-${y}-${m.toString().padStart(2, '0')}.csv`;
     }
