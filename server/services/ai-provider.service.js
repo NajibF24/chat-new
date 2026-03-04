@@ -11,11 +11,9 @@ export const AI_PROVIDERS = {
       { id: 'gpt-5.2',               label: 'GPT-5.2',               context: 1000000, tier: 'flagship'  },
       { id: 'gpt-5.1',               label: 'GPT-5.1',               context: 1000000, tier: 'flagship'  },
       { id: 'gpt-5',                 label: 'GPT-5',                 context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            context: 1000000, tier: 'efficient' },
-      { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            context: 1000000, tier: 'efficient' },
+      { id: 'gpt-5-pro',             label: 'GPT-5 Pro',             context: 1000000, tier: 'flagship'  },
       // GPT-4o family
       { id: 'gpt-4o',                label: 'GPT-4o',                context: 128000,  tier: 'stable'    },
-      { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           context: 128000,  tier: 'efficient' },
       // GPT-4.1 family
       { id: 'gpt-4.1',               label: 'GPT-4.1',               context: 1000000, tier: 'stable'    },
       { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          context: 1000000, tier: 'efficient' },
@@ -95,6 +93,28 @@ export const BOT_CAPABILITIES = {
 };
 
 // ─────────────────────────────────────────────────────────────
+// Helper: Detect non-chat models (instruct / completions only)
+// These are NOT supported by v1/chat/completions endpoint
+// ─────────────────────────────────────────────────────────────
+const NON_CHAT_PATTERNS = [
+  /instruct/i,
+  /davinci/i,
+  /curie/i,
+  /babbage/i,
+  /ada/i,
+  /embedding/i,
+  /whisper/i,
+  /tts/i,
+  /dall-e/i,
+  /transcribe/i,
+  /search/i,
+];
+
+function isChatModel(model) {
+  return !NON_CHAT_PATTERNS.some(p => p.test(model));
+}
+
+// ─────────────────────────────────────────────────────────────
 // Helper: Detect which parameter convention a model uses
 // ─────────────────────────────────────────────────────────────
 
@@ -107,9 +127,15 @@ export const BOT_CAPABILITIES = {
  *   - o-series reasoning models only
  */
 function getModelParams(model, temp, maxTok) {
-  const isReasoningModel = /^o\d/.test(model);           // o1, o3, o4, o3-mini, o4-mini …
-  const isGpt5Plus       = /^gpt-5/.test(model);         // gpt-5, gpt-5.1, gpt-5.2, gpt-5-pro …
+  const isReasoningModel = /^o\d/.test(model);   // o1, o3, o4, o3-mini, o4-mini
+  const isGpt5Plus       = /^gpt-5/.test(model);  // gpt-5, gpt-5.1, gpt-5.2, gpt-5-mini, gpt-5-nano
+
+  // GPT-5+ and o-series both use max_completion_tokens
   const useCompletionTokens = isReasoningModel || isGpt5Plus;
+
+  // GPT-5+ only supports temperature = 1 (default), so we omit it entirely.
+  // o-series reasoning models also do not support temperature.
+  const omitTemperature = isReasoningModel || isGpt5Plus;
 
   const params = {};
 
@@ -119,8 +145,7 @@ function getModelParams(model, temp, maxTok) {
     params.max_tokens = maxTok;
   }
 
-  // Reasoning models don't support temperature
-  if (!isReasoningModel) {
+  if (!omitTemperature) {
     params.temperature = temp;
   }
 
@@ -197,6 +222,14 @@ class AIProviderService {
 
   // ── OpenAI ─────────────────────────────────────────────────
   async _callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities = {} }) {
+    // Guard: reject non-chat models early with a clear message
+    if (!isChatModel(model)) {
+      throw new Error(
+        `Model "${model}" tidak didukung untuk chat (bukan chat model). ` +
+        `Ubah model di konfigurasi bot — gunakan gpt-4o, gpt-4.1, atau gpt-5.`
+      );
+    }
+
     const clientConfig = { apiKey };
     if (endpoint) clientConfig.baseURL = endpoint;
     const openai = new OpenAI(clientConfig);
@@ -220,10 +253,30 @@ class AIProviderService {
 
     // Handle tool call responses (web search returns tool_calls first)
     const choice = completion.choices[0];
-    let text = choice.message?.content || '';
 
-    // If the model returned tool_calls (e.g. web search), do a follow-up
-    if (!text && choice.finish_reason === 'tool_calls' && choice.message.tool_calls) {
+    // Debug: log raw response shape when content is empty
+    if (!choice?.message?.content) {
+      console.warn(`[AI DEBUG] model=${model} finish_reason=${choice?.finish_reason} message_keys=${Object.keys(choice?.message || {}).join(',')}`);
+      if (choice?.message?.refusal) console.warn(`[AI DEBUG] refusal: ${choice.message.refusal}`);
+      // Log full completion for deep inspection (truncated)
+      console.warn('[AI DEBUG] raw completion:', JSON.stringify(completion).substring(0, 800));
+    }
+
+    // Primary: chat completions content
+    let text = choice?.message?.content || '';
+
+    // Fallback 1: Responses API style — completion.output array (GPT-5 variants)
+    if (!text && completion.output) {
+      text = (completion.output || [])
+        .filter(o => o.type === 'message')
+        .flatMap(o => o.content || [])
+        .filter(c => c.type === 'output_text' || c.type === 'text')
+        .map(c => c.text || c.output_text || '')
+        .join('') || '';
+    }
+
+    // Fallback 2: tool_calls follow-up (web search etc.)
+    if (!text && choice?.finish_reason === 'tool_calls' && choice?.message?.tool_calls) {
       const followUp = await openai.chat.completions.create({
         model,
         messages: [
@@ -239,7 +292,7 @@ class AIProviderService {
         ],
         ...tokenParams,
       });
-      text = followUp.choices[0].message?.content || '';
+      text = followUp.choices[0]?.message?.content || '';
     }
 
     return { text, usage: completion.usage };

@@ -18,12 +18,21 @@ const AI_PROVIDERS = {
     models: [
       // ── GPT-5.x ──
       { id: 'gpt-5.2',               label: 'GPT-5.2',               tier: 'flagship'  },
+      { id: 'gpt-5.2-pro',           label: 'GPT-5.2 Pro',           tier: 'flagship'  },
+      { id: 'gpt-5.2-codex',         label: 'GPT-5.2 Codex',         tier: 'flagship'  },
       { id: 'gpt-5.1',               label: 'GPT-5.1',               tier: 'flagship'  },
+      { id: 'gpt-5.1-codex-max',     label: 'GPT-5.1 Codex Max',     tier: 'flagship'  },
+      { id: 'gpt-5.1-codex',         label: 'GPT-5.1 Codex',         tier: 'flagship'  },
+      { id: 'gpt-5.1-codex-mini',    label: 'GPT-5.1 Codex Mini',    tier: 'efficient' },
       { id: 'gpt-5',                 label: 'GPT-5',                 tier: 'flagship'  },
+      { id: 'gpt-5-pro',             label: 'GPT-5 Pro',             tier: 'flagship'  },
+      { id: 'gpt-5-codex',           label: 'GPT-5 Codex',           tier: 'flagship'  },
       { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            tier: 'efficient' },
       { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            tier: 'efficient' },
       // ── GPT-4o ──
       { id: 'gpt-4o',                label: 'GPT-4o',                tier: 'stable'    },
+      { id: 'gpt-4o-2024-11-20',     label: 'GPT-4o (Nov 2024)',     tier: 'stable'    },
+      { id: 'gpt-4o-2024-08-06',     label: 'GPT-4o (Aug 2024)',     tier: 'stable'    },
       { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           tier: 'efficient' },
       // ── GPT-4.1 ──
       { id: 'gpt-4.1',               label: 'GPT-4.1',               tier: 'stable'    },
@@ -826,10 +835,29 @@ function AdminDashboard({ user, handleLogout }) {
                   {/* API Key */}
                   <div>
                     <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">API Key (override .env — opsional)</label>
-                    <input type="password" autoComplete="new-password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none"
-                      placeholder="Kosongkan untuk pakai key dari .env server"
-                      value={botForm.aiProvider?.apiKey || ''}
-                      onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))} />
+                    <div className="relative">
+                      <input type="text" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                        readOnly
+                        onFocus={e => e.target.removeAttribute('readOnly')}
+                        className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none font-mono tracking-widest"
+                        placeholder="Kosongkan = pakai OPENAI_API_KEY dari .env"
+                        value={botForm.aiProvider?.apiKey || ''}
+                        onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))} />
+                      {botForm.aiProvider?.apiKey && (
+                        <button type="button"
+                          onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: '' } }))}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-red-400 hover:text-red-600 font-bold px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
+                          title="Hapus API Key (gunakan .env)">
+                          ✕ Hapus
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-steel mt-1">
+                      {botForm.aiProvider?.apiKey
+                        ? <span className="text-amber-600 font-bold">⚠️ Menggunakan API Key custom (bukan dari .env)</span>
+                        : <span className="text-emerald-600 font-bold">✅ Menggunakan OPENAI_API_KEY dari .env server</span>
+                      }
+                    </p>
                   </div>
 
                   {/* Custom endpoint */}
