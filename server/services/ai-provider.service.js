@@ -9,20 +9,12 @@ export const AI_PROVIDERS = {
     models: [
       // GPT-5.x family
       { id: 'gpt-5.2',               label: 'GPT-5.2',               context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5.2-pro',           label: 'GPT-5.2 Pro',           context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5.2-codex',         label: 'GPT-5.2 Codex',         context: 1000000, tier: 'flagship'  },
       { id: 'gpt-5.1',               label: 'GPT-5.1',               context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5.1-codex-max',     label: 'GPT-5.1 Codex Max',     context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5.1-codex',         label: 'GPT-5.1 Codex',         context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5.1-codex-mini',    label: 'GPT-5.1 Codex Mini',    context: 1000000, tier: 'efficient' },
       { id: 'gpt-5',                 label: 'GPT-5',                 context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5-pro',             label: 'GPT-5 Pro',             context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5-codex',           label: 'GPT-5 Codex',           context: 1000000, tier: 'flagship'  },
       { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            context: 1000000, tier: 'efficient' },
       { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            context: 1000000, tier: 'efficient' },
       // GPT-4o family
       { id: 'gpt-4o',                label: 'GPT-4o',                context: 128000,  tier: 'stable'    },
-      { id: 'gpt-4o-2024-11-20',     label: 'GPT-4o (Nov 2024)',     context: 128000,  tier: 'stable'    },
       { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           context: 128000,  tier: 'efficient' },
       // GPT-4.1 family
       { id: 'gpt-4.1',               label: 'GPT-4.1',               context: 1000000, tier: 'stable'    },
