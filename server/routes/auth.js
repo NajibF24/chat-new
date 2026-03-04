@@ -9,6 +9,9 @@ import { requireAuth } from '../middleware/auth.js';
 const router = express.Router();
 const ldapService = new LDAPService();
 
+// ── Helper: deteksi apakah input berformat email ──────────────
+const isEmailFormat = (str) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
+
 // ==================== LOGIN ROUTE ====================
 router.post('/login', async (req, res) => {
   try {
@@ -18,11 +21,15 @@ router.post('/login', async (req, res) => {
     let { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password required' });
+      return res.status(400).json({ error: 'Username/email and password required' });
     }
 
     // Normalisasi input
-    username = username.toLowerCase().trim();
+    const rawIdentifier = username.trim();
+    username = rawIdentifier.toLowerCase();
+    const loginByEmail = isEmailFormat(username);
+
+    console.log(`   Login identifier: "${username}" (${loginByEmail ? 'email' : 'username'})`);
 
     // ------------------------------------------------------------------
     // SKENARIO 1: LDAP USER (Primary)
@@ -30,28 +37,29 @@ router.post('/login', async (req, res) => {
     if (ldapService.isEnabled()) {
       console.log(`🔐 STEP 1: Checking LDAP for: ${username}`);
 
+      // Untuk LDAP, selalu gunakan format username (strip domain jika ada)
+      // Contoh: "john.doe@gyssteel.com" → coba "john.doe" ke LDAP
+      const ldapUsername = loginByEmail
+        ? username.split('@')[0]   // ambil bagian sebelum @
+        : username;
+
       try {
-        const ldapResult = await ldapService.authenticate(username, password);
+        const ldapResult = await ldapService.authenticate(ldapUsername, password);
 
         if (ldapResult.success) {
           console.log('✅ LDAP Authentication SUCCESSFUL');
           
-          const finalUsername = (ldapResult.user.username || username).toLowerCase();
+          const finalUsername = (ldapResult.user.username || ldapUsername).toLowerCase();
           const userGroups = ldapResult.user.groups || [];
           console.log(`   User Groups: ${userGroups.join(', ')}`);
 
           // ============================================================
-          // 🔥 FIX: LOGIC DINAMIS DARI .ENV
+          // 🔥 LOGIC DINAMIS DARI .ENV
           // ============================================================
-          // 1. Ambil setting dari .env (Contoh: "MIS, IT Infrastructure, Managers")
           const envAdminGroups = process.env.LDAP_ADMIN_GROUPS || 'MIS';
-          
-          // 2. Pecah jadi array & bersihkan spasi -> ['mis', 'it infrastructure', 'managers']
           const allowedGroups = envAdminGroups.toLowerCase().split(',').map(g => g.trim());
-          
           console.log(`   🎯 Allowed Admin Groups: ${allowedGroups.join(', ')}`);
 
-          // 3. Cek apakah user punya SALAH SATU grup tersebut
           const isAdminAccess = userGroups.some(userGroup => {
             const g = userGroup.toLowerCase();
             return allowedGroups.some(allowed => g.includes(allowed));
@@ -61,13 +69,11 @@ router.post('/login', async (req, res) => {
              console.log('   🛡️ PRIVILEGE DETECTED: User granted ADMIN Access');
           }
 
-          // 2. Siapkan Bot
+          // Siapkan Bot
           let defaultBots = [];
           if (isAdminAccess) {
-            // Admin dapat SEMUA Bot
             defaultBots = await Bot.find({});
           } else {
-            // User Biasa hanya dapat ChatGPT
             defaultBots = await Bot.find({ name: { $regex: /chatgpt/i } });
             if (defaultBots.length === 0) {
               const anyBot = await Bot.findOne();
@@ -75,16 +81,20 @@ router.post('/login', async (req, res) => {
             }
           }
 
-          // 3. Proses User Database
-          let user = await User.findOne({ username: finalUsername });
+          // Proses User Database — cari by username ATAU email
+          let user = await User.findOne({
+            $or: [
+              { username: finalUsername },
+              { email: ldapResult.user.email || null }
+            ]
+          });
 
           if (!user) {
-            // USER BARU
             console.log(`🆕 Creating NEW user: ${finalUsername}`);
             user = new User({
               username: finalUsername,
               password: await bcrypt.hash(Math.random().toString(36), 10),
-              isAdmin: isAdminAccess, // Pakai hasil cek dinamis tadi
+              isAdmin: isAdminAccess,
               assignedBots: defaultBots.map(b => b._id),
               email: ldapResult.user.email,
               displayName: ldapResult.user.displayName,
@@ -93,7 +103,6 @@ router.post('/login', async (req, res) => {
               lastLogin: new Date()
             });
           } else {
-            // USER LAMA
             console.log(`🔄 User FOUND: ${finalUsername}`);
             
             user.email = ldapResult.user.email || user.email;
@@ -102,15 +111,12 @@ router.post('/login', async (req, res) => {
             user.authMethod = 'ldap';
             user.lastLogin = new Date();
 
-            // Update Akses jika user masuk grup Admin
             if (isAdminAccess) {
                 console.log('   🛡️ Enforcing ADMIN Privileges');
                 user.isAdmin = true;
                 const allBots = await Bot.find({}); 
                 user.assignedBots = allBots.map(b => b._id);
             } else {
-                // Jika dulunya admin tapi sekarang dikeluarkan dari grup, cabut akses? 
-                // Opsional: user.isAdmin = false; (Hati-hati jika ingin menerapkan ini)
                 if (!user.assignedBots || user.assignedBots.length === 0) {
                    user.assignedBots = defaultBots.map(b => b._id);
                 }
@@ -142,9 +148,15 @@ router.post('/login', async (req, res) => {
 
     // ------------------------------------------------------------------
     // SKENARIO 2: LOCAL DB
+    // Cari user berdasarkan username ATAU email
     // ------------------------------------------------------------------
     console.log(`🔐 STEP 2: Checking Local Database for: ${username}`);
-    const user = await User.findOne({ username }).populate('assignedBots');
+
+    const user = await User.findOne(
+      loginByEmail
+        ? { email: username }
+        : { username }
+    ).populate('assignedBots');
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });

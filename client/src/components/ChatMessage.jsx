@@ -81,6 +81,32 @@ function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// GYS AI Disclaimer — hanya tampil di bawah pesan assistant
+// ─────────────────────────────────────────────────────────────
+function AIDisclaimer() {
+  return (
+    <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-steel-light/20">
+      <svg
+        className="w-3 h-3 text-amber-400 flex-shrink-0"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+        />
+      </svg>
+      <p className="text-[9px] xl:text-[10px] text-steel-light leading-snug">
+        Respons AI dapat mengandung ketidakakuratan. Verifikasi informasi penting sebelum digunakan untuk pengambilan keputusan bisnis.
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // ChatMessage
 // ─────────────────────────────────────────────────────────────
 const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
@@ -239,6 +265,9 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
               </div>
             </div>
           )}
+
+          {/* ── GYS AI Disclaimer (hanya pesan assistant) ── */}
+          {!isUser && <AIDisclaimer />}
 
           {/* Timestamp */}
           <div className={`text-[9px] xl:text-[10px] mt-1.5 xl:mt-2 text-right font-medium tracking-tight ${isUser ? 'text-white/50' : 'text-steel-light'}`}>

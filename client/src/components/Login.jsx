@@ -2,13 +2,16 @@ import React, { useState } from 'react';
 import axios from 'axios';
 
 const Login = ({ setUser }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [identifier, setIdentifier] = useState(''); // username ATAU email
+  const [password, setPassword]     = useState('');
+  const [error, setError]           = useState('');
+  const [loading, setLoading]       = useState(false);
 
   // STATE: Kontrol Avatar Widget (Digital Assistant)
   const [isAvatarOpen, setIsAvatarOpen] = useState(false);
+
+  // Deteksi apakah input terlihat seperti email
+  const looksLikeEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -16,8 +19,10 @@ const Login = ({ setUser }) => {
     setLoading(true);
 
     try {
-      const response = await axios.post('/api/auth/login',
-        { username, password },
+      // Kirim sebagai field 'username' — backend akan cek apakah itu email atau username
+      const response = await axios.post(
+        '/api/auth/login',
+        { username: identifier.trim(), password },
         { withCredentials: true }
       );
 
@@ -26,15 +31,15 @@ const Login = ({ setUser }) => {
 
     } catch (err) {
       console.error('❌ Login failed', err);
-      let errorMessage = 'Login failed';
+      let errorMessage = 'Login gagal';
       if (err.response) {
         if (err.response.status === 401) {
-          errorMessage = 'Invalid username or password.';
+          errorMessage = 'Username/email atau password tidak valid.';
         } else {
-          errorMessage = err.response.data?.error || 'A system error occurred.';
+          errorMessage = err.response.data?.error || 'Terjadi kesalahan sistem.';
         }
       } else {
-        errorMessage = 'Failed to connect to the server.';
+        errorMessage = 'Tidak dapat terhubung ke server.';
       }
       setError(errorMessage);
     } finally {
@@ -54,7 +59,7 @@ const Login = ({ setUser }) => {
         <div className="flex flex-col items-center text-center mb-10">
           <div className="mb-4 flex justify-center items-center min-h-[64px]">
             <img
-              src="/assets/gys-logo.webp" 
+              src="/assets/gys-logo.webp"
               alt="Garuda Yamato Steel Logo"
               className="h-16 w-auto object-contain"
               onError={(e) => {
@@ -73,30 +78,44 @@ const Login = ({ setUser }) => {
 
         <div className="mb-6 border-b border-steel-lightest pb-4">
           <h3 className="text-lg font-bold text-gray-800 text-center">Sign In</h3>
-          <p className="text-steel text-sm mt-1 text-center">Use your Active Directory account</p>
+          <p className="text-steel text-sm mt-1 text-center">Gunakan akun Active Directory Anda</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
+
+          {/* ── Username atau Email ─────────────────────────── */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-steel uppercase">Username</label>
+            <label className="text-xs font-bold text-steel uppercase">Username atau Email</label>
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-steel-light group-focus-within:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
-                </svg>
+                {/* Icon berubah: person kalau username, envelope kalau email */}
+                {looksLikeEmail(identifier) ? (
+                  <svg className="h-5 w-5 text-steel-light group-focus-within:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                ) : (
+                  <svg className="h-5 w-5 text-steel-light group-focus-within:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                )}
               </div>
               <input
                 type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-steel-lightest/50 border border-steel-light/50 rounded-lg text-gray-800 placeholder-steel-light focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                placeholder="Contoh: user.name"
+                placeholder="user.name atau user@gyssteel.com"
                 required
                 autoFocus
+                autoComplete="username"
               />
             </div>
+            <p className="text-[10px] text-steel-light pl-0.5">
+              Bisa menggunakan username (contoh: <span className="font-mono font-medium">john.doe</span>) atau email perusahaan
+            </p>
           </div>
 
+          {/* ── Password ────────────────────────────────────── */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-steel uppercase">Password</label>
             <div className="relative group">
@@ -112,6 +131,7 @@ const Login = ({ setUser }) => {
                 className="w-full pl-10 pr-4 py-2.5 bg-steel-lightest/50 border border-steel-light/50 rounded-lg text-gray-800 placeholder-steel-light focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                 placeholder="••••••••"
                 required
+                autoComplete="current-password"
               />
             </div>
           </div>
@@ -136,10 +156,10 @@ const Login = ({ setUser }) => {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span>Checking credentials...</span>
+                <span>Memverifikasi...</span>
               </>
             ) : (
-              <span>LOGIN</span>
+              <span>MASUK</span>
             )}
           </button>
         </form>
@@ -147,7 +167,7 @@ const Login = ({ setUser }) => {
         <div className="mt-8 pt-6">
           <p className="text-steel-light text-xs text-center leading-relaxed">
             &copy; 2026 PT Garuda Yamato Steel.<br/>
-            Authorized Personnel Only.
+            Khusus Pengguna yang Berwenang.
           </p>
         </div>
       </div>
@@ -157,53 +177,9 @@ const Login = ({ setUser }) => {
           ========================================= */}
       {/* {isAvatarOpen && (
         <div className="fixed bottom-24 right-6 z-50 animate-in slide-in-from-bottom-5 duration-300">
-          <div className="bg-white border border-steel-lightest p-1 rounded-2xl shadow-2xl w-[350px] sm:w-[400px] h-[500px] flex flex-col relative overflow-hidden">
-            <div className="flex justify-between items-center px-4 py-3 border-b border-steel-lightest bg-white">
-               <div className="flex items-center gap-2">
-                 <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-                 <span className="text-primary text-xs font-bold tracking-widest uppercase">Digital Assistant</span>
-               </div>
-               <button onClick={() => setIsAvatarOpen(false)} className="text-steel-light hover:text-steel transition-colors">
-                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                 </svg>
-               </button>
-            </div>
-            <iframe
-              src="https://chat.unith.ai/none-1579/assistit-24328?api_key=abab404e3143433e923c0b016f302081"
-              width="100%"
-              height="100%"
-              allow="microphone"
-              title="Digital Receptionist"
-              className="flex-1 border-none bg-steel-lightest"
-            ></iframe>
-          </div>
+          ...
         </div>
-      )}
-
-      <button
-        onClick={() => setIsAvatarOpen(!isAvatarOpen)}
-        className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 ${
-            isAvatarOpen ? 'bg-steel hover:bg-gray-600' : 'bg-primary hover:bg-primary-dark'
-        }`}
-      >
-        {isAvatarOpen ? (
-           <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-           </svg>
-        ) : (
-           <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-           </svg>
-        )}
-        {!isAvatarOpen && (
-          <span className="absolute top-0 right-0 flex h-3.5 w-3.5 -mt-0.5 -mr-0.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border-2 border-white"></span>
-          </span>
-        )}
-      </button>
-      */}
+      )} */}
 
     </div>
   );

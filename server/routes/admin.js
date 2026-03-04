@@ -51,7 +51,7 @@ const knowledgeStorage = multer.diskStorage({
 });
 const knowledgeUpload = multer({
   storage: knowledgeStorage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (_, file, cb) => {
     const allowed = [
       'application/pdf',

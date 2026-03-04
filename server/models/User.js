@@ -23,7 +23,10 @@ const userSchema = new mongoose.Schema({
   // ✅ NEW: LDAP/AD fields
   email: {
     type: String,
-    default: null
+    lowercase: true,
+    trim: true,
+    sparse: true,   // ← PENTING: izinkan null/undefined tanpa melanggar unique
+    unique: true,
   },
   displayName: {
     type: String,
