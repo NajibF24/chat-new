@@ -584,6 +584,10 @@ const Chat = ({ user, handleLogout }) => {
                 ➤
               </button>
             </div>
+            {/* AI Disclaimer */}
+            <p className="max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto text-center text-[10px] text-steel-light mt-1.5 select-none">
+              Respons AI dapat mengandung ketidakakuratan. Verifikasi informasi penting sebelum digunakan untuk pengambilan keputusan bisnis.
+            </p>
           </div>
         </main>
 
