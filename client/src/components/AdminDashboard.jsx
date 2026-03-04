@@ -13,20 +13,40 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 
 // ── AI Provider catalog ───────────────────────────────────────
 const AI_PROVIDERS = {
+  // SEBELUM — ganti seluruh blok openai: { ... } dengan ini:
+
   openai: {
     label: 'OpenAI', icon: '🟢',
     models: [
-      { id: 'gpt-5',        label: 'GPT-5',              tier: 'flagship'  },
-      { id: 'gpt-4.1',      label: 'GPT-4.1',            tier: 'flagship'  },
-      { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini',       tier: 'efficient' },
-      { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano',       tier: 'efficient' },
-      { id: 'o3',           label: 'o3 (Deep Reasoning)', tier: 'reasoning' },
-      { id: 'o4-mini',      label: 'o4-mini (Reasoning)', tier: 'reasoning' },
-      { id: 'o3-mini',      label: 'o3-mini (Reasoning)', tier: 'reasoning' },
-      { id: 'gpt-4o',       label: 'GPT-4o',              tier: 'stable'    },
-      { id: 'gpt-4o-mini',  label: 'GPT-4o Mini',         tier: 'stable'    },
-      { id: 'gpt-4-turbo',  label: 'GPT-4 Turbo',         tier: 'legacy'    },
-      { id: 'gpt-3.5-turbo',label: 'GPT-3.5 Turbo',       tier: 'legacy'    },
+      // ── GPT-5.2 Series (Latest Flagship) ─────────────────
+      { id: 'gpt-5-2',              label: 'GPT-5.2',                tier: 'flagship'  },
+      { id: 'gpt-5-2-thinking',     label: 'GPT-5.2 Thinking',       tier: 'thinking'  },
+      { id: 'gpt-5-2-pro',          label: 'GPT-5.2 Pro',            tier: 'thinking'  },
+      { id: 'gpt-5-2-instant',      label: 'GPT-5.2 Instant',        tier: 'efficient' },
+
+      // ── GPT-5.1 Series ────────────────────────────────────
+      { id: 'gpt-5-1',              label: 'GPT-5.1',                tier: 'flagship'  },
+      { id: 'gpt-5-1-codex',        label: 'GPT-5.1 Codex',          tier: 'reasoning' },
+      { id: 'gpt-5-1-codex-mini',   label: 'GPT-5.1 Codex Mini',     tier: 'efficient' },
+
+      // ── GPT-5 Series ──────────────────────────────────────
+      { id: 'gpt-5',                label: 'GPT-5',                  tier: 'flagship'  },
+      { id: 'gpt-5-mini',           label: 'GPT-5 Mini',             tier: 'efficient' },
+      { id: 'gpt-5-nano',           label: 'GPT-5 Nano',             tier: 'efficient' },
+
+      // ── GPT-4.1 Series ────────────────────────────────────
+      { id: 'gpt-4.1',              label: 'GPT-4.1',                tier: 'stable'    },
+      { id: 'gpt-4.1-mini',         label: 'GPT-4.1 Mini',           tier: 'efficient' },
+      { id: 'gpt-4.1-nano',         label: 'GPT-4.1 Nano',           tier: 'efficient' },
+
+      // ── o-Series (Reasoning) ──────────────────────────────
+      { id: 'o3',                   label: 'o3',                     tier: 'reasoning' },
+      { id: 'o4-mini',              label: 'o4-mini',                tier: 'reasoning' },
+
+      // ── Legacy ────────────────────────────────────────────
+      { id: 'gpt-4o',               label: 'GPT-4o',                 tier: 'legacy'    },
+      { id: 'gpt-4o-mini',          label: 'GPT-4o Mini',            tier: 'legacy'    },
+      { id: 'gpt-4-turbo',          label: 'GPT-4 Turbo',            tier: 'legacy'    },
     ],
     capabilities: ['webSearch', 'codeInterpreter', 'imageGeneration', 'canvas', 'fileSearch'],
   },
@@ -55,6 +75,7 @@ const AI_PROVIDERS = {
 
 const TIER_STYLE = {
   flagship:  'bg-amber-50 text-amber-700 border border-amber-200',
+  thinking:  'bg-rose-50 text-rose-700 border border-rose-200',      // ← baru
   efficient: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   reasoning: 'bg-violet-50 text-violet-700 border border-violet-200',
   stable:    'bg-blue-50 text-blue-700 border border-blue-200',
