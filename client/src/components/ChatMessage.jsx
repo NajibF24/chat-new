@@ -87,12 +87,12 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
   const isUser = message.role === 'user';
 
   return (
-    <div className={`flex w-full mb-4 xl:mb-6 ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex w-full mb-4 xl:mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex max-w-[92%] md:max-w-[80%] xl:max-w-[75%] 2xl:max-w-[70%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
 
         {/* Avatar */}
         {isUser ? (
-          <div className="flex-shrink-0 w-8 h-8 xl:w-10 xl:h-10 rounded-lg flex items-center justify-center shadow-md font-bold text-xs bg-primary-dark text-white ml-2 xl:ml-3 mt-0.5">
+          <div className="flex-shrink-0 w-6 h-8 xl:w-8 xl:h-10 rounded-lg flex items-center justify-center shadow-md font-bold text-xs bg-primary-dark text-white ml-2 xl:ml-3 mt-0.5">
             <svg className="w-4 h-4 xl:w-5 xl:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
@@ -104,13 +104,13 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
         )}
 
         {/* Bubble */}
-        <div className={`px-4 xl:px-5 py-3 xl:py-4 shadow-sm relative overflow-hidden transition-all ${
+        <div className={`px-4 xl:px-5 py-2 xl:py-3 shadow-sm relative overflow-hidden transition-all ${
           isUser
             ? 'bg-primary-dark text-white rounded-2xl rounded-tr-sm'
             : 'bg-white text-gray-800 border border-steel-light/30 rounded-2xl rounded-tl-sm'
         }`}>
 
-          <div className={`prose max-w-none leading-relaxed text-sm xl:text-base ${isUser ? 'prose-invert text-white' : 'text-gray-800'}`}
+          <div className={`prose max-w-none leading-relaxed text-xs xl:text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800'}`}
             style={{ '--tw-prose-body': isUser ? '#fff' : '#1e293b' }}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
@@ -149,7 +149,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
                       </div>
                     );
                   }
-                  return <p className="mb-2 last:mb-0 text-sm xl:text-base leading-relaxed" {...props}>{children}</p>;
+                  return <p className="mb-2 last:mb-0 text-xs xl:text-sm leading-relaxed" {...props}>{children}</p>;
                 },
 
                 // Images
@@ -172,15 +172,15 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
                   );
                 },
 
-                ul: ({ node, ...props }) => <ul className="list-disc pl-4 xl:pl-5 mb-2 xl:mb-3 space-y-1 text-sm xl:text-base" {...props} />,
-                ol: ({ node, ...props }) => <ol className="list-decimal pl-4 xl:pl-5 mb-2 xl:mb-3 space-y-1 text-sm xl:text-base" {...props} />,
-                li: ({ node, ...props }) => <li className="text-sm xl:text-base" {...props} />,
+                ul: ({ node, ...props }) => <ul className="list-disc pl-4 xl:pl-5 mb-2 xl:mb-3 space-y-1 text-xs xl:text-sm" {...props} />,
+                ol: ({ node, ...props }) => <ol className="list-decimal pl-4 xl:pl-5 mb-2 xl:mb-3 space-y-1 text-xs xl:text-sm" {...props} />,
+                li: ({ node, ...props }) => <li className="text-xs xl:text-sm" {...props} />,
                 h1: ({ node, ...props }) => <h1 className={`text-base xl:text-lg font-bold mt-3 xl:mt-4 mb-2 border-b pb-1 ${isUser ? 'border-white/20' : 'border-steel-light/30'}`} {...props} />,
-                h2: ({ node, ...props }) => <h2 className="text-sm xl:text-base font-bold mt-2.5 xl:mt-3 mb-1.5" {...props} />,
-                h3: ({ node, ...props }) => <h3 className="text-sm xl:text-sm font-bold mt-2 mb-1" {...props} />,
+                h2: ({ node, ...props }) => <h2 className="text-xs xl:text-sm font-bold mt-2.5 xl:mt-3 mb-1.5" {...props} />,
+                h3: ({ node, ...props }) => <h3 className="text-xs xl:text-sm font-bold mt-2 mb-1" {...props} />,
                 strong: ({ node, ...props }) => <strong className="font-bold" {...props} />,
                 blockquote: ({ node, ...props }) => (
-                  <blockquote className={`border-l-4 pl-3 xl:pl-4 my-2 xl:my-3 italic text-sm xl:text-base ${isUser ? 'border-white/40 text-white/80' : 'border-primary/40 text-steel'}`} {...props} />
+                  <blockquote className={`border-l-4 pl-3 xl:pl-4 my-2 xl:my-3 italic text-xs xl:text-sm ${isUser ? 'border-white/40 text-white/80' : 'border-primary/40 text-steel'}`} {...props} />
                 ),
 
                 table: ({ node, ...props }) => (
@@ -192,7 +192,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
                 th: ({ node, ...props }) => <th className="px-3 xl:px-4 py-1.5 xl:py-2 text-left text-xs xl:text-xs uppercase tracking-wider border-b" {...props} />,
                 tr: ({ node, ...props }) => <tr className="hover:bg-black/5" {...props} />,
                 td: ({ node, ...props }) => <td className="px-3 xl:px-4 py-1.5 xl:py-2 border-r last:border-r-0 text-xs xl:text-sm" {...props} />,
-                a: ({ node, ...props }) => <a className="underline font-semibold hover:opacity-80 text-sm xl:text-base" target="_blank" rel="noreferrer" {...props} />,
+                a: ({ node, ...props }) => <a className="underline font-semibold hover:opacity-80 text-xs xl:text-sm" target="_blank" rel="noreferrer" {...props} />,
               }}
             >
               {message.content || ''}
