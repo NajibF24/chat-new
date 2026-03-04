@@ -1,57 +1,47 @@
-// server/services/ai-core.service.js
-// ✅ Updated: Smartsheet sekarang langsung fetch dari API (no cache)
-// API Key & Sheet ID diambil dari konfigurasi bot di MongoDB
+// server/services/ai-core.service.js — Updated with multi-provider + knowledge base
 
-import OpenAI from 'openai';
-import pdf from 'pdf-parse';
-import mammoth from 'mammoth';
-import XLSX from 'xlsx';
-import fs from 'fs';
-import path from 'path';
+import pdf      from 'pdf-parse';
+import mammoth  from 'mammoth';
+import XLSX     from 'xlsx';
+import fs       from 'fs';
+import path     from 'path';
 
-import Chat from '../models/Chat.js';
-import Thread from '../models/Thread.js';
-import Bot from '../models/Bot.js';
-import SmartsheetLiveService from './smartsheet-live.service.js';  // ✅ LIVE, no cache
-import FileManagerService from './file-manager.service.js';
-import KouventaService from './kouventa.service.js';
+import Chat     from '../models/Chat.js';
+import Thread   from '../models/Thread.js';
+import Bot      from '../models/Bot.js';
+
+import AIProviderService      from './ai-provider.service.js';
+import KnowledgeBaseService   from './knowledge-base.service.js';
+import SmartsheetLiveService  from './smartsheet-live.service.js';
+import FileManagerService     from './file-manager.service.js';
+import KouventaService        from './kouventa.service.js';
 
 class AICoreService {
   constructor() {
-    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     this.fileManager = new FileManagerService();
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Deteksi apakah pertanyaan butuh data dari Smartsheet
-  // ─────────────────────────────────────────────────────────────
+  // ─── Detect data query ─────────────────────────────────────
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
-    const dataKeywords = [
-      'berikan', 'cari', 'list', 'daftar', 'semua', 'all', 'tampilkan', 'lihat',
-      'show', 'get', 'find', 'temukan', 'search',
-      'project', 'proyek', 'dokumen', 'document', 'file', 'tracking',
-      'status', 'progress', 'summary', 'analisa', 'data', 'total', 'berapa',
-      'latest', 'terbaru', 'recent', 'this week', 'minggu ini', 'today', 'hari ini',
-      'update', 'history', 'riwayat',
-      'modified', 'upload', 'added', 'deleted', 'edit', 'activity', 'siapa', 'who',
-      'overdue', 'delay', 'terlambat', 'laporan', 'report',
-      'health', 'red', 'merah', 'kritis', 'critical',
-      'budget', 'biaya', 'cost', 'anggaran',
-      'statistik', 'stats', 'count', 'jumlah',
-      'pm', 'manager', 'department',
+    const keywords = [
+      'berikan','cari','list','daftar','semua','all','tampilkan','lihat',
+      'show','get','find','temukan','search','project','proyek','dokumen',
+      'document','file','tracking','status','progress','summary','analisa',
+      'data','total','berapa','latest','terbaru','recent','this week',
+      'minggu ini','today','hari ini','update','history','riwayat',
+      'modified','upload','added','deleted','edit','activity','siapa','who',
+      'overdue','delay','terlambat','laporan','report','health','red',
+      'merah','kritis','critical','budget','biaya','cost','anggaran',
+      'statistik','stats','count','jumlah','pm','manager','department',
     ];
-    return dataKeywords.some(k => lowerMsg.includes(k))
-      || message.includes('_')
-      || message.includes('.');
+    return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Extract content dari file attachment
-  // ─────────────────────────────────────────────────────────────
+  // ─── Extract file content for inline attachment ────────────
   async extractFileContent(attachedFile) {
     const physicalPath = attachedFile.serverPath || attachedFile.path;
-    if (!physicalPath || !fs.existsSync(physicalPath)) return "";
+    if (!physicalPath || !fs.existsSync(physicalPath)) return '';
     const originalName = attachedFile.originalname || '';
     const ext = path.extname(originalName).toLowerCase();
     try {
@@ -63,110 +53,88 @@ class AICoreService {
         return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
-        const content = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
+        const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
         return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
       } else {
         return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
       }
-    } catch (e) { return ""; }
+    } catch { return ''; }
   }
 
   // ─────────────────────────────────────────────────────────────
-  // MAIN: Process message dari user
+  // MAIN: Process message
   // ─────────────────────────────────────────────────────────────
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
-    // Buat thread baru jika belum ada
+    // Create thread if needed
     if (!threadId) {
-      const title = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
+      const title     = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
       const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
       await newThread.save();
       threadId = newThread._id;
     }
 
-    let contextData = "";
+    let contextData = '';
 
-    // ── 1. KOUVENTA ──────────────────────────────────────────────
+    // ── 1. KOUVENTA ──────────────────────────────────────────
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
-        const kouventa = new KouventaService(
-          bot.kouventaConfig.apiKey,
-          bot.kouventaConfig.endpoint
-        );
-        const reply = await kouventa.generateResponse(message || "");
-        contextData += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
-      } catch (error) {
-        console.error("Kouventa Error:", error.message);
-      }
+        const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
+        const reply    = await kouventa.generateResponse(message || '');
+        contextData   += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
+      } catch (error) { console.error('Kouventa Error:', error.message); }
     }
 
-    // ── 2. SMARTSHEET LIVE FETCH ─────────────────────────────────
+    // ── 2. SMARTSHEET LIVE ───────────────────────────────────
     if (bot.smartsheetConfig?.enabled && this.isDataQuery(message)) {
       try {
-        // ✅ Ambil API Key dari bot config, fallback ke .env
-        const apiKey =
-          bot.smartsheetConfig.apiKey ||
-          process.env.SMARTSHEET_API_KEY;
-
-        // ✅ Ambil Sheet ID dari bot config, fallback ke .env
-        const sheetId =
-          bot.smartsheetConfig.sheetId ||
-          bot.smartsheetConfig.primarySheetId ||
-          process.env.SMARTSHEET_PRIMARY_SHEET_ID;
-
-        if (!apiKey) {
-          console.warn(`⚠️ Bot "${bot.name}": Smartsheet API Key tidak dikonfigurasi`);
-          contextData += `\n\n=== DATA SMARTSHEET ===\n⚠️ API Key belum dikonfigurasi di bot ini.\n`;
-        } else if (!sheetId) {
-          console.warn(`⚠️ Bot "${bot.name}": Sheet ID tidak dikonfigurasi`);
-          contextData += `\n\n=== DATA SMARTSHEET ===\n⚠️ Sheet ID belum dikonfigurasi di bot ini.\n`;
-        } else {
-          console.log(`📊 Bot "${bot.name}" → Fetching Sheet ID: ${sheetId}`);
-
-          // ✅ LIVE FETCH - langsung dari API
+        const apiKey  = bot.smartsheetConfig.apiKey || process.env.SMARTSHEET_API_KEY;
+        const sheetId = bot.smartsheetConfig.sheetId || bot.smartsheetConfig.primarySheetId || process.env.SMARTSHEET_PRIMARY_SHEET_ID;
+        if (apiKey && sheetId) {
           const smartsheet = new SmartsheetLiveService(apiKey);
-          const sheet = await smartsheet.fetchSheet(sheetId);
-          const flatRows = smartsheet.processToFlatRows(sheet);
-
-          console.log(`📊 Total rows fetched: ${flatRows.length}`);
-
-          if (flatRows.length === 0) {
-            contextData += `\n\n=== DATA SMARTSHEET ===\nSheet ditemukan tapi tidak ada data.\n`;
-          } else {
-            // ✅ Build context yang relevan dengan pertanyaan user
-            const aiContext = smartsheet.buildAIContext(flatRows, message, sheet.name);
-            contextData += `\n\n${aiContext}\n`;
-
-            console.log(`📊 Context built: ~${Math.ceil(aiContext.length / 4)} tokens`);
+          const sheet      = await smartsheet.fetchSheet(sheetId);
+          const flatRows   = smartsheet.processToFlatRows(sheet);
+          if (flatRows.length > 0) {
+            contextData += `\n\n${smartsheet.buildAIContext(flatRows, message, sheet.name)}\n`;
           }
         }
       } catch (e) {
-        console.error(`❌ Smartsheet Error (bot "${bot.name}"):`, e.message);
+        console.error('Smartsheet Error:', e.message);
         contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
       }
     }
 
-    // ── 3. BUILD MESSAGES UNTUK OPENAI ──────────────────────────
+    // ── 3. KNOWLEDGE BASE (RAG) ──────────────────────────────
+    if (bot.knowledgeFiles?.length > 0 && bot.knowledgeMode !== 'disabled') {
+      const knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
+        bot.knowledgeFiles, message, bot.knowledgeMode || 'relevant'
+      );
+      if (knowledgeCtx) contextData += knowledgeCtx;
+    }
+
+    // ── 4. BUILD USER MESSAGE CONTENT ───────────────────────
     const userContent = [];
-    if (message) userContent.push({ type: "text", text: message });
+    if (message) userContent.push({ type: 'text', text: message });
 
     if (attachedFile) {
-      if (attachedFile.mimetype?.startsWith('image/')) {
+      if (attachedFile.mimetype?.startsWith('image/') && bot.aiProvider?.provider === 'openai') {
+        // Vision for OpenAI
         const imgBuffer = fs.readFileSync(attachedFile.path);
         userContent.push({
-          type: "image_url",
-          image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` }
+          type: 'image_url',
+          image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` },
         });
       } else {
+        // Extract text for all providers
         const text = await this.extractFileContent(attachedFile);
-        if (text) userContent.push({ type: "text", text });
+        if (text) userContent.push({ type: 'text', text });
       }
     }
 
     const today = new Date().toLocaleDateString('id-ID', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
     const systemPrompt = [
@@ -174,28 +142,26 @@ class AICoreService {
       `[HARI INI: ${today}]`,
       contextData,
       contextData
-        ? 'Gunakan data di atas untuk menjawab pertanyaan user secara akurat. Hitung berdasarkan data yang tersedia, jangan mengarang.'
+        ? 'Gunakan data dan knowledge di atas untuk menjawab pertanyaan user secara akurat. Jangan mengarang fakta yang tidak ada di data.'
         : '',
     ].filter(Boolean).join('\n\n');
 
-    // Log total context size
-    console.log(`📝 Total context: ~${Math.ceil(systemPrompt.length / 4)} tokens`);
+    console.log(`🤖 Bot "${bot.name}" | Provider: ${bot.aiProvider?.provider || 'openai'} | Model: ${bot.aiProvider?.model || 'gpt-4o'}`);
+    console.log(`📝 System prompt: ~${Math.ceil(systemPrompt.length / 4)} tokens`);
 
-    // ── 4. CALL OPENAI ───────────────────────────────────────────
-    const completion = await this.openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...history.slice(-4).map(h => ({ role: h.role, content: h.content })),
-        { role: 'user', content: userContent }
-      ],
-      temperature: 0.1,
-      max_tokens: 2000,
+    // ── 5. CALL AI PROVIDER ──────────────────────────────────
+    const result = await AIProviderService.generateCompletion({
+      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      systemPrompt,
+      messages: history.slice(-6),
+      userContent: userContent.length === 1 && userContent[0].type === 'text'
+        ? userContent[0].text
+        : userContent,
     });
 
-    const aiResponse = completion.choices[0].message.content;
+    const aiResponse = result.text;
 
-    // ── 5. SAVE CHAT ─────────────────────────────────────────────
+    // ── 6. SAVE TO DB ────────────────────────────────────────
     let savedAttachments = [];
     if (attachedFile) {
       savedAttachments.push({
@@ -203,22 +169,14 @@ class AICoreService {
         path: `/api/files/${attachedFile.filename}`,
         serverPath: attachedFile.path,
         type: attachedFile.mimetype?.includes('image') ? 'image'
-          : attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file'
+          : attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file',
       });
     }
 
-    await new Chat({
-      userId, botId, threadId,
-      role: 'user',
-      content: message || '',
-      attachedFiles: savedAttachments
-    }).save();
+    await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
+    await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
 
-    await new Chat({
-      userId, botId, threadId,
-      role: 'assistant',
-      content: aiResponse
-    }).save();
+    await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }
