@@ -13,7 +13,7 @@ const ARTIFACT_MIN_LINES = 5;
 const PANEL_MIN_WIDTH = 400;
 const PANEL_MAX_WIDTH = 900;
 const PANEL_DEFAULT = 540;
-const MAX_THREADS_SHOWN = 20;
+const MAX_THREADS_SHOWN = 15;
 
 function extractCodeBlocks(markdown = '') {
   const blocks = [];
@@ -72,10 +72,11 @@ const Chat = ({ user, handleLogout }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
+  
   // Delete state
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-
+  const [showAllThreads, setShowAllThreads] = useState(false);
   // Artifact panel
   const [artifact, setArtifact] = useState(null);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
@@ -291,7 +292,7 @@ const Chat = ({ user, handleLogout }) => {
     }
   };
 
-  const visibleThreads = threads.slice(0, MAX_THREADS_SHOWN);
+  const visibleThreads = showAllThreads ? threads : threads.slice(0, MAX_THREADS_SHOWN);
 
   // ─────────────────────────────────────────────────────────────
   // RENDER
@@ -429,9 +430,14 @@ const Chat = ({ user, handleLogout }) => {
               ))}
 
               {threads.length > MAX_THREADS_SHOWN && (
-                <p className="text-[10px] text-steel-light text-center px-2 py-1.5 italic">
-                  +{threads.length - MAX_THREADS_SHOWN} percakapan lebih lama tersembunyi
-                </p>
+                <button 
+                  onClick={() => setShowAllThreads(!showAllThreads)}
+                  className="w-full text-center px-3 py-2.5 mt-2 rounded-lg text-xs font-semibold text-primary hover:bg-primary/10 transition-colors border border-dashed border-transparent hover:border-primary/30"
+                >
+                  {showAllThreads 
+                    ? 'Tampilkan Lebih Sedikit' 
+                    : `Lihat Semua Percakapan (${threads.length})`}
+                </button>
               )}
             </div>
           </div>
