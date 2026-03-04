@@ -13,40 +13,37 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 
 // ── AI Provider catalog ───────────────────────────────────────
 const AI_PROVIDERS = {
-  // SEBELUM — ganti seluruh blok openai: { ... } dengan ini:
-
   openai: {
     label: 'OpenAI', icon: '🟢',
     models: [
-      // ── GPT-5.2 Series (Latest Flagship) ─────────────────
-      { id: 'gpt-5-2',              label: 'GPT-5.2',                tier: 'flagship'  },
-      { id: 'gpt-5-2-thinking',     label: 'GPT-5.2 Thinking',       tier: 'thinking'  },
-      { id: 'gpt-5-2-pro',          label: 'GPT-5.2 Pro',            tier: 'thinking'  },
-      { id: 'gpt-5-2-instant',      label: 'GPT-5.2 Instant',        tier: 'efficient' },
-
-      // ── GPT-5.1 Series ────────────────────────────────────
-      { id: 'gpt-5-1',              label: 'GPT-5.1',                tier: 'flagship'  },
-      { id: 'gpt-5-1-codex',        label: 'GPT-5.1 Codex',          tier: 'reasoning' },
-      { id: 'gpt-5-1-codex-mini',   label: 'GPT-5.1 Codex Mini',     tier: 'efficient' },
-
-      // ── GPT-5 Series ──────────────────────────────────────
-      { id: 'gpt-5',                label: 'GPT-5',                  tier: 'flagship'  },
-      { id: 'gpt-5-mini',           label: 'GPT-5 Mini',             tier: 'efficient' },
-      { id: 'gpt-5-nano',           label: 'GPT-5 Nano',             tier: 'efficient' },
-
-      // ── GPT-4.1 Series ────────────────────────────────────
-      { id: 'gpt-4.1',              label: 'GPT-4.1',                tier: 'stable'    },
-      { id: 'gpt-4.1-mini',         label: 'GPT-4.1 Mini',           tier: 'efficient' },
-      { id: 'gpt-4.1-nano',         label: 'GPT-4.1 Nano',           tier: 'efficient' },
-
-      // ── o-Series (Reasoning) ──────────────────────────────
-      { id: 'o3',                   label: 'o3',                     tier: 'reasoning' },
-      { id: 'o4-mini',              label: 'o4-mini',                tier: 'reasoning' },
-
-      // ── Legacy ────────────────────────────────────────────
-      { id: 'gpt-4o',               label: 'GPT-4o',                 tier: 'legacy'    },
-      { id: 'gpt-4o-mini',          label: 'GPT-4o Mini',            tier: 'legacy'    },
-      { id: 'gpt-4-turbo',          label: 'GPT-4 Turbo',            tier: 'legacy'    },
+      // ── GPT-5.x ──
+      { id: 'gpt-5.2',               label: 'GPT-5.2',               tier: 'flagship'  },
+      { id: 'gpt-5.2-pro',           label: 'GPT-5.2 Pro',           tier: 'flagship'  },
+      { id: 'gpt-5.2-codex',         label: 'GPT-5.2 Codex',         tier: 'flagship'  },
+      { id: 'gpt-5.1',               label: 'GPT-5.1',               tier: 'flagship'  },
+      { id: 'gpt-5.1-codex-max',     label: 'GPT-5.1 Codex Max',     tier: 'flagship'  },
+      { id: 'gpt-5.1-codex',         label: 'GPT-5.1 Codex',         tier: 'flagship'  },
+      { id: 'gpt-5.1-codex-mini',    label: 'GPT-5.1 Codex Mini',    tier: 'efficient' },
+      { id: 'gpt-5',                 label: 'GPT-5',                 tier: 'flagship'  },
+      { id: 'gpt-5-pro',             label: 'GPT-5 Pro',             tier: 'flagship'  },
+      { id: 'gpt-5-codex',           label: 'GPT-5 Codex',           tier: 'flagship'  },
+      { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            tier: 'efficient' },
+      { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            tier: 'efficient' },
+      // ── GPT-4o ──
+      { id: 'gpt-4o',                label: 'GPT-4o',                tier: 'stable'    },
+      { id: 'gpt-4o-2024-11-20',     label: 'GPT-4o (Nov 2024)',     tier: 'stable'    },
+      { id: 'gpt-4o-2024-08-06',     label: 'GPT-4o (Aug 2024)',     tier: 'stable'    },
+      { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           tier: 'efficient' },
+      // ── GPT-4.1 ──
+      { id: 'gpt-4.1',               label: 'GPT-4.1',               tier: 'stable'    },
+      { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          tier: 'efficient' },
+      { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          tier: 'efficient' },
+      // ── GPT-4 Legacy ──
+      { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo',           tier: 'legacy'    },
+      { id: 'gpt-4',                 label: 'GPT-4',                 tier: 'legacy'    },
+      // ── GPT-3.5 ──
+      { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo',         tier: 'legacy'    },
+      { id: 'gpt-3.5-turbo-16k',     label: 'GPT-3.5 Turbo 16K',     tier: 'legacy'    },
     ],
     capabilities: ['webSearch', 'codeInterpreter', 'imageGeneration', 'canvas', 'fileSearch'],
   },
@@ -64,9 +61,9 @@ const AI_PROVIDERS = {
     models: [
       { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   tier: 'flagship'  },
       { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'efficient' },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', tier: 'stable'    },
       { id: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro',   tier: 'stable'    },
       { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', tier: 'stable'    },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', tier: 'stable'    },
     ],
     capabilities: [],
   },
@@ -75,11 +72,19 @@ const AI_PROVIDERS = {
 
 const TIER_STYLE = {
   flagship:  'bg-amber-50 text-amber-700 border border-amber-200',
-  thinking:  'bg-rose-50 text-rose-700 border border-rose-200',      // ← baru
   efficient: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   reasoning: 'bg-violet-50 text-violet-700 border border-violet-200',
   stable:    'bg-blue-50 text-blue-700 border border-blue-200',
   legacy:    'bg-gray-100 text-gray-500 border border-gray-200',
+};
+
+// ── Tier group labels for section headers in model picker ─────
+const TIER_GROUP_LABEL = {
+  flagship:  '⭐ Flagship',
+  efficient: '⚡ Efficient',
+  reasoning: '🧠 Reasoning',
+  stable:    '✅ Stable',
+  legacy:    '🕰 Legacy',
 };
 
 const ALL_CAPABILITIES = [
@@ -117,13 +122,25 @@ const initialBotState = {
   prompt: '',
   starterQuestions: [],
   knowledgeMode: 'relevant',
-  aiProvider: { provider: 'openai', model: 'gpt-4.1', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 2000 },
+  aiProvider: { provider: 'openai', model: 'gpt-4o', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 2000 },
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
   smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '' },
   kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
   onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '' },
   avatar: { type: 'emoji', emoji: '🤖', bgColor: '#6366f1', textColor: '#ffffff' },
 };
+
+// ── Helper: group models by tier ──────────────────────────────
+function groupModelsByTier(models) {
+  const order = ['flagship', 'efficient', 'reasoning', 'stable', 'legacy'];
+  const groups = {};
+  models.forEach(m => {
+    const t = m.tier || 'stable';
+    if (!groups[t]) groups[t] = [];
+    groups[t].push(m);
+  });
+  return order.filter(t => groups[t]).map(t => ({ tier: t, models: groups[t] }));
+}
 
 // ─────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -187,7 +204,7 @@ function AdminDashboard({ user, handleLogout }) {
       knowledgeMode: bot.knowledgeMode || 'relevant',
       aiProvider: {
         provider:    bot.aiProvider?.provider    || 'openai',
-        model:       bot.aiProvider?.model       || 'gpt-4.1',
+        model:       bot.aiProvider?.model       || 'gpt-4o',
         apiKey:      bot.aiProvider?.apiKey      || '',
         endpoint:    bot.aiProvider?.endpoint    || '',
         temperature: bot.aiProvider?.temperature ?? 0.1,
@@ -310,6 +327,7 @@ function AdminDashboard({ user, handleLogout }) {
 
   const currentProvider = botForm.aiProvider?.provider || 'openai';
   const availableModels = AI_PROVIDERS[currentProvider]?.models || [];
+  const modelGroups     = groupModelsByTier(availableModels);
   const providerCaps    = AI_PROVIDERS[currentProvider]?.capabilities || [];
   const filteredBots    = bots.filter(b => b.name.toLowerCase().includes(botSearch.toLowerCase()));
 
@@ -415,7 +433,7 @@ function AdminDashboard({ user, handleLogout }) {
                 {stats.topUsers?.map((u, i) => (
                   <div key={i} className="px-6 py-3 flex items-center justify-between hover:bg-steel-lightest/50 transition-colors">
                     <div className="flex items-center gap-3">
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-steel-lightest text-steel' : 'bg-steel-lightest text-steel'}`}>{i+1}</span>
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${i === 0 ? 'bg-amber-100 text-amber-700' : 'bg-steel-lightest text-steel'}`}>{i+1}</span>
                       <span className="font-semibold text-sm">{u.username}</span>
                     </div>
                     <span className="font-black text-primary text-sm">{u.count} msgs</span>
@@ -429,16 +447,13 @@ function AdminDashboard({ user, handleLogout }) {
         {/* ── BOTS ─────────────────────────────────────────────── */}
         {activeTab === 'bots' && (
           <div>
-            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className="text-xl font-bold text-primary-dark">AI Bots</h2>
                 <p className="text-sm text-steel">{bots.length} bot aktif</p>
               </div>
               <div className="flex gap-3">
-                <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Cari bot..."
-  autoComplete="off" readOnly onFocus={e => e.target.removeAttribute('readOnly')}
-  className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44" />
+                <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Cari bot..." className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44" />
                 <button onClick={handleCreateBot} className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded-lg hover:bg-primary transition-colors flex items-center gap-2">
                   <span className="text-lg leading-none">+</span> Create Bot
                 </button>
@@ -446,7 +461,6 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {/* Create new card */}
               <div onClick={handleCreateBot} className="bg-white rounded-xl border-2 border-dashed border-steel-light/40 p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all min-h-[200px] group">
                 <div className="w-14 h-14 rounded-xl border-2 border-dashed border-steel-light/50 flex items-center justify-center mb-3 text-3xl font-thin text-steel group-hover:border-primary group-hover:text-primary transition-all">+</div>
                 <span className="font-bold text-steel group-hover:text-primary-dark text-sm transition-colors">Create New Bot</span>
@@ -457,7 +471,6 @@ function AdminDashboard({ user, handleLogout }) {
                 const capCount = Object.values(bot.capabilities || {}).filter(Boolean).length;
                 return (
                   <div key={bot._id} className="bg-white rounded-xl shadow-sm border border-steel-light/30 p-5 hover:shadow-md transition-all flex flex-col">
-                    {/* Bot header */}
                     <div className="flex items-start gap-3 mb-4">
                       <div className="relative cursor-pointer group/av flex-shrink-0" onClick={() => setAvatarPickerBot(bot)}>
                         <BotAvatar bot={bot} size="md" />
@@ -474,7 +487,6 @@ function AdminDashboard({ user, handleLogout }) {
                       </button>
                     </div>
 
-                    {/* Provider / model badge */}
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {(() => {
                         const p = bot.aiProvider?.provider || 'openai';
@@ -499,7 +511,6 @@ function AdminDashboard({ user, handleLogout }) {
                       )}
                     </div>
 
-                    {/* Capability icons row */}
                     {capCount > 0 && (
                       <div className="flex gap-1 mb-3">
                         {ALL_CAPABILITIES.filter(c => bot.capabilities?.[c.id]).map(c => (
@@ -508,7 +519,6 @@ function AdminDashboard({ user, handleLogout }) {
                       </div>
                     )}
 
-                    {/* Integration badges */}
                     <div className="flex flex-wrap gap-1 mt-auto pt-3 border-t border-steel-light/20">
                       {bot.smartsheetConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded font-bold">Smartsheet</span>}
                       {bot.kouventaConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold">Kouventa</span>}
@@ -639,7 +649,7 @@ function AdminDashboard({ user, handleLogout }) {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col border border-steel-light/30 overflow-hidden">
 
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-steel-light/30 flex justify-between items-center bg-gradient-to-r from-steel-lightest/80 to-white">
+            <div className="px-6 py-4 border-b border-steel-light/30 flex justify-between items-center bg-gradient-to-r from-steel-lightest/80 to-white flex-shrink-0">
               <div className="flex items-center gap-3">
                 <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
                 <div>
@@ -651,7 +661,7 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
 
             {/* Modal Sub-tabs */}
-            <div className="flex border-b border-steel-light/30 bg-white px-4 overflow-x-auto">
+            <div className="flex border-b border-steel-light/30 bg-white px-4 overflow-x-auto flex-shrink-0">
               {[
                 { id: 'basic',        label: 'Basic',        icon: '📝' },
                 { id: 'ai',           label: 'AI & Model',   icon: '🤖' },
@@ -668,13 +678,12 @@ function AdminDashboard({ user, handleLogout }) {
               ))}
             </div>
 
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Modal Body — scrollable */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 min-h-0">
 
               {/* ── BASIC ──────────────────────────────────────── */}
               {botModalTab === 'basic' && (
                 <div className="space-y-5">
-                  {/* Avatar row */}
                   <div className="flex items-center gap-4 p-4 bg-steel-lightest/50 rounded-xl border border-steel-light/30">
                     <div className="relative cursor-pointer group/av" onClick={() => editingBot && setAvatarPickerBot(editingBot)}>
                       <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="lg" />
@@ -689,7 +698,6 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   </div>
 
-                  {/* Name + description */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Nama Bot *</label>
@@ -701,7 +709,6 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   </div>
 
-                  {/* Persona + Tone */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Persona (opsional)</label>
@@ -715,7 +722,6 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   </div>
 
-                  {/* System Prompt */}
                   <div>
                     <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">System Prompt / Instruksi Bot</label>
                     <textarea className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-3 text-sm h-36 font-mono focus:border-primary-dark outline-none resize-none transition-all"
@@ -724,7 +730,6 @@ function AdminDashboard({ user, handleLogout }) {
                     <p className="text-[10px] text-steel mt-1">💡 Prompt ini mendefinisikan kepribadian, tugas, dan batasan bot</p>
                   </div>
 
-                  {/* Starter Questions */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-xs font-bold text-steel uppercase tracking-wide">Starter Questions</label>
@@ -766,27 +771,57 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   </div>
 
-                  {/* Model selector with tier badges */}
+                  {/* Model selector — grouped by tier, smooth scroll */}
                   {availableModels.length > 0 && (
                     <div>
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Model</label>
-                      <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                        {availableModels.map(m => (
-                          <button key={m.id} type="button"
-                            onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, model: m.id } }))}
-                            className={`w-full p-3 rounded-xl border-2 text-left flex items-center justify-between transition-all ${botForm.aiProvider?.model === m.id ? 'border-primary-dark bg-primary-dark/5' : 'border-steel-light/30 hover:border-steel-light'}`}>
-                            <div>
-                              <span className="text-sm font-bold text-gray-800">{m.label}</span>
-                              <div className="text-[10px] text-steel font-mono">{m.id}</div>
+                      <div className="max-h-64 overflow-y-auto pr-1 space-y-3 rounded-xl border border-steel-light/30 p-3 bg-steel-lightest/30"
+                           style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}>
+                        {modelGroups.map(({ tier, models }) => (
+                          <div key={tier}>
+                            {/* Tier section header */}
+                            <div className="flex items-center gap-2 mb-1.5 sticky top-0 bg-steel-lightest/80 backdrop-blur-sm py-1 rounded">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${TIER_STYLE[tier]}`}>
+                                {TIER_GROUP_LABEL[tier]}
+                              </span>
+                              <div className="flex-1 h-px bg-steel-light/30" />
                             </div>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${TIER_STYLE[m.tier || 'stable']}`}>{m.tier || 'stable'}</span>
-                          </button>
+                            {/* Models in tier */}
+                            <div className="space-y-1">
+                              {models.map(m => (
+                                <button key={m.id} type="button"
+                                  onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, model: m.id } }))}
+                                  className={`w-full px-3 py-2.5 rounded-lg border-2 text-left flex items-center justify-between transition-all ${
+                                    botForm.aiProvider?.model === m.id
+                                      ? 'border-primary-dark bg-primary-dark/5 shadow-sm'
+                                      : 'border-transparent bg-white hover:border-steel-light/60 hover:bg-white'
+                                  }`}>
+                                  <div>
+                                    <span className="text-sm font-bold text-gray-800">{m.label}</span>
+                                    <div className="text-[10px] text-steel font-mono">{m.id}</div>
+                                  </div>
+                                  {botForm.aiProvider?.model === m.id && (
+                                    <span className="text-primary-dark text-base flex-shrink-0">✓</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
+                      {/* Selected model pill */}
+                      {botForm.aiProvider?.model && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-[10px] text-steel">Selected:</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TIER_STYLE[availableModels.find(m => m.id === botForm.aiProvider.model)?.tier || 'stable']}`}>
+                            {botForm.aiProvider.model}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Custom model input for custom provider */}
+                  {/* Custom model input */}
                   {currentProvider === 'custom' && (
                     <div>
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Model ID</label>
@@ -800,9 +835,8 @@ function AdminDashboard({ user, handleLogout }) {
                   {/* API Key */}
                   <div>
                     <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">API Key (override .env — opsional)</label>
-                    <input type="password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none"
+                    <input type="password" autoComplete="new-password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none"
                       placeholder="Kosongkan untuk pakai key dari .env server"
-                      autoComplete="new-password"
                       value={botForm.aiProvider?.apiKey || ''}
                       onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))} />
                   </div>
@@ -813,7 +847,7 @@ function AdminDashboard({ user, handleLogout }) {
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">
                         {currentProvider === 'custom' ? 'Endpoint URL *' : 'Custom Base URL (Azure / proxy — opsional)'}
                       </label>
-                      <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none"
+                      <input autoComplete="off" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none"
                         placeholder={currentProvider === 'custom' ? 'https://api.example.com/v1' : 'https://your-azure-endpoint.openai.azure.com/...'}
                         value={botForm.aiProvider?.endpoint || ''}
                         onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, endpoint: e.target.value } }))} />
@@ -860,8 +894,6 @@ function AdminDashboard({ user, handleLogout }) {
                   <div className="text-xs text-steel bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
                     ⚡ Aktifkan kemampuan tambahan seperti di ChatGPT. Availability tergantung pada provider & model yang dipilih.
                   </div>
-
-                  {/* Capability toggles */}
                   <div className="space-y-3">
                     {ALL_CAPABILITIES.map(cap => {
                       const isSupported = cap.providers.includes(currentProvider);
@@ -893,10 +925,9 @@ function AdminDashboard({ user, handleLogout }) {
                       );
                     })}
                   </div>
-
                   {activeCapCount > 0 && (
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-                      ⚠️ <strong>{activeCapCount} capability aktif.</strong> Capabilities seperti Web Search & Code Interpreter mungkin memerlukan tier API berbayar. Pastikan API Key Anda mendukung fitur ini.
+                      ⚠️ <strong>{activeCapCount} capability aktif.</strong> Capabilities seperti Web Search & Code Interpreter mungkin memerlukan tier API berbayar.
                     </div>
                   )}
                 </div>
@@ -909,8 +940,6 @@ function AdminDashboard({ user, handleLogout }) {
                     📚 Upload dokumen sebagai sumber pengetahuan bot. Mendukung <strong>PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), TXT, CSV, MD</strong>.
                     {!editingBot && <span className="block mt-1 font-bold text-amber-700">⚠️ Simpan bot dulu sebelum upload file.</span>}
                   </div>
-
-                  {/* Knowledge Mode */}
                   <div>
                     <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Mode Knowledge Base</label>
                     <div className="space-y-2">
@@ -925,8 +954,6 @@ function AdminDashboard({ user, handleLogout }) {
                       ))}
                     </div>
                   </div>
-
-                  {/* Upload zone */}
                   {editingBot && (
                     <div>
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Upload File</label>
@@ -941,7 +968,7 @@ function AdminDashboard({ user, handleLogout }) {
                           <>
                             <div className="text-4xl mb-2">📁</div>
                             <p className="text-sm font-bold text-gray-700">Klik atau drag & drop</p>
-                            <p className="text-xs text-steel mt-1">PDF • Word • Excel • <strong>PowerPoint</strong> • TXT • CSV • MD</p>
+                            <p className="text-xs text-steel mt-1">PDF • Word • Excel • PowerPoint • TXT • CSV • MD</p>
                             <p className="text-xs text-steel">Maks 20MB per file · Beberapa file sekaligus</p>
                           </>
                         )}
@@ -949,8 +976,6 @@ function AdminDashboard({ user, handleLogout }) {
                       <input ref={knowledgeInputRef} type="file" multiple accept={SUPPORTED_FILE_TYPES} className="hidden" onChange={handleKnowledgeUpload} />
                     </div>
                   )}
-
-                  {/* File list */}
                   {knowledgeFiles.length > 0 && (
                     <div>
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Dokumen ({knowledgeFiles.length})</label>
@@ -1023,7 +1048,7 @@ function AdminDashboard({ user, handleLogout }) {
                         {config.enabled && (
                           <div className={`space-y-2 ${intg.fields.length > 2 ? 'grid grid-cols-2 gap-2 space-y-0' : ''}`}>
                             {intg.fields.map(field => (
-                              <input key={field.key} type={field.type} placeholder={field.label} autoComplete={field.type === 'password' ? 'new-password' : 'off'}
+                              <input key={field.key} type={field.type} placeholder={field.label} autoComplete="new-password"
                                 className="w-full bg-white border border-steel-light/50 rounded-lg p-2 text-xs outline-none focus:border-primary transition-all"
                                 value={config[field.key] || ''}
                                 onChange={e => setBotForm(f => ({ ...f, [configKey]: { ...f[configKey], [field.key]: e.target.value } }))} />
@@ -1038,7 +1063,7 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-steel-light/30 flex justify-between items-center bg-steel-lightest/30">
+            <div className="px-6 py-4 border-t border-steel-light/30 flex justify-between items-center bg-steel-lightest/30 flex-shrink-0">
               <div>
                 {editingBot && (
                   <button onClick={() => handleDeleteBot(editingBot._id)} className="px-4 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 font-bold text-sm rounded-lg transition-colors">
@@ -1066,8 +1091,8 @@ function AdminDashboard({ user, handleLogout }) {
               <button onClick={() => setShowUserModal(false)} className="text-steel hover:text-gray-700 w-8 h-8 rounded-full hover:bg-steel-lightest flex items-center justify-center">✕</button>
             </div>
             <div className="space-y-3">
-              <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" placeholder="Username" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
-              <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" type="password" placeholder="Password (kosong = tidak berubah)" autoComplete="new-password" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+              <input autoComplete="off" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" placeholder="Username" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
+              <input autoComplete="new-password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" type="password" placeholder="Password (kosong = tidak berubah)" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
               <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
                 <input type="checkbox" checked={userForm.isAdmin} onChange={e => setUserForm({...userForm, isAdmin: e.target.checked})} className="accent-primary-dark" />
                 <span>Administrator</span>
