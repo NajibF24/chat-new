@@ -1,4 +1,4 @@
-// server/routes/auth.js - DYNAMIC ADMIN GROUPS VERSION
+// server/routes/auth.js - FIXED: prevent null email collision
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
@@ -37,10 +37,8 @@ router.post('/login', async (req, res) => {
     if (ldapService.isEnabled()) {
       console.log(`🔐 STEP 1: Checking LDAP for: ${username}`);
 
-      // Untuk LDAP, selalu gunakan format username (strip domain jika ada)
-      // Contoh: "john.doe@gyssteel.com" → coba "john.doe" ke LDAP
       const ldapUsername = loginByEmail
-        ? username.split('@')[0]   // ambil bagian sebelum @
+        ? username.split('@')[0]
         : username;
 
       try {
@@ -53,9 +51,6 @@ router.post('/login', async (req, res) => {
           const userGroups = ldapResult.user.groups || [];
           console.log(`   User Groups: ${userGroups.join(', ')}`);
 
-          // ============================================================
-          // 🔥 LOGIC DINAMIS DARI .ENV
-          // ============================================================
           const envAdminGroups = process.env.LDAP_ADMIN_GROUPS || 'MIS';
           const allowedGroups = envAdminGroups.toLowerCase().split(',').map(g => g.trim());
           console.log(`   🎯 Allowed Admin Groups: ${allowedGroups.join(', ')}`);
@@ -66,7 +61,7 @@ router.post('/login', async (req, res) => {
           });
           
           if (isAdminAccess) {
-             console.log('   🛡️ PRIVILEGE DETECTED: User granted ADMIN Access');
+            console.log('   🛡️ PRIVILEGE DETECTED: User granted ADMIN Access');
           }
 
           // Siapkan Bot
@@ -81,13 +76,31 @@ router.post('/login', async (req, res) => {
             }
           }
 
-          // Proses User Database — cari by username ATAU email
-          let user = await User.findOne({
-            $or: [
-              { username: finalUsername },
-              { email: ldapResult.user.email || null }
-            ]
-          });
+          // ============================================================
+          // ✅ FIX: Cari user HANYA by username dulu.
+          // Bug sebelumnya: { $or: [{ username }, { email: null }] }
+          // Query email: null akan match SEMUA user yang email-nya null,
+          // termasuk local user "admin" → itulah kenapa najib.fauzan
+          // selalu login sebagai "admin".
+          // ============================================================
+          let user = await User.findOne({ username: finalUsername });
+
+          // Jika tidak ketemu by username, coba by email
+          // TAPI hanya jika email dari LDAP valid (tidak null/kosong)
+          if (!user && ldapResult.user.email) {
+            user = await User.findOne({ email: ldapResult.user.email });
+            if (user) {
+              console.log(`   📧 User found by email: ${ldapResult.user.email}`);
+            }
+          }
+
+          // ✅ Safety check: jika user yang ditemukan (by email) ternyata
+          // punya username berbeda dan authMethod 'local', jangan overwrite.
+          // Buat user baru saja untuk LDAP user ini.
+          if (user && user.username !== finalUsername && user.authMethod === 'local') {
+            console.warn(`⚠️  Conflict: LDAP "${finalUsername}" would overwrite local user "${user.username}". Creating new LDAP user.`);
+            user = null;
+          }
 
           if (!user) {
             console.log(`🆕 Creating NEW user: ${finalUsername}`);
@@ -96,14 +109,14 @@ router.post('/login', async (req, res) => {
               password: await bcrypt.hash(Math.random().toString(36), 10),
               isAdmin: isAdminAccess,
               assignedBots: defaultBots.map(b => b._id),
-              email: ldapResult.user.email,
+              email: ldapResult.user.email || null,
               displayName: ldapResult.user.displayName,
               department: ldapResult.user.department,
               authMethod: 'ldap',
               lastLogin: new Date()
             });
           } else {
-            console.log(`🔄 User FOUND: ${finalUsername}`);
+            console.log(`🔄 User FOUND: ${user.username}`);
             
             user.email = ldapResult.user.email || user.email;
             user.displayName = ldapResult.user.displayName || user.displayName;
@@ -112,14 +125,14 @@ router.post('/login', async (req, res) => {
             user.lastLogin = new Date();
 
             if (isAdminAccess) {
-                console.log('   🛡️ Enforcing ADMIN Privileges');
-                user.isAdmin = true;
-                const allBots = await Bot.find({}); 
-                user.assignedBots = allBots.map(b => b._id);
+              console.log('   🛡️ Enforcing ADMIN Privileges');
+              user.isAdmin = true;
+              const allBots = await Bot.find({}); 
+              user.assignedBots = allBots.map(b => b._id);
             } else {
-                if (!user.assignedBots || user.assignedBots.length === 0) {
-                   user.assignedBots = defaultBots.map(b => b._id);
-                }
+              if (!user.assignedBots || user.assignedBots.length === 0) {
+                user.assignedBots = defaultBots.map(b => b._id);
+              }
             }
           }
 
@@ -129,6 +142,8 @@ router.post('/login', async (req, res) => {
           req.session.userId = user._id;
           req.session.isAdmin = user.isAdmin;
           req.session.authMethod = 'ldap';
+
+          console.log(`✅ Session set for: ${user.username} (${user._id})`);
 
           return res.json({
             user: {
@@ -148,7 +163,6 @@ router.post('/login', async (req, res) => {
 
     // ------------------------------------------------------------------
     // SKENARIO 2: LOCAL DB
-    // Cari user berdasarkan username ATAU email
     // ------------------------------------------------------------------
     console.log(`🔐 STEP 2: Checking Local Database for: ${username}`);
 
@@ -186,7 +200,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Logout & Other Routes...
 router.post('/logout', (req, res) => { req.session.destroy(); res.json({ message: 'Logged out' }); });
 router.get('/me', requireAuth, async (req, res) => {
   const user = await User.findById(req.session.userId).populate('assignedBots').select('-password');
