@@ -415,14 +415,9 @@ function AdminDashboard({ user, handleLogout }) {
                 <p className="text-sm text-steel">{bots.length} bot aktif</p>
               </div>
               <div className="flex gap-3">
-                <input
-                  value={botSearch}
-                  onChange={e => setBotSearch(e.target.value)}
-                  placeholder="Cari bot..."
-                  autoComplete="off"
-                  name="bot-search-gys"
-                  className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44"
-                />
+                <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Cari bot..."
+  autoComplete="off" readOnly onFocus={e => e.target.removeAttribute('readOnly')}
+  className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44" />
                 <button onClick={handleCreateBot} className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded-lg hover:bg-primary transition-colors flex items-center gap-2">
                   <span className="text-lg leading-none">+</span> Create Bot
                 </button>
@@ -786,6 +781,7 @@ function AdminDashboard({ user, handleLogout }) {
                     <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">API Key (override .env — opsional)</label>
                     <input type="password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none"
                       placeholder="Kosongkan untuk pakai key dari .env server"
+                      autoComplete="new-password"
                       value={botForm.aiProvider?.apiKey || ''}
                       onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))} />
                   </div>
@@ -1006,7 +1002,7 @@ function AdminDashboard({ user, handleLogout }) {
                         {config.enabled && (
                           <div className={`space-y-2 ${intg.fields.length > 2 ? 'grid grid-cols-2 gap-2 space-y-0' : ''}`}>
                             {intg.fields.map(field => (
-                              <input key={field.key} type={field.type} placeholder={field.label}
+                              <input key={field.key} type={field.type} placeholder={field.label} autoComplete={field.type === 'password' ? 'new-password' : 'off'}
                                 className="w-full bg-white border border-steel-light/50 rounded-lg p-2 text-xs outline-none focus:border-primary transition-all"
                                 value={config[field.key] || ''}
                                 onChange={e => setBotForm(f => ({ ...f, [configKey]: { ...f[configKey], [field.key]: e.target.value } }))} />
@@ -1050,7 +1046,7 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
             <div className="space-y-3">
               <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" placeholder="Username" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
-              <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" type="password" placeholder="Password (kosong = tidak berubah)" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+              <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" type="password" placeholder="Password (kosong = tidak berubah)" autoComplete="new-password" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
               <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
                 <input type="checkbox" checked={userForm.isAdmin} onChange={e => setUserForm({...userForm, isAdmin: e.target.checked})} className="accent-primary-dark" />
                 <span>Administrator</span>
