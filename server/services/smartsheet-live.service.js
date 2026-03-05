@@ -25,6 +25,7 @@ const COLUMN_ALIASES = {
   vendor:       ['Project Vendor', 'Vendor', 'Contractor'],
   remarks:      ['Remarks', 'Notes', 'Catatan', 'Comment'],
   lastModified: ['Last Modified Overall', 'Last Modified', 'Modified At', 'Last Updated'],
+  daysSinceUpdate: ['Days Since Last Update', 'Days Since Update', 'Days Since Modified', 'Days Since Last Modified', 'Last Update (Days)', 'Stale Days'],
 };
 
 class SmartsheetLiveService {
@@ -69,23 +70,34 @@ class SmartsheetLiveService {
   // PROSES RAW SHEET → FLAT ROWS (dinamis, semua kolom)
   // ─────────────────────────────────────────────────────────────
   processToFlatRows(sheet) {
-    if (!sheet.rows || !sheet.columns) return [];
+  if (!sheet.rows || !sheet.columns) return [];
 
-    // Build column id→title map
-    const colMap = {};
-    sheet.columns.forEach(col => { colMap[col.id] = col.title; });
+  const colMap = {};
+  sheet.columns.forEach(col => { colMap[col.id] = col.title; });
 
-    return sheet.rows.map(row => {
+  // ✅ FIX: Detect & skip duplicate header rows
+  // Baris dianggap header jika cell pertama isinya sama dengan nama kolom pertama
+  const firstColTitle = sheet.columns[0]?.title || '';
+
+  return sheet.rows
+    .filter(row => {
+      const firstCell = row.cells?.[0];
+      const firstVal  = firstCell?.displayValue ?? firstCell?.value ?? '';
+      // Skip jika row ini isinya = nama kolom (header duplikat)
+      return String(firstVal).trim() !== firstColTitle.trim();
+    })
+    .map(row => {
       const flat = {};
       row.cells.forEach(cell => {
         const title = colMap[cell.columnId];
         if (title) {
+          // ✅ FIX: displayValue dulu (formula columns), fallback ke value
           flat[title] = cell.displayValue ?? cell.value ?? null;
         }
       });
       return flat;
     });
-  }
+}
 
   // ─────────────────────────────────────────────────────────────
   // RESOLVE ALIAS: cari nilai dari flat row berdasarkan alias map
@@ -139,6 +151,7 @@ class SmartsheetLiveService {
       vendor:       has('vendor'),
       remarks:      has('remarks'),
       lastModified: has('lastModified'),
+      daysSinceUpdate: has('daysSinceUpdate'),
       // Extra: detect any budget columns dynamically
       budgetCols:   allKeys.filter(k => k.toLowerCase().includes('budget') || k.toLowerCase().includes('afe') || k.toLowerCase().includes('cost')),
       // All raw column names (for unknown sheet types)
@@ -296,6 +309,7 @@ class SmartsheetLiveService {
     if (cols.health)     headers.push('Health');
     if (showDaysOverdue) headers.push('Days Overdue');
     if (cols.issues)     headers.push('Issues');
+    if (cols.daysSinceUpdate) headers.push('Days Since Update');
 
     let table = `| ${headers.join(' | ')} |\n`;
     table    += `| ${headers.map((h, i) => {
@@ -339,6 +353,14 @@ class SmartsheetLiveService {
       if (cols.health)     values.push(`${healthEmoji} ${health}`);
       if (showDaysOverdue) values.push(daysOverdue);
       if (cols.issues)     values.push(issues);
+      if (cols.daysSinceUpdate) {
+        const days = this.resolveField(row, 'daysSinceUpdate');
+        const daysNum = parseFloat(days);
+        const daysStr = !isNaN(daysNum)
+          ? `${Math.round(daysNum)}d ${daysNum > 30 ? '⚠️' : ''}`
+          : '-';
+        values.push(daysStr);
+      }
 
       table += `| ${values.join(' | ')} |\n`;
     });
