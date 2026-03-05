@@ -686,7 +686,7 @@ function AdminDashboard({ user, handleLogout }) {
                 <div className="space-y-5">
                   <div className="flex items-center gap-4 p-4 bg-steel-lightest/50 rounded-xl border border-steel-light/30">
                     <div className="relative cursor-pointer group/av" onClick={() => editingBot && setAvatarPickerBot(editingBot)}>
-                      <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="lg" />
+                      <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
                       {editingBot && <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center"><span className="text-white text-[8px] font-bold">EDIT</span></div>}
                     </div>
                     <div>
