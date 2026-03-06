@@ -1,4 +1,4 @@
-// server/routes/admin.js — Enhanced: capabilities, PPT support, new model catalog
+// server/routes/admin.js — Enhanced: capabilities, PPT support, new model catalog + Audit Trail
 
 import express    from 'express';
 import bcrypt     from 'bcryptjs';
@@ -9,9 +9,11 @@ import User       from '../models/User.js';
 import Bot        from '../models/Bot.js';
 import Chat       from '../models/Chat.js';
 import Thread     from '../models/Thread.js';
+import AuditLog   from '../models/AuditLog.js';
 import { requireAdmin } from '../middleware/auth.js';
 import AIProviderService, { AI_PROVIDERS } from '../services/ai-provider.service.js';
 import KnowledgeBaseService from '../services/knowledge-base.service.js';
+import AuditService from '../services/audit.service.js';
 
 const router = express.Router();
 
@@ -59,7 +61,6 @@ const knowledgeUpload = multer({
       'application/msword',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
-      // ✅ NEW: PowerPoint MIME types
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'application/vnd.ms-powerpoint',
       'application/mspowerpoint',
@@ -82,6 +83,17 @@ const sanitizeCapabilities = (caps = {}) => ({
   canvas:          Boolean(caps.canvas),
   fileSearch:      Boolean(caps.fileSearch),
 });
+
+// ── Helper: build diff between two plain objects ─────────────
+function buildDiff(before, after, keys) {
+  const b = {}, a = {};
+  keys.forEach(k => {
+    const bv = String(before?.[k] ?? '');
+    const av = String(after?.[k]  ?? '');
+    if (bv !== av) { b[k] = before?.[k]; a[k] = after?.[k]; }
+  });
+  return Object.keys(b).length ? { before: b, after: a } : null;
+}
 
 // ============================================================
 // 📊 STATS
@@ -143,11 +155,66 @@ router.post('/test-ai-config', requireAdmin, async (req, res) => {
 });
 
 // ============================================================
+// 🕵️ AUDIT TRAIL
+// ============================================================
+router.get('/audit-logs', requireAdmin, async (req, res) => {
+  try {
+    const page     = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit    = Math.min(100, parseInt(req.query.limit) || 30);
+    const skip     = (page - 1) * limit;
+    const { category, search, dateFrom, dateTo } = req.query;
+
+    const filter = {};
+    if (category) filter.category = category;
+    if (search) {
+      const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ username: re }, { action: re }, { targetName: re }];
+    }
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) {
+        const end = new Date(dateTo);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
+    const [logs, total] = await Promise.all([
+      AuditLog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      AuditLog.countDocuments(filter),
+    ]);
+
+    res.json({ logs, total, totalPages: Math.ceil(total / limit), currentPage: page });
+  } catch (err) {
+    console.error('Audit log fetch error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/audit-logs', requireAdmin, async (req, res) => {
+  try {
+    const { olderThanDays } = req.query;
+    const filter = olderThanDays
+      ? { createdAt: { $lt: new Date(Date.now() - parseInt(olderThanDays) * 86400000) } }
+      : {};
+    const result = await AuditLog.deleteMany(filter);
+    await AuditService.log({
+      req, category: 'system', action: 'AUDIT_PURGE',
+      detail: { deleted: result.deletedCount, olderThanDays: olderThanDays || 'all' },
+    });
+    res.json({ deleted: result.deletedCount });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ============================================================
 // 👥 USER MANAGEMENT
 // ============================================================
 router.get('/users', requireAdmin, async (req, res) => {
-  try { const users = await User.find().populate('assignedBots').select('-password'); res.json({ users }); }
-  catch (error) { res.status(500).json({ error: error.message }); }
+  try {
+    const users = await User.find().populate('assignedBots').select('-password');
+    res.json({ users });
+  } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post('/users', requireAdmin, async (req, res) => {
@@ -155,9 +222,21 @@ router.post('/users', requireAdmin, async (req, res) => {
     const { username, password, isAdmin, assignedBots } = req.body;
     const existing = await User.findOne({ username });
     if (existing) return res.status(400).json({ error: 'Username already exists' });
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword, isAdmin: isAdmin || false, assignedBots: assignedBots || [] });
-    await user.save(); await user.populate('assignedBots');
+    const user = new User({
+      username, password: hashedPassword,
+      isAdmin: isAdmin || false, assignedBots: assignedBots || [],
+    });
+    await user.save();
+    await user.populate('assignedBots');
+
+    AuditService.log({
+      req, category: 'user', action: 'USER_CREATE',
+      targetId: user._id, targetName: username,
+      detail: { isAdmin: user.isAdmin, assignedBotsCount: user.assignedBots.length },
+    });
+
     res.status(201).json({ user });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -165,19 +244,44 @@ router.post('/users', requireAdmin, async (req, res) => {
 router.put('/users/:id', requireAdmin, async (req, res) => {
   try {
     const { username, password, isAdmin, assignedBots } = req.body;
+
+    const existing = await User.findById(req.params.id).select('-password');
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+
     const updateData = { username, isAdmin, assignedBots };
-    if (password?.trim()) updateData.password = await bcrypt.hash(password, 10);
-    const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('assignedBots').select('-password');
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const passwordChanged = Boolean(password?.trim());
+    if (passwordChanged) updateData.password = await bcrypt.hash(password, 10);
+
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true })
+      .populate('assignedBots').select('-password');
+
+    AuditService.log({
+      req, category: 'user', action: 'USER_UPDATE',
+      targetId: user._id, targetName: user.username,
+      detail: {
+        before: { isAdmin: existing.isAdmin, assignedBotsCount: existing.assignedBots?.length ?? 0 },
+        after:  { isAdmin: user.isAdmin,     assignedBotsCount: user.assignedBots?.length  ?? 0 },
+        passwordChanged,
+      },
+    });
+
     res.json({ user });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.delete('/users/:id', requireAdmin, async (req, res) => {
   try {
+    const user = await User.findById(req.params.id).select('username');
+
     await User.findByIdAndDelete(req.params.id);
     await Chat.deleteMany({ userId: req.params.id });
     await Thread.deleteMany({ userId: req.params.id });
+
+    AuditService.log({
+      req, category: 'user', action: 'USER_DELETE',
+      targetId: req.params.id, targetName: user?.username ?? req.params.id,
+    });
+
     res.json({ message: 'User deleted' });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -185,14 +289,17 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
 // ============================================================
 // 🤖 BOT MANAGEMENT
 // ============================================================
-
 router.get('/bots', async (req, res) => {
   try {
     const bots = await Bot.find({}).lean();
     const sanitized = bots.map(b => ({
       ...b,
-      aiProvider: b.aiProvider ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' } : {},
-      smartsheetConfig: b.smartsheetConfig ? { ...b.smartsheetConfig, apiKey: b.smartsheetConfig.apiKey ? '***' : '' } : {},
+      aiProvider: b.aiProvider
+        ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' }
+        : {},
+      smartsheetConfig: b.smartsheetConfig
+        ? { ...b.smartsheetConfig, apiKey: b.smartsheetConfig.apiKey ? '***' : '' }
+        : {},
       knowledgeFiles: (b.knowledgeFiles || []).map(f => ({
         _id: f._id, filename: f.filename, originalName: f.originalName,
         mimetype: f.mimetype, size: f.size, uploadedAt: f.uploadedAt, summary: f.summary,
@@ -241,8 +348,23 @@ router.post('/bots', requireAdmin, async (req, res) => {
     });
 
     await newBot.save();
+
+    AuditService.log({
+      req, category: 'bot', action: 'BOT_CREATE',
+      targetId: newBot._id, targetName: newBot.name,
+      detail: {
+        model:    newBot.aiProvider?.model,
+        provider: newBot.aiProvider?.provider,
+        capabilities: Object.entries(sanitizeCapabilities(capabilities))
+          .filter(([, v]) => v).map(([k]) => k),
+      },
+    });
+
     res.json(newBot);
-  } catch (error) { console.error('Create Bot Error:', error); res.status(500).json({ error: error.message }); }
+  } catch (error) {
+    console.error('Create Bot Error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.put('/bots/:id', requireAdmin, async (req, res) => {
@@ -267,11 +389,15 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       smartsheetConfig: {
         enabled: smartsheetConfig?.enabled || false,
         sheetId: smartsheetConfig?.sheetId || '',
-        apiKey:  smartsheetConfig?.apiKey === '***' ? existing.smartsheetConfig?.apiKey : (smartsheetConfig?.apiKey || ''),
+        apiKey:  smartsheetConfig?.apiKey === '***'
+          ? existing.smartsheetConfig?.apiKey
+          : (smartsheetConfig?.apiKey || ''),
       },
       kouventaConfig: {
         enabled:  kouventaConfig?.enabled  || false,
-        apiKey:   kouventaConfig?.apiKey   === '***' ? existing.kouventaConfig?.apiKey : (kouventaConfig?.apiKey || ''),
+        apiKey:   kouventaConfig?.apiKey   === '***'
+          ? existing.kouventaConfig?.apiKey
+          : (kouventaConfig?.apiKey || ''),
         endpoint: kouventaConfig?.endpoint || '',
       },
       onedriveConfig: {
@@ -279,7 +405,9 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
         folderUrl:    onedriveConfig?.folderUrl    || '',
         tenantId:     onedriveConfig?.tenantId     || '',
         clientId:     onedriveConfig?.clientId     || '',
-        clientSecret: onedriveConfig?.clientSecret === '***' ? existing.onedriveConfig?.clientSecret : (onedriveConfig?.clientSecret || ''),
+        clientSecret: onedriveConfig?.clientSecret === '***'
+          ? existing.onedriveConfig?.clientSecret
+          : (onedriveConfig?.clientSecret || ''),
       },
       updatedAt: new Date(),
     };
@@ -288,7 +416,9 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       updateData.aiProvider = {
         provider:    aiProvider.provider    || 'openai',
         model:       aiProvider.model       || 'gpt-4.1',
-        apiKey:      aiProvider.apiKey === '***' ? existing.aiProvider?.apiKey : (aiProvider.apiKey || ''),
+        apiKey:      aiProvider.apiKey === '***'
+          ? existing.aiProvider?.apiKey
+          : (aiProvider.apiKey || ''),
         endpoint:    aiProvider.endpoint    || '',
         temperature: aiProvider.temperature ?? 0.1,
         maxTokens:   aiProvider.maxTokens   ?? 2000,
@@ -306,21 +436,47 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       };
     }
 
+    // Build before/after diff for audit
+    const diff = buildDiff(
+      { name: existing.name, model: existing.aiProvider?.model, provider: existing.aiProvider?.provider, tone: existing.tone, knowledgeMode: existing.knowledgeMode },
+      { name: updateData.name, model: updateData.aiProvider?.model, provider: updateData.aiProvider?.provider, tone: updateData.tone, knowledgeMode: updateData.knowledgeMode },
+      ['name', 'model', 'provider', 'tone', 'knowledgeMode'],
+    );
+
     const updated = await Bot.findByIdAndUpdate(req.params.id, updateData, { new: true });
+
+    AuditService.log({
+      req, category: 'bot', action: 'BOT_UPDATE',
+      targetId: updated._id, targetName: updated.name,
+      detail: diff ?? { note: 'no field changes' },
+    });
+
     res.json(updated);
-  } catch (error) { console.error('Update Bot Error:', error); res.status(500).json({ error: error.message }); }
+  } catch (error) {
+    console.error('Update Bot Error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.delete('/bots/:id', requireAdmin, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
+    const botName = bot?.name ?? req.params.id;
+
     if (bot?.avatar?.type === 'image' && bot?.avatar?.imageUrl) {
       const imgPath = `uploads/avatars/${path.basename(bot.avatar.imageUrl)}`;
       if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
     }
     const kDir = `uploads/knowledge/${req.params.id}`;
     if (fs.existsSync(kDir)) fs.rmSync(kDir, { recursive: true });
+
     await Bot.findByIdAndDelete(req.params.id);
+
+    AuditService.log({
+      req, category: 'bot', action: 'BOT_DELETE',
+      targetId: req.params.id, targetName: botName,
+    });
+
     res.json({ message: 'Bot deleted' });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -337,7 +493,11 @@ router.post('/bots/:id/avatar', requireAdmin, avatarUpload.single('avatar'), asy
       const oldPath = `uploads/avatars/${path.basename(bot.avatar.imageUrl)}`;
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
-    bot.avatar = { ...bot.avatar.toObject?.() || bot.avatar, type: 'image', imageUrl: `/api/avatars/${req.file.filename}` };
+    bot.avatar = {
+      ...bot.avatar.toObject?.() || bot.avatar,
+      type: 'image',
+      imageUrl: `/api/avatars/${req.file.filename}`,
+    };
     await bot.save();
     res.json({ message: 'Avatar berhasil di-upload', bot });
   } catch (error) { res.status(500).json({ error: error.message }); }
@@ -348,37 +508,61 @@ router.patch('/bots/:id/avatar', requireAdmin, async (req, res) => {
     const { type, emoji, icon, bgColor, textColor } = req.body;
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
-    bot.avatar = { ...bot.avatar?.toObject?.() || bot.avatar || {}, type: type || 'emoji', emoji: emoji ?? bot.avatar?.emoji ?? '🤖', icon: icon ?? bot.avatar?.icon ?? null, bgColor: bgColor ?? bot.avatar?.bgColor ?? '#6366f1', textColor: textColor ?? bot.avatar?.textColor ?? '#ffffff' };
+    bot.avatar = {
+      ...bot.avatar?.toObject?.() || bot.avatar || {},
+      type: type || 'emoji',
+      emoji: emoji ?? bot.avatar?.emoji ?? '🤖',
+      icon:  icon  ?? bot.avatar?.icon  ?? null,
+      bgColor:   bgColor   ?? bot.avatar?.bgColor   ?? '#6366f1',
+      textColor: textColor ?? bot.avatar?.textColor ?? '#ffffff',
+    };
     await bot.save();
     res.json({ message: 'Avatar updated', bot });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 // ============================================================
-// 📚 KNOWLEDGE BASE — Upload / Delete (+ PPT support)
+// 📚 KNOWLEDGE BASE — Upload / Delete
 // ============================================================
 router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 10), async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
-    if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
+    if (!req.files || req.files.length === 0)
+      return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
 
     const results = [];
     for (const file of req.files) {
       console.log(`📚 Processing knowledge file: ${file.originalname} (${file.mimetype})`);
-      const { content, summary } = await KnowledgeBaseService.extractContent(file.path, file.originalname, file.mimetype);
+      const { content, summary } = await KnowledgeBaseService.extractContent(
+        file.path, file.originalname, file.mimetype,
+      );
       bot.knowledgeFiles.push({
         filename: file.filename, originalName: file.originalname,
         mimetype: file.mimetype, size: file.size, path: file.path,
         content, summary, uploadedAt: new Date(),
       });
-      results.push({ originalName: file.originalname, size: file.size, summary });
+      results.push({ name: file.originalname, size: file.size, summary });
     }
 
     await bot.save();
     console.log(`✅ Knowledge files saved for bot "${bot.name}": ${results.length} files`);
-    res.json({ message: `${results.length} file berhasil diproses`, files: results, totalFiles: bot.knowledgeFiles.length });
-  } catch (error) { console.error('Knowledge upload error:', error); res.status(500).json({ error: error.message }); }
+
+    AuditService.log({
+      req, category: 'knowledge', action: 'KNOWLEDGE_UPLOAD',
+      targetId: bot._id, targetName: bot.name,
+      detail: { files: results.map(f => ({ name: f.name, size: f.size })) },
+    });
+
+    res.json({
+      message: `${results.length} file berhasil diproses`,
+      files: results,
+      totalFiles: bot.knowledgeFiles.length,
+    });
+  } catch (error) {
+    console.error('Knowledge upload error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.delete('/bots/:id/knowledge/:fileId', requireAdmin, async (req, res) => {
@@ -387,8 +571,16 @@ router.delete('/bots/:id/knowledge/:fileId', requireAdmin, async (req, res) => {
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
     const idx = bot.knowledgeFiles.findIndex(f => f._id.toString() === req.params.fileId);
     if (idx === -1) return res.status(404).json({ error: 'File not found' });
+
     const fileRecord = bot.knowledgeFiles[idx];
     if (fileRecord.path && fs.existsSync(fileRecord.path)) fs.unlinkSync(fileRecord.path);
+
+    AuditService.log({
+      req, category: 'knowledge', action: 'KNOWLEDGE_DELETE',
+      targetId: bot._id, targetName: bot.name,
+      detail: { fileName: fileRecord.originalName, fileSize: fileRecord.size },
+    });
+
     bot.knowledgeFiles.splice(idx, 1);
     await bot.save();
     res.json({ message: 'File dihapus', totalFiles: bot.knowledgeFiles.length });
@@ -401,8 +593,11 @@ router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, r
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
     const kFile = bot.knowledgeFiles.id(req.params.fileId);
     if (!kFile) return res.status(404).json({ error: 'File not found' });
-    if (!fs.existsSync(kFile.path)) return res.status(400).json({ error: 'Physical file not found, please re-upload' });
-    const { content, summary } = await KnowledgeBaseService.extractContent(kFile.path, kFile.originalName, kFile.mimetype);
+    if (!fs.existsSync(kFile.path))
+      return res.status(400).json({ error: 'Physical file not found, please re-upload' });
+    const { content, summary } = await KnowledgeBaseService.extractContent(
+      kFile.path, kFile.originalName, kFile.mimetype,
+    );
     kFile.content = content; kFile.summary = summary;
     await bot.save();
     res.json({ message: 'File berhasil diproses ulang', summary });
@@ -414,11 +609,15 @@ router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, r
 // ============================================================
 router.get('/chat-logs', requireAdmin, async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
+    const page  = parseInt(req.query.page)  || 1;
     const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
     const total = await Chat.countDocuments({});
-    const chats = await Chat.find({}).populate('userId', 'username').populate('botId', 'name').sort({ createdAt: -1 }).skip(skip).limit(limit);
+    const chats = await Chat.find({})
+      .populate('userId', 'username')
+      .populate('botId', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip).limit(limit);
     res.json({ chats, totalPages: Math.ceil(total / limit), currentPage: page, totalLogs: total });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -430,15 +629,39 @@ router.get('/export-chats', requireAdmin, async (req, res) => {
     let fileName = `chat-logs-all-${new Date().toISOString().slice(0, 10)}.csv`;
     if (month && year) {
       const m = parseInt(month), y = parseInt(year);
-      query.createdAt = { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) };
+      query.createdAt = {
+        $gte: new Date(y, m - 1, 1),
+        $lte: new Date(y, m, 0, 23, 59, 59, 999),
+      };
       fileName = `chat-logs-${y}-${m.toString().padStart(2, '0')}.csv`;
     }
-    const chats = await Chat.find(query).populate('userId', 'username').populate('botId', 'name').sort({ createdAt: -1 });
+
+    const chats = await Chat.find(query)
+      .populate('userId', 'username')
+      .populate('botId', 'name')
+      .sort({ createdAt: -1 });
+
     let csv = 'Timestamp,User,Bot,Role,Message\n';
     chats.forEach(c => {
       const msg = (c.content || '').replace(/"/g, '""').replace(/(\r\n|\n|\r)/g, ' ');
-      csv += [`"${new Date(c.createdAt).toLocaleString()}"`, `"${c.userId?.username || ''}"`, `"${c.botId?.name || ''}"`, `"${c.role}"`, `"${msg}"`].join(',') + '\n';
+      csv += [
+        `"${new Date(c.createdAt).toLocaleString()}"`,
+        `"${c.userId?.username || ''}"`,
+        `"${c.botId?.name || ''}"`,
+        `"${c.role}"`,
+        `"${msg}"`,
+      ].join(',') + '\n';
     });
+
+    AuditService.log({
+      req, category: 'export', action: 'EXPORT_CHATS',
+      detail: {
+        filter: (month && year) ? `${year}-${month}` : 'all',
+        totalRows: chats.length,
+        fileName,
+      },
+    });
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
     res.send(csv);
