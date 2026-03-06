@@ -72,11 +72,12 @@ const Chat = ({ user, handleLogout }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
-  
+
   // Delete state
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [showAllThreads, setShowAllThreads] = useState(false);
+
   // Artifact panel
   const [artifact, setArtifact] = useState(null);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
@@ -197,7 +198,6 @@ const Chat = ({ user, handleLogout }) => {
   const handleDeleteThread = async (threadId, e) => {
     e.stopPropagation();
     if (confirmDeleteId === threadId) {
-      // Second click = confirmed
       setDeletingThreadId(threadId);
       try {
         await axios.delete(`/api/chat/thread/${threadId}`);
@@ -222,7 +222,7 @@ const Chat = ({ user, handleLogout }) => {
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 20 * 1024 * 1024) return alert('Maksimal ukuran file 20MB');
+      if (file.size > 20 * 1024 * 1024) return alert('Maximum file size is 20MB');
       setSelectedFile(file);
     }
   };
@@ -251,7 +251,7 @@ const Chat = ({ user, handleLogout }) => {
         const upRes = await axios.post('/api/chat/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         uploadedFileData = upRes.data;
       } catch (err) {
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Gagal mengupload file: ' + err.message }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Failed to upload file: ' + err.message }]);
         setLoading(false);
         return;
       }
@@ -285,7 +285,7 @@ const Chat = ({ user, handleLogout }) => {
       if (res.data.threadId) { setCurrentThreadId(res.data.threadId); fetchThreads(); }
       else fetchThreads();
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Maaf, terjadi kesalahan pada server AI.' }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, an error occurred on the AI server.' }]);
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -399,7 +399,7 @@ const Chat = ({ user, handleLogout }) => {
                       {t.title || 'Untitled Chat'}
                     </span>
                     <span className="text-[9px] xl:text-[10px] text-steel-light/70 mt-0.5 block">
-                      {new Date(t.lastMessageAt).toLocaleDateString('id-ID', { day:'2-digit', month:'short' })}
+                      {new Date(t.lastMessageAt).toLocaleDateString('en-US', { day:'2-digit', month:'short' })}
                     </span>
                   </button>
 
@@ -407,7 +407,7 @@ const Chat = ({ user, handleLogout }) => {
                   <button
                     onClick={(e) => handleDeleteThread(t._id, e)}
                     disabled={deletingThreadId === t._id}
-                    title={confirmDeleteId === t._id ? 'Klik lagi untuk konfirmasi' : 'Hapus percakapan ini'}
+                    title={confirmDeleteId === t._id ? 'Click again to confirm' : 'Delete this conversation'}
                     className={`
                       flex-shrink-0 mr-1.5 w-6 h-6 xl:w-7 xl:h-7 rounded-md flex items-center justify-center text-xs
                       transition-all duration-150 select-none
@@ -430,13 +430,13 @@ const Chat = ({ user, handleLogout }) => {
               ))}
 
               {threads.length > MAX_THREADS_SHOWN && (
-                <button 
+                <button
                   onClick={() => setShowAllThreads(!showAllThreads)}
                   className="w-full text-center px-3 py-2.5 mt-2 rounded-lg text-xs font-semibold text-primary hover:bg-primary/10 transition-colors border border-dashed border-transparent hover:border-primary/30"
                 >
-                  {showAllThreads 
-                    ? 'Tampilkan Lebih Sedikit' 
-                    : `Lihat Semua Percakapan (${threads.length})`}
+                  {showAllThreads
+                    ? 'Show Less'
+                    : `View All Conversations (${threads.length})`}
                 </button>
               )}
             </div>
@@ -517,7 +517,7 @@ const Chat = ({ user, handleLogout }) => {
                 </p>
                 {selectedBot && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 xl:gap-3 w-full max-w-lg xl:max-w-2xl">
-                    {(selectedBot.starterQuestions?.length > 0 ? selectedBot.starterQuestions : ['Apa status project?', 'Cari data', 'Buat laporan']).map((txt, i) => (
+                    {(selectedBot.starterQuestions?.length > 0 ? selectedBot.starterQuestions : ['What is the project status?', 'Search data', 'Generate a report']).map((txt, i) => (
                       <button key={i}
                         onClick={() => { setInput(txt); setTimeout(() => handleSubmit({ preventDefault: () => {} }), 0); }}
                         className="p-3 xl:p-4 bg-white hover:bg-steel-lightest border border-steel-light/30 rounded-xl text-sm xl:text-base text-gray-700 hover:text-primary-dark transition-all shadow-sm text-left font-medium hover:border-primary/30 hover:shadow-md">
@@ -553,41 +553,63 @@ const Chat = ({ user, handleLogout }) => {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
+          {/* ── Input Area ── */}
           <div className="px-3 py-3 xl:px-6 xl:py-4 bg-white border-t border-steel-light/30 z-20 flex-shrink-0">
-            {selectedFile && (
-              <div className="max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto mb-2 flex items-center gap-2 bg-steel-lightest border border-steel-light text-primary-dark px-3 py-1.5 rounded-lg text-xs w-fit">
-                <span>📎 {selectedFile.name}</span>
-                <button onClick={() => setSelectedFile(null)} className="hover:text-red-500 ml-1 font-bold">✕</button>
-              </div>
-            )}
-            <div className="max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto flex items-end gap-2 xl:gap-3">
-              <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
-              <button type="button" onClick={() => fileInputRef.current?.click()}
-                className="p-3 xl:p-3.5 text-steel hover:text-primary-dark bg-steel-lightest hover:bg-steel-light/20 rounded-xl transition-colors border border-steel-light/30 shadow-sm text-sm xl:text-base flex-shrink-0"
-                title="Upload File">📎</button>
-              <div className="flex-1 relative">
+            <div className="max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto">
+
+              {/* Selected file chip — inside the input wrapper */}
+              {selectedFile && (
+                <div className="flex items-center gap-2 mb-2 bg-steel-lightest border border-steel-light rounded-lg px-3 py-1.5 w-fit text-xs text-primary-dark">
+                  <span>📎 {selectedFile.name}</span>
+                  <button onClick={() => setSelectedFile(null)} className="hover:text-red-500 font-bold ml-1">✕</button>
+                </div>
+              )}
+
+              {/* Input row — all items vertically centered */}
+              <div className="flex items-center gap-2 xl:gap-3 bg-steel-lightest/50 border border-steel-light/30 rounded-xl shadow-inner focus-within:ring-1 focus-within:ring-primary focus-within:border-primary focus-within:bg-white transition-all px-2 xl:px-3 py-2">
+
+                {/* Attachment button */}
+                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Attach File"
+                  className="flex-shrink-0 w-8 h-8 xl:w-9 xl:h-9 flex items-center justify-center rounded-lg text-steel hover:text-primary-dark hover:bg-steel-light/30 transition-colors text-base xl:text-lg"
+                >
+                  📎
+                </button>
+
+                {/* Textarea */}
                 <textarea
                   ref={textareaRef}
                   value={input}
-                  onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`; }}
+                  onChange={e => {
+                    setInput(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+                  }}
                   onKeyDown={handleKeyDown}
                   placeholder={selectedBot ? `Message ${selectedBot.name}...` : 'Select a bot first...'}
                   disabled={!selectedBot || loading}
                   rows={1}
-                  className="w-full bg-steel-lightest/50 border border-steel-light/30 text-gray-800 text-sm xl:text-base px-4 xl:px-5 py-3 xl:py-3.5 rounded-xl focus:ring-1 focus:ring-primary focus:border-primary placeholder-steel shadow-inner transition-all resize-none overflow-hidden focus:bg-white focus:outline-none"
+                  className="flex-1 bg-transparent text-gray-800 text-sm xl:text-base py-1.5 resize-none overflow-hidden focus:outline-none placeholder-steel"
                 />
+
+                {/* Send button */}
+                <button
+                  onClick={handleSubmit}
+                  disabled={(!input.trim() && !selectedFile) || !selectedBot || loading}
+                  className="flex-shrink-0 w-8 h-8 xl:w-9 xl:h-9 flex items-center justify-center bg-primary hover:bg-primary-dark text-white rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95 text-sm xl:text-base"
+                >
+                  ➤
+                </button>
               </div>
-              <button onClick={handleSubmit}
-                disabled={(!input.trim() && !selectedFile) || !selectedBot || loading}
-                className="p-3 xl:p-3.5 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95 flex-shrink-0 text-sm xl:text-base">
-                ➤
-              </button>
+
+              {/* AI Disclaimer */}
+              <p className="text-center text-[10px] text-steel-light mt-1.5 select-none">
+                AI responses may contain inaccuracies. Verify important information before using it for business decisions.
+              </p>
             </div>
-            {/* AI Disclaimer */}
-            <p className="max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto text-center text-[10px] text-steel-light mt-1.5 select-none">
-              Respons AI dapat mengandung ketidakakuratan. Verifikasi informasi penting sebelum digunakan untuk pengambilan keputusan bisnis.
-            </p>
           </div>
         </main>
 

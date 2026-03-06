@@ -67,9 +67,9 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
     if (file && file.type.startsWith('image/')) processImageFile(file);
   }, []);
 
-  // ✅ Compress gambar ke max 256px sebelum upload
+  // Compress image to max 256px before upload
   const processImageFile = (file) => {
-    if (file.size > 5 * 1024 * 1024) { alert('Ukuran file maksimal 5MB'); return; }
+    if (file.size > 5 * 1024 * 1024) { alert('Maximum file size is 5MB'); return; }
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
@@ -92,7 +92,7 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
     reader.readAsDataURL(file);
   };
 
-  // ✅ Upload dengan progress tracking via XHR
+  // Upload with progress tracking via XHR
   const handleSave = async () => {
     setSaving(true);
     setUploadProgress(0);
@@ -109,7 +109,7 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
           xhr.onload = () => {
             const data = JSON.parse(xhr.responseText);
             if (xhr.status >= 200 && xhr.status < 300) { onSave(data.bot); resolve(); }
-            else reject(new Error(data.error || 'Upload gagal'));
+            else reject(new Error(data.error || 'Upload failed'));
           };
           xhr.onerror = () => reject(new Error('Network error'));
           xhr.withCredentials = true;
@@ -135,7 +135,7 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
       }
       onClose();
     } catch (err) {
-      alert('Gagal menyimpan avatar: ' + err.message);
+      alert('Failed to save avatar: ' + err.message);
     } finally {
       setSaving(false);
       setUploadProgress(0);
@@ -145,7 +145,7 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
   // ── Color picker strip (shared) ──────────────────────────
   const ColorStrip = () => (
     <div>
-      <p className="text-xs text-gray-400 mb-1.5">Warna background</p>
+      <p className="text-xs text-gray-400 mb-1.5">Background color</p>
       <div className="flex flex-wrap gap-1.5">
         {BG_COLORS.map(color => (
           <button
@@ -159,7 +159,7 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
           type="color" value={customBg}
           onChange={e => { setCustomBg(e.target.value); setBgColor(e.target.value); }}
           className="w-6 h-6 rounded-full cursor-pointer border border-gray-300 p-0"
-          title="Warna custom"
+          title="Custom color"
         />
       </div>
     </div>
@@ -167,7 +167,6 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      {/* ✅ max-w-sm = lebih kecil dari sebelumnya (max-w-lg) */}
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
 
         {/* HEADER */}
@@ -177,7 +176,7 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
         </div>
 
         <div className="p-4 space-y-3">
-          {/* PREVIEW — lebih kecil: w-16 h-16 */}
+          {/* PREVIEW */}
           <div className="flex justify-center">
             <div className="w-16 h-16 rounded-full overflow-hidden ring-4 ring-indigo-100 shadow-md">
               {previewAvatar()}
@@ -247,19 +246,19 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
                 {imagePreview ? (
                   <div className="flex flex-col items-center gap-1.5">
                     <img src={imagePreview} alt="Preview" className="w-12 h-12 rounded-full object-cover" />
-                    <p className="text-xs text-gray-500">Klik atau drag untuk ganti</p>
+                    <p className="text-xs text-gray-500">Click or drag to replace</p>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-1.5 text-gray-400">
                     <span className="text-3xl">📁</span>
-                    <p className="text-xs font-medium">Drag & drop atau klik untuk upload</p>
-                    <p className="text-xs text-gray-400">JPG, PNG, WebP · Maks 5MB · Auto-compress ke 256px</p>
+                    <p className="text-xs font-medium">Drag & drop or click to upload</p>
+                    <p className="text-xs text-gray-400">JPG, PNG, WebP · Max 5MB · Auto-compressed to 256px</p>
                   </div>
                 )}
               </div>
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && processImageFile(e.target.files[0])} />
               {imageFile && (
-                <p className="text-xs text-gray-400 text-center">{imageFile.name} · {(imageFile.size / 1024).toFixed(0)} KB (setelah compress)</p>
+                <p className="text-xs text-gray-400 text-center">{imageFile.name} · {(imageFile.size / 1024).toFixed(0)} KB (after compression)</p>
               )}
             </div>
           )}
@@ -268,19 +267,19 @@ export default function AvatarPicker({ bot, onSave, onClose }) {
         {/* FOOTER */}
         <div className="flex gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50">
           <button onClick={onClose} className="flex-1 py-2 px-3 rounded-lg border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-100 transition-colors">
-            Batal
+            Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving || (tab === 'image' && !imageFile && !imagePreview)}
             className="flex-1 py-2 px-3 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors relative overflow-hidden"
           >
-            {/* Progress bar di dalam tombol saat upload */}
+            {/* Progress bar inside button during upload */}
             {saving && uploadProgress > 0 && (
               <span className="absolute inset-0 bg-indigo-500 transition-all" style={{ width: `${uploadProgress}%` }} />
             )}
             <span className="relative">
-              {saving ? (uploadProgress > 0 ? `Uploading ${uploadProgress}%` : 'Menyimpan...') : 'Simpan Avatar'}
+              {saving ? (uploadProgress > 0 ? `Uploading ${uploadProgress}%` : 'Saving...') : 'Save Avatar'}
             </span>
           </button>
         </div>

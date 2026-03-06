@@ -88,17 +88,17 @@ const TIER_GROUP_LABEL = {
 };
 
 const ALL_CAPABILITIES = [
-  { id: 'webSearch',       icon: '🌐', label: 'Web Search',       desc: 'Bot dapat menelusuri internet untuk info terkini', providers: ['openai'] },
-  { id: 'codeInterpreter', icon: '💻', label: 'Code Interpreter',  desc: 'Bot dapat menulis & menjalankan kode Python', providers: ['openai'] },
-  { id: 'imageGeneration', icon: '🎨', label: 'Image Generation',  desc: 'Bot dapat membuat gambar dengan DALL-E', providers: ['openai'] },
-  { id: 'canvas',          icon: '📝', label: 'Canvas Mode',       desc: 'Mode editing dokumen & canvas interaktif', providers: ['openai'] },
-  { id: 'fileSearch',      icon: '📂', label: 'File Search (RAG)', desc: 'Pencarian semantik di seluruh knowledge base', providers: ['openai', 'anthropic'] },
+  { id: 'webSearch',       icon: '🌐', label: 'Web Search',       desc: 'Bot can browse the internet for up-to-date information', providers: ['openai'] },
+  { id: 'codeInterpreter', icon: '💻', label: 'Code Interpreter',  desc: 'Bot can write and execute Python code', providers: ['openai'] },
+  { id: 'imageGeneration', icon: '🎨', label: 'Image Generation',  desc: 'Bot can create images using DALL-E', providers: ['openai'] },
+  { id: 'canvas',          icon: '📝', label: 'Canvas Mode',       desc: 'Interactive document editing and canvas mode', providers: ['openai'] },
+  { id: 'fileSearch',      icon: '📂', label: 'File Search (RAG)', desc: 'Semantic search across the entire knowledge base', providers: ['openai', 'anthropic'] },
 ];
 
 const KNOWLEDGE_MODES = [
-  { id: 'relevant', label: '🎯 Relevan Saja',  desc: 'Sisipkan knowledge hanya jika relevan' },
-  { id: 'always',   label: '📚 Selalu',          desc: 'Selalu sisipkan semua knowledge' },
-  { id: 'disabled', label: '🚫 Nonaktif',         desc: 'Jangan gunakan knowledge base' },
+  { id: 'relevant', label: '🎯 Relevant Only', desc: 'Inject knowledge only when relevant' },
+  { id: 'always',   label: '📚 Always',        desc: 'Always inject all knowledge' },
+  { id: 'disabled', label: '🚫 Disabled',       desc: 'Do not use knowledge base' },
 ];
 
 const TONE_OPTIONS = [
@@ -118,7 +118,7 @@ const fmtSize = (b) => !b ? '0 B' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b/10
 
 const initialBotState = {
   name: '', description: '', persona: '', tone: 'professional',
-  systemPrompt: 'Anda adalah asisten AI profesional.',
+  systemPrompt: 'You are a professional AI assistant.',
   prompt: '',
   starterQuestions: [],
   knowledgeMode: 'relevant',
@@ -237,7 +237,7 @@ function AdminDashboard({ user, handleLogout }) {
   };
 
   const handleDeleteBot = async (id) => {
-    if (!window.confirm('Hapus bot ini?')) return;
+    if (!window.confirm('Delete this bot?')) return;
     try { await axios.delete(`/api/admin/bots/${id}`); fetchBots(); fetchStats(); } catch (e) { alert(e.message); }
   };
 
@@ -255,7 +255,7 @@ function AdminDashboard({ user, handleLogout }) {
   const handleKnowledgeUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    if (!editingBot) { alert('Simpan bot terlebih dahulu sebelum upload knowledge files.'); return; }
+    if (!editingBot) { alert('Please save the bot before uploading knowledge files.'); return; }
     setKnowledgeUploading(true);
     try {
       const fd = new FormData();
@@ -266,12 +266,12 @@ function AdminDashboard({ user, handleLogout }) {
       const fresh   = (Array.isArray(updated.data) ? updated.data : updated.data.bots || []).find(b => b._id === editingBot._id);
       setKnowledgeFiles(fresh?.knowledgeFiles || []);
       setBots(Array.isArray(updated.data) ? updated.data : updated.data.bots || []);
-    } catch (err) { alert('Upload gagal: ' + (err.response?.data?.error || err.message)); }
+    } catch (err) { alert('Upload failed: ' + (err.response?.data?.error || err.message)); }
     finally { setKnowledgeUploading(false); if (knowledgeInputRef.current) knowledgeInputRef.current.value = ''; }
   };
 
   const handleDeleteKnowledge = async (fileId, fileName) => {
-    if (!window.confirm(`Hapus file "${fileName}"?`)) return;
+    if (!window.confirm(`Delete file "${fileName}"?`)) return;
     try { await axios.delete(`/api/admin/bots/${editingBot._id}/knowledge/${fileId}`); setKnowledgeFiles(prev => prev.filter(f => f._id !== fileId)); }
     catch (err) { alert(err.response?.data?.error || err.message); }
   };
@@ -450,10 +450,10 @@ function AdminDashboard({ user, handleLogout }) {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className="text-xl font-bold text-primary-dark">AI Bots</h2>
-                <p className="text-sm text-steel">{bots.length} bot aktif</p>
+                <p className="text-sm text-steel">{bots.length} active bot{bots.length !== 1 ? 's' : ''}</p>
               </div>
               <div className="flex gap-3">
-                <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Cari bot..." className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44" />
+                <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Search bots..." className="px-3 py-2 bg-white border border-steel-light/50 rounded-lg text-sm outline-none focus:border-primary w-44" />
                 <button onClick={handleCreateBot} className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded-lg hover:bg-primary transition-colors flex items-center gap-2">
                   <span className="text-lg leading-none">+</span> Create Bot
                 </button>
@@ -501,7 +501,7 @@ function AdminDashboard({ user, handleLogout }) {
                       })()}
                       {bot.knowledgeFiles?.length > 0 && (
                         <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold">
-                          📚 {bot.knowledgeFiles.length} docs
+                          📚 {bot.knowledgeFiles.length} doc{bot.knowledgeFiles.length !== 1 ? 's' : ''}
                         </span>
                       )}
                       {capCount > 0 && (
@@ -540,7 +540,7 @@ function AdminDashboard({ user, handleLogout }) {
             <div className="px-6 py-4 border-b border-steel-light/30 flex justify-between items-center">
               <div>
                 <h2 className="font-bold text-primary-dark">User Management</h2>
-                <p className="text-xs text-steel">{users.length} registered users</p>
+                <p className="text-xs text-steel">{users.length} registered user{users.length !== 1 ? 's' : ''}</p>
               </div>
               <button onClick={() => { setEditingUser(null); setUserForm({username:'',password:'',isAdmin:false,assignedBots:[]}); setShowUserModal(true); }}
                 className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded-lg hover:bg-primary transition-colors">
@@ -618,7 +618,7 @@ function AdminDashboard({ user, handleLogout }) {
                 <tbody className="divide-y divide-steel-light/20">
                   {chatLogs.map(log => (
                     <tr key={log._id} className="hover:bg-steel-lightest/50 transition-colors">
-                      <td className="px-5 py-2.5 text-steel whitespace-nowrap">{new Date(log.createdAt).toLocaleString('id-ID')}</td>
+                      <td className="px-5 py-2.5 text-steel whitespace-nowrap">{new Date(log.createdAt).toLocaleString('en-US')}</td>
                       <td className="px-5 py-2.5 font-medium">{log.userId?.username || '—'}</td>
                       <td className="px-5 py-2.5 text-primary font-bold">{log.botId?.name || 'System'}</td>
                       <td className="px-5 py-2.5">
@@ -654,7 +654,7 @@ function AdminDashboard({ user, handleLogout }) {
                 <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
                 <div>
                   <h3 className="font-bold text-primary-dark text-sm">{editingBot ? `Edit — ${editingBot.name}` : 'Create New Bot'}</h3>
-                  <p className="text-[10px] text-steel">{editingBot ? 'Konfigurasi bot yang sudah ada' : 'Buat bot AI baru dengan kemampuan lengkap'}</p>
+                  <p className="text-[10px] text-steel">{editingBot ? 'Configure an existing bot' : 'Create a new AI bot with full capabilities'}</p>
                 </div>
               </div>
               <button onClick={() => setShowBotModal(false)} className="w-8 h-8 rounded-full flex items-center justify-center text-steel hover:bg-steel-lightest hover:text-gray-700 transition-colors">✕</button>
@@ -691,31 +691,31 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                     <div>
                       <p className="font-semibold text-sm">Bot Avatar</p>
-                      <p className="text-xs text-steel mt-0.5">Upload gambar, pilih emoji, atau icon</p>
+                      <p className="text-xs text-steel mt-0.5">Upload an image, choose an emoji, or pick an icon</p>
                       {editingBot
                         ? <button type="button" onClick={() => setAvatarPickerBot(editingBot)} className="mt-2 px-3 py-1.5 text-xs rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-bold">🎨 Edit Avatar</button>
-                        : <p className="text-xs text-steel mt-1.5 italic">💡 Simpan bot dulu untuk edit avatar</p>}
+                        : <p className="text-xs text-steel mt-1.5 italic">💡 Save the bot first to edit the avatar</p>}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Nama Bot *</label>
+                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Bot Name *</label>
                       <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark focus:ring-1 focus:ring-primary-dark/20 outline-none transition-all" placeholder="e.g. HR Assistant" value={botForm.name} onChange={e => setBotForm({...botForm, name: e.target.value})} />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Deskripsi</label>
-                      <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none transition-all" placeholder="Singkat, untuk sidebar" value={botForm.description} onChange={e => setBotForm({...botForm, description: e.target.value})} />
+                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Description</label>
+                      <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none transition-all" placeholder="Short description for the sidebar" value={botForm.description} onChange={e => setBotForm({...botForm, description: e.target.value})} />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Persona (opsional)</label>
+                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Persona (optional)</label>
                       <input className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none transition-all" placeholder="e.g. Expert HR Consultant" value={botForm.persona} onChange={e => setBotForm({...botForm, persona: e.target.value})} />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Tone / Gaya Bahasa</label>
+                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">Tone / Communication Style</label>
                       <select className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none" value={botForm.tone} onChange={e => setBotForm({...botForm, tone: e.target.value})}>
                         {TONE_OPTIONS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                       </select>
@@ -723,26 +723,26 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">System Prompt / Instruksi Bot</label>
+                    <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">System Prompt / Bot Instructions</label>
                     <textarea className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-3 text-sm h-36 font-mono focus:border-primary-dark outline-none resize-none transition-all"
-                      placeholder="Contoh: Anda adalah asisten HR yang membantu karyawan menjawab pertanyaan seputar cuti, absensi, dan kebijakan perusahaan."
+                      placeholder="Example: You are an HR assistant that helps employees with questions about leave, attendance, and company policies."
                       value={botForm.prompt} onChange={e => setBotForm({...botForm, prompt: e.target.value})} />
-                    <p className="text-[10px] text-steel mt-1">💡 Prompt ini mendefinisikan kepribadian, tugas, dan batasan bot</p>
+                    <p className="text-[10px] text-steel mt-1">💡 This prompt defines the bot's personality, tasks, and boundaries</p>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-xs font-bold text-steel uppercase tracking-wide">Starter Questions</label>
-                      <button onClick={addQuestion} className="text-xs font-bold text-primary hover:text-primary-dark">+ Tambah</button>
+                      <button onClick={addQuestion} className="text-xs font-bold text-primary hover:text-primary-dark">+ Add</button>
                     </div>
                     <div className="space-y-2">
                       {botForm.starterQuestions.map((q, i) => (
                         <div key={i} className="flex gap-2">
-                          <input className="flex-1 bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary outline-none transition-all" value={q} onChange={e => updateQuestion(i, e.target.value)} placeholder={`Pertanyaan ${i+1}...`} />
+                          <input className="flex-1 bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary outline-none transition-all" value={q} onChange={e => updateQuestion(i, e.target.value)} placeholder={`Question ${i+1}...`} />
                           <button onClick={() => removeQuestion(i)} className="text-red-400 hover:text-red-600 font-black px-2">✕</button>
                         </div>
                       ))}
-                      {botForm.starterQuestions.length === 0 && <p className="text-xs text-steel italic">Belum ada starter questions. Klik "+ Tambah" untuk menambah.</p>}
+                      {botForm.starterQuestions.length === 0 && <p className="text-xs text-steel italic">No starter questions yet. Click "+ Add" to add one.</p>}
                     </div>
                   </div>
                 </div>
@@ -752,7 +752,7 @@ function AdminDashboard({ user, handleLogout }) {
               {botModalTab === 'ai' && (
                 <div className="space-y-5">
                   <div className="text-xs text-steel bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                    💡 Pilih AI provider dan model. API Key bisa di-set per-bot atau kosongkan untuk pakai key dari server <code className="bg-blue-100 px-1 rounded">.env</code>.
+                    💡 Select an AI provider and model. The API Key can be set per-bot or left blank to use the key from the server <code className="bg-blue-100 px-1 rounded">.env</code>.
                   </div>
 
                   {/* Provider selector */}
@@ -834,28 +834,28 @@ function AdminDashboard({ user, handleLogout }) {
 
                   {/* API Key */}
                   <div>
-                    <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">API Key (override .env — opsional)</label>
+                    <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">API Key (override .env — optional)</label>
                     <div className="relative">
                       <input type="text" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         readOnly
                         onFocus={e => e.target.removeAttribute('readOnly')}
                         className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none font-mono tracking-widest"
-                        placeholder="Kosongkan = pakai OPENAI_API_KEY dari .env"
+                        placeholder="Leave blank to use OPENAI_API_KEY from .env"
                         value={botForm.aiProvider?.apiKey || ''}
                         onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))} />
                       {botForm.aiProvider?.apiKey && (
                         <button type="button"
                           onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: '' } }))}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-red-400 hover:text-red-600 font-bold px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
-                          title="Hapus API Key (gunakan .env)">
-                          ✕ Hapus
+                          title="Remove API Key (use .env)">
+                          ✕ Remove
                         </button>
                       )}
                     </div>
                     <p className="text-[10px] text-steel mt-1">
                       {botForm.aiProvider?.apiKey
-                        ? <span className="text-amber-600 font-bold">⚠️ Menggunakan API Key custom (bukan dari .env)</span>
-                        : <span className="text-emerald-600 font-bold">✅ Menggunakan OPENAI_API_KEY dari .env server</span>
+                        ? <span className="text-amber-600 font-bold">⚠️ Using a custom API Key (not from .env)</span>
+                        : <span className="text-emerald-600 font-bold">✅ Using OPENAI_API_KEY from server .env</span>
                       }
                     </p>
                   </div>
@@ -864,7 +864,7 @@ function AdminDashboard({ user, handleLogout }) {
                   {(currentProvider === 'custom' || currentProvider === 'openai') && (
                     <div>
                       <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-1.5">
-                        {currentProvider === 'custom' ? 'Endpoint URL *' : 'Custom Base URL (Azure / proxy — opsional)'}
+                        {currentProvider === 'custom' ? 'Endpoint URL *' : 'Custom Base URL (Azure / proxy — optional)'}
                       </label>
                       <input autoComplete="off" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-lg p-2.5 text-sm focus:border-primary-dark outline-none"
                         placeholder={currentProvider === 'custom' ? 'https://api.example.com/v1' : 'https://your-azure-endpoint.openai.azure.com/...'}
@@ -881,7 +881,7 @@ function AdminDashboard({ user, handleLogout }) {
                         value={botForm.aiProvider?.temperature ?? 0.1}
                         onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, temperature: parseFloat(e.target.value) } }))}
                         className="w-full accent-primary-dark" />
-                      <div className="flex justify-between text-[9px] text-steel mt-1"><span>Presisi (0)</span><span>Kreatif (1)</span></div>
+                      <div className="flex justify-between text-[9px] text-steel mt-1"><span>Precise (0)</span><span>Creative (1)</span></div>
                     </div>
                     <div className="bg-steel-lightest/50 border border-steel-light/30 rounded-xl p-3">
                       <label className="text-xs font-bold text-steel block mb-2">Max Tokens</label>
@@ -896,7 +896,7 @@ function AdminDashboard({ user, handleLogout }) {
                   <div className="pt-3 border-t border-steel-light/30">
                     <button type="button" onClick={handleTestAI} disabled={testAIState === 'testing'}
                       className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-colors">
-                      {testAIState === 'testing' ? '⏳ Testing...' : '🔌 Test Koneksi'}
+                      {testAIState === 'testing' ? '⏳ Testing...' : '🔌 Test Connection'}
                     </button>
                     {testAIState && testAIState !== 'testing' && (
                       <div className={`mt-3 p-3 rounded-xl text-xs font-medium ${testAIState.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
@@ -911,7 +911,7 @@ function AdminDashboard({ user, handleLogout }) {
               {botModalTab === 'capabilities' && (
                 <div className="space-y-4">
                   <div className="text-xs text-steel bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
-                    ⚡ Aktifkan kemampuan tambahan seperti di ChatGPT. Availability tergantung pada provider & model yang dipilih.
+                    ⚡ Enable additional capabilities similar to ChatGPT. Availability depends on the selected provider and model.
                   </div>
                   <div className="space-y-3">
                     {ALL_CAPABILITIES.map(cap => {
@@ -946,7 +946,7 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
                   {activeCapCount > 0 && (
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-                      ⚠️ <strong>{activeCapCount} capability aktif.</strong> Capabilities seperti Web Search & Code Interpreter mungkin memerlukan tier API berbayar.
+                      ⚠️ <strong>{activeCapCount} capability{activeCapCount !== 1 ? 'ies' : ''} active.</strong> Capabilities like Web Search & Code Interpreter may require a paid API tier.
                     </div>
                   )}
                 </div>
@@ -956,11 +956,11 @@ function AdminDashboard({ user, handleLogout }) {
               {botModalTab === 'knowledge' && (
                 <div className="space-y-5">
                   <div className="text-xs text-steel bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                    📚 Upload dokumen sebagai sumber pengetahuan bot. Mendukung <strong>PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), TXT, CSV, MD</strong>.
-                    {!editingBot && <span className="block mt-1 font-bold text-amber-700">⚠️ Simpan bot dulu sebelum upload file.</span>}
+                    📚 Upload documents as the bot's knowledge source. Supports <strong>PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), TXT, CSV, MD</strong>.
+                    {!editingBot && <span className="block mt-1 font-bold text-amber-700">⚠️ Save the bot first before uploading files.</span>}
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Mode Knowledge Base</label>
+                    <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Knowledge Base Mode</label>
                     <div className="space-y-2">
                       {KNOWLEDGE_MODES.map(m => (
                         <label key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${botForm.knowledgeMode === m.id ? 'border-primary-dark bg-primary-dark/5' : 'border-steel-light/30 hover:border-steel-light'}`}>
@@ -975,20 +975,20 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
                   {editingBot && (
                     <div>
-                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Upload File</label>
+                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Upload Files</label>
                       <div onClick={() => knowledgeInputRef.current?.click()}
                         className="border-2 border-dashed border-steel-light/50 rounded-xl p-8 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-all">
                         {knowledgeUploading ? (
                           <div className="flex flex-col items-center gap-2 text-amber-600">
                             <div className="w-8 h-8 border-3 border-amber-300 border-t-amber-600 rounded-full animate-spin"></div>
-                            <p className="font-bold text-sm">Memproses file...</p>
+                            <p className="font-bold text-sm">Processing files...</p>
                           </div>
                         ) : (
                           <>
                             <div className="text-4xl mb-2">📁</div>
-                            <p className="text-sm font-bold text-gray-700">Klik atau drag & drop</p>
+                            <p className="text-sm font-bold text-gray-700">Click or drag & drop</p>
                             <p className="text-xs text-steel mt-1">PDF • Word • Excel • PowerPoint • TXT • CSV • MD</p>
-                            <p className="text-xs text-steel">Maks 20MB per file · Beberapa file sekaligus</p>
+                            <p className="text-xs text-steel">Max 20MB per file · Multiple files at once</p>
                           </>
                         )}
                       </div>
@@ -997,14 +997,14 @@ function AdminDashboard({ user, handleLogout }) {
                   )}
                   {knowledgeFiles.length > 0 && (
                     <div>
-                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Dokumen ({knowledgeFiles.length})</label>
+                      <label className="text-xs font-bold text-steel uppercase tracking-wide block mb-2">Documents ({knowledgeFiles.length})</label>
                       <div className="space-y-2">
                         {knowledgeFiles.map(f => (
                           <div key={f._id} className="flex items-start gap-3 p-3 bg-steel-lightest/60 rounded-xl border border-steel-light/30 hover:border-steel-light transition-colors">
                             <span className="text-2xl flex-shrink-0">{getFileIcon(f.originalName)}</span>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-bold truncate">{f.originalName}</p>
-                              <p className="text-[10px] text-steel">{fmtSize(f.size)} · {new Date(f.uploadedAt).toLocaleDateString('id-ID')}</p>
+                              <p className="text-[10px] text-steel">{fmtSize(f.size)} · {new Date(f.uploadedAt).toLocaleDateString('en-US')}</p>
                               {f.summary && <p className="text-[10px] text-steel-light mt-1 line-clamp-2">{f.summary}</p>}
                             </div>
                             {editingBot && (
@@ -1016,7 +1016,7 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   )}
                   {editingBot && knowledgeFiles.length === 0 && !knowledgeUploading && (
-                    <p className="text-center text-steel text-sm py-4">Belum ada dokumen. Upload file di atas.</p>
+                    <p className="text-center text-steel text-sm py-4">No documents yet. Upload a file above.</p>
                   )}
                 </div>
               )}
@@ -1086,14 +1086,14 @@ function AdminDashboard({ user, handleLogout }) {
               <div>
                 {editingBot && (
                   <button onClick={() => handleDeleteBot(editingBot._id)} className="px-4 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 font-bold text-sm rounded-lg transition-colors">
-                    🗑 Hapus Bot
+                    🗑 Delete Bot
                   </button>
                 )}
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setShowBotModal(false)} className="px-4 py-2 text-steel hover:text-gray-800 font-bold text-sm transition-colors">Batal</button>
+                <button onClick={() => setShowBotModal(false)} className="px-4 py-2 text-steel hover:text-gray-800 font-bold text-sm transition-colors">Cancel</button>
                 <button onClick={handleSaveBot} className="px-6 py-2 bg-primary-dark text-white rounded-xl font-bold hover:bg-primary text-sm transition-all shadow-sm hover:shadow">
-                  {editingBot ? '✓ Simpan Perubahan' : '+ Buat Bot'}
+                  {editingBot ? '✓ Save Changes' : '+ Create Bot'}
                 </button>
               </div>
             </div>
@@ -1111,7 +1111,7 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
             <div className="space-y-3">
               <input autoComplete="off" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" placeholder="Username" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
-              <input autoComplete="new-password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" type="password" placeholder="Password (kosong = tidak berubah)" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+              <input autoComplete="new-password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" type="password" placeholder="Password (leave blank to keep unchanged)" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
               <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
                 <input type="checkbox" checked={userForm.isAdmin} onChange={e => setUserForm({...userForm, isAdmin: e.target.checked})} className="accent-primary-dark" />
                 <span>Administrator</span>
@@ -1128,8 +1128,8 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setShowUserModal(false)} className="px-4 py-2 text-steel font-bold text-sm hover:text-gray-700 transition-colors">Batal</button>
-              <button onClick={handleSaveUser} className="px-5 py-2 bg-primary-dark text-white rounded-xl font-bold text-sm hover:bg-primary transition-colors">Simpan</button>
+              <button onClick={() => setShowUserModal(false)} className="px-4 py-2 text-steel font-bold text-sm hover:text-gray-700 transition-colors">Cancel</button>
+              <button onClick={handleSaveUser} className="px-5 py-2 bg-primary-dark text-white rounded-xl font-bold text-sm hover:bg-primary transition-colors">Save</button>
             </div>
           </div>
         </div>

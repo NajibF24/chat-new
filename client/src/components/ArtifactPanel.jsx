@@ -25,7 +25,7 @@ export function detectArtifactType(lang = '', code = '') {
 // ─────────────────────────────────────────────────────────────
 function buildPreviewHTML(type, code) {
   if (type === 'html') {
-    // Jika sudah full HTML, langsung return
+    // If already full HTML, return as-is
     if (code.trim().startsWith('<!DOCTYPE') || code.trim().startsWith('<html')) return code;
     // Wrap snippet
     return `<!DOCTYPE html>
@@ -99,7 +99,6 @@ else rootEl.innerHTML = '<p style="color:red;padding:16px">No default export fou
 // Syntax highlighting (simple tokenizer, no deps)
 // ─────────────────────────────────────────────────────────────
 function SyntaxHighlight({ code, lang }) {
-  // Simple regex-based highlight for display
   const highlight = (text, language) => {
     let escaped = text
       .replace(/&/g, '&amp;')

@@ -88,8 +88,8 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
     <div className={`flex w-full mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex ${
         isUser
-          ? 'max-w-[65%] flex-row-reverse'   // user: compact bubble di kanan
-          : 'max-w-[96%] flex-row'            // AI: pakai hampir seluruh lebar
+          ? 'max-w-[65%] flex-row-reverse'
+          : 'max-w-[96%] flex-row'
       }`}>
 
         {/* Avatar */}
@@ -165,7 +165,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
                         onClick={e => window.open(e.target.src, '_blank')}
                         onError={e => {
                           e.target.style.display = 'none';
-                          e.target.parentNode.innerHTML = `<div style="padding:10px;color:#ef4444;font-size:11px;text-align:center;">⚠️ Gagal memuat gambar</div>`;
+                          e.target.parentNode.innerHTML = `<div style="padding:10px;color:#ef4444;font-size:11px;text-align:center;">⚠️ Failed to load image</div>`;
                         }}
                       />
                     </div>

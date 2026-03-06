@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import axios from 'axios';
 
 const Login = ({ setUser }) => {
-  const [identifier, setIdentifier] = useState(''); // username ATAU email
+  const [identifier, setIdentifier] = useState(''); // username OR email
   const [password, setPassword]     = useState('');
   const [error, setError]           = useState('');
   const [loading, setLoading]       = useState(false);
 
-  // STATE: Kontrol Avatar Widget (Digital Assistant)
+  // STATE: Avatar Widget control (Digital Assistant)
   const [isAvatarOpen, setIsAvatarOpen] = useState(false);
 
-  // Deteksi apakah input terlihat seperti email
+  // Detect if input looks like an email
   const looksLikeEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
 
   const handleLogin = async (e) => {
@@ -19,7 +19,7 @@ const Login = ({ setUser }) => {
     setLoading(true);
 
     try {
-      // Kirim sebagai field 'username' — backend akan cek apakah itu email atau username
+      // Send as 'username' field — backend will check whether it's an email or username
       const response = await axios.post(
         '/api/auth/login',
         { username: identifier.trim(), password },
@@ -31,15 +31,15 @@ const Login = ({ setUser }) => {
 
     } catch (err) {
       console.error('❌ Login failed', err);
-      let errorMessage = 'Login gagal';
+      let errorMessage = 'Login failed';
       if (err.response) {
         if (err.response.status === 401) {
-          errorMessage = 'Username/email atau password tidak valid.';
+          errorMessage = 'Invalid username/email or password.';
         } else {
-          errorMessage = err.response.data?.error || 'Terjadi kesalahan sistem.';
+          errorMessage = err.response.data?.error || 'A system error occurred.';
         }
       } else {
-        errorMessage = 'Tidak dapat terhubung ke server.';
+        errorMessage = 'Unable to connect to the server.';
       }
       setError(errorMessage);
     } finally {
@@ -51,7 +51,7 @@ const Login = ({ setUser }) => {
     <div className="min-h-screen w-full flex items-center justify-center bg-steel-lightest font-sans p-4 relative overflow-hidden">
 
       {/* =========================================
-          KOTAK LOGIN UTAMA (CENTERED CARD)
+          MAIN LOGIN CARD (CENTERED)
           ========================================= */}
       <div className="w-full max-w-md bg-white p-8 sm:p-10 rounded-2xl shadow-lg border border-steel-light/20 z-20">
 
@@ -78,17 +78,17 @@ const Login = ({ setUser }) => {
 
         <div className="mb-6 border-b border-steel-lightest pb-4">
           <h3 className="text-lg font-bold text-gray-800 text-center">Sign In</h3>
-          <p className="text-steel text-sm mt-1 text-center">Gunakan akun Active Directory Anda</p>
+          <p className="text-steel text-sm mt-1 text-center">Use your Active Directory account</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
 
-          {/* ── Username atau Email ─────────────────────────── */}
+          {/* ── Username or Email ───────────────────────────── */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-steel uppercase">Username atau Email</label>
+            <label className="text-xs font-bold text-steel uppercase">Username or Email</label>
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                {/* Icon berubah: person kalau username, envelope kalau email */}
+                {/* Icon switches: person for username, envelope for email */}
                 {looksLikeEmail(identifier) ? (
                   <svg className="h-5 w-5 text-steel-light group-focus-within:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -104,14 +104,14 @@ const Login = ({ setUser }) => {
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-steel-lightest/50 border border-steel-light/50 rounded-lg text-gray-800 placeholder-steel-light focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                placeholder="user.name atau user@gyssteel.com"
+                placeholder="user.name or user@gyssteel.com"
                 required
                 autoFocus
                 autoComplete="username"
               />
             </div>
             <p className="text-[10px] text-steel-light pl-0.5">
-              Bisa menggunakan username (contoh: <span className="font-mono font-medium">john.doe</span>) atau email perusahaan
+              You can use your username (e.g. <span className="font-mono font-medium">john.doe</span>) or your company email
             </p>
           </div>
 
@@ -156,10 +156,10 @@ const Login = ({ setUser }) => {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span>Memverifikasi...</span>
+                <span>Verifying...</span>
               </>
             ) : (
-              <span>MASUK</span>
+              <span>SIGN IN</span>
             )}
           </button>
         </form>
@@ -167,13 +167,13 @@ const Login = ({ setUser }) => {
         <div className="mt-8 pt-6">
           <p className="text-steel-light text-xs text-center leading-relaxed">
             &copy; 2026 PT Garuda Yamato Steel.<br/>
-            Khusus Pengguna yang Berwenang.
+            Authorized Users Only.
           </p>
         </div>
       </div>
 
       {/* =========================================
-          FLOATING AVATAR WIDGET (NONAKTIF/DIKOMENTARI)
+          FLOATING AVATAR WIDGET (DISABLED/COMMENTED OUT)
           ========================================= */}
       {/* {isAvatarOpen && (
         <div className="fixed bottom-24 right-6 z-50 animate-in slide-in-from-bottom-5 duration-300">
