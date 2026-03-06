@@ -13,7 +13,7 @@ import adminRoutes from './routes/admin.js';
 import chatRoutes from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes from './routes/embed.js';
-app.use('/api/embed', embedRoutes);
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -105,7 +105,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/smartsheet', smartsheetRoutes);
-
+app.use('/api/embed', embedRoutes);
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint Not Found' }));
