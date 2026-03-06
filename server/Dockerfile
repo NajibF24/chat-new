@@ -19,6 +19,7 @@ COPY . .
 RUN mkdir -p /usr/src/app/data && \
     mkdir -p /usr/src/app/uploads/avatars && \
     mkdir -p /usr/src/app/uploads/knowledge && \
+    mkdir -p /usr/src/app/public/embed && \
     chown -R node:node /usr/src/app
 
 # [SECURITY FIX] Beralih ke User 'node' (Bukan Root lagi)
