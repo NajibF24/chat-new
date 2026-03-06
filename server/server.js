@@ -12,7 +12,8 @@ import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import chatRoutes from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
-
+import embedRoutes from './routes/embed.js';
+app.use('/api/embed', embedRoutes);
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);

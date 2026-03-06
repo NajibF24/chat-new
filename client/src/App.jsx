@@ -4,7 +4,7 @@ import axios from 'axios';
 import Login from './components/Login';
 import Chat from './components/Chat';
 import AdminDashboard from './components/AdminDashboard';
-
+import EmbedChat from './components/EmbedChat';
 // ✅ CRITICAL: Configure axios for HTTPS with credentials
 axios.defaults.withCredentials = true; // ✅ MUST for cookies/session
 axios.defaults.baseURL = ''; // ✅ Empty = relative URLs (nginx proxies to backend)
@@ -128,6 +128,9 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* ✅ Embed route — SELALU accessible, handle auth sendiri */}
+        <Route path="/embed/:botId" element={<EmbedChat />} />
+        {/* Auth-gated routes */}
         {!user ? (
           <>
             <Route path="/login" element={<Login setUser={setUser} />} />

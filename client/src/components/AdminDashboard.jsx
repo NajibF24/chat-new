@@ -8,6 +8,7 @@ import {
 import { Line, Doughnut } from 'react-chartjs-2';
 import BotAvatar from './BotAvatar';
 import AvatarPicker from './AvatarPicker';
+import EmbedCodeModal from './EmbedCodeModal';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, ArcElement, Filler);
 
@@ -172,6 +173,9 @@ function AdminDashboard({ user, handleLogout }) {
 
   const [avatarPickerBot, setAvatarPickerBot] = useState(null);
   const [botSearch, setBotSearch] = useState('');
+
+  // ── Embed modal state ──────────────────────────────────────
+  const [embedBot, setEmbedBot] = useState(null);
 
   useEffect(() => { fetchStats(); fetchUsers(); fetchBots(); }, []);
   useEffect(() => { if (activeTab === 'chats') fetchChatLogs(); }, [activeTab, logPage]);
@@ -519,13 +523,23 @@ function AdminDashboard({ user, handleLogout }) {
                       </div>
                     )}
 
-                    <div className="flex flex-wrap gap-1 mt-auto pt-3 border-t border-steel-light/20">
-                      {bot.smartsheetConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded font-bold">Smartsheet</span>}
-                      {bot.kouventaConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold">Kouventa</span>}
-                      {bot.onedriveConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded font-bold">OneDrive</span>}
-                      {!bot.smartsheetConfig?.enabled && !bot.kouventaConfig?.enabled && !bot.onedriveConfig?.enabled && (
-                        <span className="text-[9px] text-steel">No integrations</span>
-                      )}
+                    {/* ── Bot card footer: integrations + Embed button ── */}
+                    <div className="flex items-center justify-between flex-wrap gap-1 mt-auto pt-3 border-t border-steel-light/20">
+                      <div className="flex flex-wrap gap-1">
+                        {bot.smartsheetConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded font-bold">Smartsheet</span>}
+                        {bot.kouventaConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold">Kouventa</span>}
+                        {bot.onedriveConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded font-bold">OneDrive</span>}
+                        {!bot.smartsheetConfig?.enabled && !bot.kouventaConfig?.enabled && !bot.onedriveConfig?.enabled && (
+                          <span className="text-[9px] text-steel">No integrations</span>
+                        )}
+                      </div>
+                      {/* ── Embed button ── */}
+                      <button
+                        onClick={() => setEmbedBot(bot)}
+                        className="text-[10px] font-bold px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1"
+                        title="Get embed code">
+                        ⊞ Embed
+                      </button>
                     </div>
                   </div>
                 );
@@ -1137,6 +1151,10 @@ function AdminDashboard({ user, handleLogout }) {
 
       {/* ── AVATAR PICKER ─────────────────────────────────────── */}
       {avatarPickerBot && <AvatarPicker bot={avatarPickerBot} onSave={handleAvatarSaved} onClose={() => setAvatarPickerBot(null)} />}
+
+      {/* ── EMBED CODE MODAL ──────────────────────────────────── */}
+      {embedBot && <EmbedCodeModal bot={embedBot} onClose={() => setEmbedBot(null)} />}
+
     </div>
   );
 }
