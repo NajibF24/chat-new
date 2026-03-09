@@ -46,7 +46,7 @@ class OneDriveService {
     const response = await axios.get(`https://graph.microsoft.com/v1.0${endpoint}`, {
       headers: { Authorization: `Bearer ${token}` },
       params,
-      timeout: 20_000,
+      timeout: 10_000,
     });
     return response.data;
   }
@@ -54,46 +54,75 @@ class OneDriveService {
   // ── 2. Parse folder URL → driveId + folderPath ───────────────
   // Supports:
   //   https://company.sharepoint.com/sites/MySite/Shared%20Documents/MyFolder
-  //   https://company-my.sharepoint.com/personal/user_company_com/Documents/MyFolder
+  //   https://company-my.sharepoint.com/personal/user/Documents/MyFolder
+  //   https://company-my.sharepoint.com/my?id=%2Fpersonal%2Fuser%2FDocuments%2FFolder
   async parseFolderUrl(folderUrl) {
     const url      = new URL(folderUrl);
     const hostname = url.hostname;
-    const pathname = decodeURIComponent(url.pathname);
 
-    // Personal OneDrive (my.sharepoint.com)
-    if (hostname.includes('-my.sharepoint.com')) {
-      const parts       = pathname.split('/');
-      const personalIdx = parts.indexOf('personal');
-      if (personalIdx === -1) throw new Error('URL OneDrive personal tidak valid');
-      const userPrincipal = parts[personalIdx + 1];
-      const folderPath    = parts.slice(personalIdx + 3).join('/');
-
-      const site   = await this.graphGet(`/sites/${hostname}:/personal/${userPrincipal}`);
-      const drives = await this.graphGet(`/sites/${site.id}/drives`);
-      const drive  = drives.value[0];
-      return { driveId: drive.id, folderPath, type: 'personal' };
+    // ── Resolve query-param style URL (?id=/personal/user/Documents/Folder)
+    // e.g. https://ptgys-my.sharepoint.com/my?id=%2Fpersonal%2Fadmin_gyssteel_com%2FDocuments%2FGYS%20Procedures
+    let pathname = url.pathname;
+    if (url.searchParams.has('id')) {
+      const idParam = decodeURIComponent(url.searchParams.get('id'));
+      // idParam = /personal/admin_gyssteel_com/Documents/GYS Procedures
+      pathname = idParam;
+    } else {
+      pathname = url.pathname.split('/').map(p => decodeURIComponent(p)).join('/');
     }
 
-    // SharePoint site
-    const siteMatch = pathname.match(/^\/sites\/([^/]+)/);
+    console.log(`[OneDrive] Resolving pathname: "${pathname}" on host: ${hostname}`);
+
+    // ── Personal OneDrive: /personal/user_domain_com/Documents/...
+    const personalMatch = pathname.match(/^\/personal\/([^/]+)(?:\/Documents)?(?:\/(.*))?$/);
+    if (personalMatch || hostname.includes('-my.sharepoint.com')) {
+      const parts       = pathname.split('/').filter(Boolean);
+      const personalIdx = parts.indexOf('personal');
+
+      if (personalIdx !== -1) {
+        const userPrincipal = parts[personalIdx + 1]; // admin_gyssteel_com
+        // Setelah /personal/user/Documents/ → folder path
+        const afterDocs = parts.slice(personalIdx + 3); // skip personal, user, Documents
+        const folderPath = afterDocs.join('/');
+
+        console.log(`[OneDrive] Personal drive user="${userPrincipal}", folderPath="${folderPath}"`);
+
+        const site   = await this.graphGet(`/sites/${hostname}:/personal/${userPrincipal}`);
+        const drives = await this.graphGet(`/sites/${site.id}/drives`);
+        const drive  = drives.value[0];
+        return { driveId: drive.id, folderPath, type: 'personal' };
+      }
+    }
+
+    // ── SharePoint site: /sites/SiteName/...
+    const siteMatch = pathname.match(/^\/sites\/([^/]+)(.*)/);
     if (siteMatch) {
-      const siteName = siteMatch[1];
-      const site     = await this.graphGet(`/sites/${hostname}:/sites/${siteName}`);
-      const drives   = await this.graphGet(`/sites/${site.id}/drives`);
-      const drive    = drives.value.find(d =>
-        d.name === 'Documents' || d.name === 'Shared Documents'
-      ) || drives.value[0];
+      const siteName  = siteMatch[1];
+      const afterSite = siteMatch[2] || '';
+      const afterParts = afterSite.split('/').filter(Boolean);
 
-      // Ambil folder path setelah /Shared Documents/ atau /Documents/
-      const folderPath = pathname
-        .replace(`/sites/${siteName}/Shared Documents`, '')
-        .replace(`/sites/${siteName}/Documents`, '')
-        .replace(/^\//, '');
+      const site   = await this.graphGet(`/sites/${hostname}:/sites/${siteName}`);
+      const drives = await this.graphGet(`/sites/${site.id}/drives`);
 
+      const libraryNames = ['shared documents', 'documents', 'dokumen bersama'];
+      let drive, folderPath;
+
+      if (afterParts.length > 0 && libraryNames.includes(afterParts[0].toLowerCase())) {
+        drive      = drives.value.find(d => d.name.toLowerCase() === afterParts[0].toLowerCase())
+                  || drives.value.find(d => d.name === 'Shared Documents' || d.name === 'Documents')
+                  || drives.value[0];
+        folderPath = afterParts.slice(1).join('/');
+      } else {
+        drive      = drives.value.find(d => d.name === 'Shared Documents' || d.name === 'Documents')
+                  || drives.value[0];
+        folderPath = afterParts.join('/');
+      }
+
+      console.log(`[OneDrive] SharePoint site="${siteName}", drive="${drive?.name}", folderPath="${folderPath}"`);
       return { driveId: drive.id, siteId: site.id, folderPath, type: 'sharepoint' };
     }
 
-    throw new Error('Format URL OneDrive/SharePoint tidak dikenali');
+    throw new Error(`Format URL tidak dikenali. Gunakan URL dari address bar SharePoint/OneDrive.`);
   }
 
   // ── 3a. List isi 1 folder (1 level) ──────────────────────────
@@ -109,13 +138,11 @@ class OneDriveService {
     return data.value || [];
   }
 
-  // ── 3b. List files rekursif ke semua subfolder ────────────────
-  async _listFilesRecursive(driveId, folderPath, depth = 0, maxDepth = 4) {
+  // ── 3b. List files rekursif — parallel per level ──────────────
+  async _listFilesRecursive(driveId, folderPath, depth = 0, maxDepth = 3) {
     if (depth > maxDepth) return [];
 
-    let results = [];
     let items;
-
     try {
       items = await this._listFolderItems(driveId, folderPath);
     } catch (err) {
@@ -123,11 +150,14 @@ class OneDriveService {
       return [];
     }
 
+    const files   = [];
+    const folders = [];
+
     for (const item of items) {
       if (item.file) {
         const ext = (item.name.split('.').pop() || '').toLowerCase();
         if (SUPPORTED_EXT.includes(ext)) {
-          results.push({
+          files.push({
             id:           item.id,
             name:         item.name,
             size:         item.size || 0,
@@ -138,13 +168,26 @@ class OneDriveService {
           });
         }
       } else if (item.folder && depth < maxDepth) {
-        const subPath  = folderPath ? `${folderPath}/${item.name}` : item.name;
-        const subFiles = await this._listFilesRecursive(driveId, subPath, depth + 1, maxDepth);
-        results        = results.concat(subFiles);
+        folders.push(item.name);
       }
     }
 
-    return results;
+    // Proses subfolder secara PARALLEL (max 5 concurrent)
+    const CHUNK = 5;
+    let subResults = [];
+    for (let i = 0; i < folders.length; i += CHUNK) {
+      const chunk   = folders.slice(i, i + CHUNK);
+      const pending = chunk.map(name => {
+        const subPath = folderPath ? `${folderPath}/${name}` : name;
+        return this._listFilesRecursive(driveId, subPath, depth + 1, maxDepth);
+      });
+      const settled = await Promise.allSettled(pending);
+      for (const r of settled) {
+        if (r.status === 'fulfilled') subResults = subResults.concat(r.value);
+      }
+    }
+
+    return files.concat(subResults);
   }
 
   // ── 3. List files (rekursif semua subfolder) ──────────────────
