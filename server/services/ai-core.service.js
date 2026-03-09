@@ -15,6 +15,7 @@ import KnowledgeBaseService   from './knowledge-base.service.js';
 import SmartsheetLiveService  from './smartsheet-live.service.js';
 import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
+import OneDriveService from './onedrive.service.js';
 
 class AICoreService {
   constructor() {
@@ -103,6 +104,32 @@ class AICoreService {
       } catch (e) {
         console.error('Smartsheet Error:', e.message);
         contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
+      }
+    }
+    
+    // ── ONEDRIVE ─────────────────────────────────────────────
+    if (
+      bot.onedriveConfig?.enabled &&
+      bot.onedriveConfig?.folderUrl &&
+      bot.onedriveConfig?.tenantId &&
+      bot.onedriveConfig?.clientId &&
+      bot.onedriveConfig?.clientSecret
+    ) {
+      try {
+        const oneDrive = new OneDriveService(
+          bot.onedriveConfig.tenantId,
+          bot.onedriveConfig.clientId,
+          bot.onedriveConfig.clientSecret,
+        );
+        const odContext = await oneDrive.buildContext(
+          bot.onedriveConfig.folderUrl,
+          message || '',
+        );
+        contextData += odContext;
+        console.log('✅ OneDrive context injected');
+      } catch (e) {
+        console.error('OneDrive Error:', e.message);
+        contextData += `\n\n=== 📁 ONEDRIVE ===\n❌ Gagal koneksi: ${e.message}\n`;
       }
     }
 

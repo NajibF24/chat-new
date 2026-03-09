@@ -299,6 +299,7 @@ function AdminDashboard({ user, handleLogout }) {
   const [botForm,      setBotForm]      = useState(initialBotState);
   const [botModalTab,  setBotModalTab]  = useState('basic');
   const [testAIState,  setTestAIState]  = useState(null);
+  const [onedriveTestState, setOnedriveTestState] = useState(null);
   const [knowledgeUploading, setKnowledgeUploading] = useState(false);
   const [knowledgeFiles,     setKnowledgeFiles]     = useState([]);
   const knowledgeInputRef = useRef(null);
@@ -433,7 +434,21 @@ function AdminDashboard({ user, handleLogout }) {
       setTestAIState(res.data);
     } catch (err) { setTestAIState({ ok: false, message: err.response?.data?.message || err.message }); }
   };
-
+  
+  const handleTestOneDrive = async () => {
+    setOnedriveTestState('testing');
+    try {
+      if (editingBot) {
+        await axios.put(`/api/admin/bots/${editingBot._id}`, { ...botForm });
+        const res = await axios.post(`/api/admin/bots/${editingBot._id}/test-onedrive`);
+        setOnedriveTestState(res.data);
+      } else {
+        setOnedriveTestState({ ok: false, message: 'Simpan bot terlebih dahulu sebelum test koneksi.' });
+      }
+    } catch (err) {
+      setOnedriveTestState({ ok: false, message: err.response?.data?.error || err.message });
+    }
+  };
   // ── Knowledge ───────────────────────────────────────────────
   const handleKnowledgeUpload = async (e) => {
     const files = e.target.files;
@@ -1232,9 +1247,9 @@ function AdminDashboard({ user, handleLogout }) {
 
               {botModalTab === 'integrations' && (
                 <div className="space-y-4">
+                  {/* Smartsheet */}
                   {[
                     { key: 'smartsheet', label: 'Smartsheet Integration', icon: '📊', fields: [{ key: 'sheetId', label: 'Sheet ID', type: 'text' }, { key: 'apiKey', label: 'API Key (override .env)', type: 'password' }] },
-                    { key: 'onedrive',   label: 'OneDrive Integration',   icon: '☁️', fields: [{ key: 'folderUrl', label: 'Folder URL', type: 'text' }, { key: 'tenantId', label: 'Tenant ID', type: 'text' }, { key: 'clientId', label: 'Client ID', type: 'text' }, { key: 'clientSecret', label: 'Client Secret', type: 'password' }] },
                     { key: 'kouventa',   label: 'Kouventa AI Engine',     icon: '🔗', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
                   ].map(intg => {
                     const configKey = `${intg.key}Config`;
@@ -1260,6 +1275,120 @@ function AdminDashboard({ user, handleLogout }) {
                       </div>
                     );
                   })}
+
+                  {/* ── OneDrive — custom block dengan Test Connection ── */}
+                  {(() => {
+                    const config = botForm.onedriveConfig || {};
+                    return (
+                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-sky-300 bg-sky-50/40' : 'border-steel-light/30 bg-white'}`}>
+                        {/* Header toggle */}
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">☁️</span>
+                            <span className="font-bold text-sm">OneDrive / SharePoint Integration</span>
+                          </div>
+                          <button type="button" onClick={() => { setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, enabled: !config.enabled } })); setOnedriveTestState(null); }}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-sky-600' : 'bg-gray-200'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+
+                        {config.enabled && (
+                          <div className="space-y-3">
+                            {/* Info box */}
+                            <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-[10px] text-sky-700">
+                              📋 Bot akan membaca file dari folder OneDrive/SharePoint dan menjawab berdasarkan kontennya. Gunakan <strong>Application permissions</strong> di Azure AD.
+                            </div>
+
+                            {/* Folder URL — full width */}
+                            <div>
+                              <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">Folder URL</label>
+                              <input type="text" placeholder="https://company.sharepoint.com/sites/SiteName/Shared Documents/FolderName" autoComplete="off"
+                                className="w-full bg-white border border-steel-light/50 rounded-lg p-2 text-xs outline-none focus:border-sky-400 transition-all"
+                                value={config.folderUrl || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, folderUrl: e.target.value } }))} />
+                            </div>
+
+                            {/* Tenant ID + Client ID — 2 kolom */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">Tenant ID</label>
+                                <input type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autoComplete="off"
+                                  className="w-full bg-white border border-steel-light/50 rounded-lg p-2 text-xs font-mono outline-none focus:border-sky-400 transition-all"
+                                  value={config.tenantId || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, tenantId: e.target.value } }))} />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">Client ID</label>
+                                <input type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autoComplete="off"
+                                  className="w-full bg-white border border-steel-light/50 rounded-lg p-2 text-xs font-mono outline-none focus:border-sky-400 transition-all"
+                                  value={config.clientId || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, clientId: e.target.value } }))} />
+                              </div>
+                            </div>
+
+                            {/* Client Secret — full width */}
+                            <div>
+                              <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">Client Secret</label>
+                              <input type="password" placeholder="Client Secret Value (dari Azure App Registration)" autoComplete="new-password"
+                                className="w-full bg-white border border-steel-light/50 rounded-lg p-2 text-xs outline-none focus:border-sky-400 transition-all"
+                                value={config.clientSecret || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, clientSecret: e.target.value } }))} />
+                            </div>
+
+                            {/* Required permissions info */}
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-[10px] text-amber-700 space-y-0.5">
+                              <p className="font-bold">⚠️ Azure App Permissions yang dibutuhkan:</p>
+                              <p>✅ <code className="bg-amber-100 px-1 rounded">Files.Read.All</code> — Application</p>
+                              <p>✅ <code className="bg-amber-100 px-1 rounded">Sites.Read.All</code> — Application</p>
+                              <p className="text-amber-600 mt-1">Pastikan sudah di-grant Admin Consent di Azure Portal.</p>
+                            </div>
+
+                            {/* Test Connection button + result */}
+                            <div className="pt-1 border-t border-steel-light/20">
+                              <button type="button" onClick={handleTestOneDrive}
+                                disabled={onedriveTestState === 'testing' || !config.folderUrl || !config.tenantId || !config.clientId || !config.clientSecret}
+                                className="px-4 py-2 bg-sky-600 text-white text-xs font-bold rounded-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
+                                {onedriveTestState === 'testing'
+                                  ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block"></span> Testing...</>
+                                  : '🔌 Test Koneksi OneDrive'}
+                              </button>
+
+                              {/* Hasil test */}
+                              {onedriveTestState && onedriveTestState !== 'testing' && (
+                                <div className={`mt-2 p-3 rounded-lg text-xs font-medium border ${onedriveTestState.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                  {onedriveTestState.ok ? (
+                                    <div className="space-y-1">
+                                      <p className="font-bold">✅ Koneksi berhasil!</p>
+                                      {onedriveTestState.fileCount !== undefined && (
+                                        <p>📁 Ditemukan <strong>{onedriveTestState.fileCount} file</strong> di folder</p>
+                                      )}
+                                      {onedriveTestState.files && onedriveTestState.files.length > 0 && (
+                                        <div className="mt-2 space-y-0.5">
+                                          {onedriveTestState.files.slice(0, 5).map((f, i) => (
+                                            <p key={i} className="text-[10px] text-emerald-600">📄 {f}</p>
+                                          ))}
+                                          {onedriveTestState.files.length > 5 && <p className="text-[10px] text-emerald-500 italic">...dan {onedriveTestState.files.length - 5} file lainnya</p>}
+                                        </div>
+                                      )}
+                                      {onedriveTestState.message && <p className="text-[10px] text-emerald-600">{onedriveTestState.message}</p>}
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      <p className="font-bold">❌ Koneksi gagal</p>
+                                      <p>{onedriveTestState.message}</p>
+                                      {onedriveTestState.hint && <p className="text-[10px] italic mt-1">💡 {onedriveTestState.hint}</p>}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Info jika bot belum disimpan */}
+                              {!editingBot && (
+                                <p className="text-[10px] text-amber-600 font-bold mt-2">⚠️ Simpan bot terlebih dahulu untuk mengaktifkan Test Koneksi</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>

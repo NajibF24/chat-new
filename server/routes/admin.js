@@ -14,6 +14,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import AIProviderService, { AI_PROVIDERS } from '../services/ai-provider.service.js';
 import KnowledgeBaseService from '../services/knowledge-base.service.js';
 import AuditService from '../services/audit.service.js';
+import OneDriveService from '../services/onedrive.service.js';
 
 const router = express.Router();
 
@@ -666,6 +667,24 @@ router.get('/export-chats', requireAdmin, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
     res.send(csv);
   } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.post('/bots/:id/test-onedrive', requireAdmin, async (req, res) => {
+  try {
+    const bot = await Bot.findById(req.params.id);
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+
+    const cfg = bot.onedriveConfig;
+    if (!cfg?.enabled || !cfg?.tenantId || !cfg?.clientId || !cfg?.clientSecret) {
+      return res.status(400).json({ error: 'OneDrive belum dikonfigurasi lengkap' });
+    }
+
+    const svc    = new OneDriveService(cfg.tenantId, cfg.clientId, cfg.clientSecret);
+    const result = await svc.testConnection(cfg.folderUrl);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
 });
 
 export default router;
