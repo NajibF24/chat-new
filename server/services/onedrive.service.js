@@ -1,5 +1,5 @@
 // server/services/onedrive.service.js
-const axios = require('axios');
+import axios from 'axios';
 
 const SUPPORTED_EXT = ['pdf','docx','doc','xlsx','xls','txt','csv','md','pptx','ppt'];
 
@@ -172,19 +172,19 @@ class OneDriveService {
 
     try {
       if (ext === 'pdf') {
-        const pdfParse = require('pdf-parse');
-        const data     = await pdfParse(buffer);
+        const { default: pdfParse } = await import('pdf-parse');
+        const data = await pdfParse(buffer);
         return data.text.substring(0, 15_000);
       }
 
       if (ext === 'docx' || ext === 'doc') {
-        const mammoth = require('mammoth');
-        const result  = await mammoth.extractRawText({ buffer });
+        const { default: mammoth } = await import('mammoth');
+        const result = await mammoth.extractRawText({ buffer });
         return result.value.substring(0, 15_000);
       }
 
       if (ext === 'xlsx' || ext === 'xls') {
-        const XLSX = require('xlsx');
+        const { default: XLSX } = await import('xlsx');
         const wb   = XLSX.read(buffer, { type: 'buffer' });
         const text = wb.SheetNames
           .map(n => `[Sheet: ${n}]\n` + XLSX.utils.sheet_to_csv(wb.Sheets[n]))
@@ -193,7 +193,7 @@ class OneDriveService {
       }
 
       if (ext === 'pptx' || ext === 'ppt') {
-        const JSZip      = require('jszip');
+        const { default: JSZip } = await import('jszip');
         const zip        = await JSZip.loadAsync(buffer);
         const slideFiles = Object.keys(zip.files)
           .filter(f => /ppt\/slides\/slide\d+\.xml/.test(f))
@@ -309,4 +309,4 @@ class OneDriveService {
   }
 }
 
-module.exports = OneDriveService;
+export default OneDriveService;
