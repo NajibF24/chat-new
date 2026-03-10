@@ -80,21 +80,45 @@ const PptxService = {
           }
         } 
         
-        // ── LAYOUT 3: CHART (EDITABLE DATA) ──
+        // ── LAYOUT 3: CHART (ADVANCED & EDITABLE) ──
         else if (slideData.layout === "CHART") {
+          // Slide Title
           slide.addText(slideData.title, { 
             x: 0.5, y: 0.4, w: "90%", h: 0.8, 
             fontSize: 28, color: "FFFFFF", bold: true 
           });
           slide.addShape(pptx.shapes.LINE, { x: 0.5, y: 1.2, w: 9, h: 0, line: { color: "1E293B", width: 1 } });
           
-          if (slideData.chartData && slideData.chartData.length > 0) {
-            let pptChartType = pptx.ChartType.bar;
-            if (slideData.chartType === "pie") pptChartType = pptx.ChartType.pie;
-            if (slideData.chartType === "line") pptChartType = pptx.ChartType.line;
+          let chartX = 1.5;
+          let chartW = 7;
+          let chartY = 1.5;
+          let chartH = 3.5;
 
-            slide.addChart(pptChartType, slideData.chartData, {
-              x: 1.5, y: 1.5, w: 7, h: 3.5,
+          // Jika AI memberikan insightText, kita buatkan kotak teks elegan di sebelah kiri, dan chart digeser ke kanan
+          if (slideData.insightText) {
+            slide.addText(slideData.insightText, {
+              x: 0.5, y: 1.5, w: 2.8, h: 3.5,
+              fontSize: 16, color: "E2E8F0", valign: "top", 
+              fill: { color: "1E293B" }, // Background kotak insight
+              margin: 15, // Padding dalam kotak
+              bold: false
+            });
+            chartX = 3.6; // Geser chart ke kanan
+            chartW = 5.9; // Sesuaikan lebar chart
+          }
+
+          // Ambil konfigurasi (Bisa dari chartConfig baru, atau fallback ke skema lama jika AI nge-blank)
+          let config = slideData.chartConfig || slideData;
+          let cData = config.data || config.chartData;
+          let cType = config.type || config.chartType || "bar";
+
+          if (cData && cData.length > 0) {
+            let pptChartType = pptx.ChartType.bar;
+            if (cType === "pie" || cType === "donut") pptChartType = pptx.ChartType.pie;
+            if (cType === "line") pptChartType = pptx.ChartType.line;
+
+            let chartOptions = {
+              x: chartX, y: chartY, w: chartW, h: chartH,
               showTitle: false,
               showLegend: true,
               legendPos: "b",
@@ -103,8 +127,25 @@ const PptxService = {
               dataLabelColor: "FFFFFF",
               valAxisLabelColor: "94A3B8",
               catAxisLabelColor: "94A3B8",
-              gridLineColor: "1E293B"
-            });
+              gridLineColor: "1E293B",
+              
+              // FITUR BARU DARI JSON SKEMA TINGKAT LANJUT
+              showValue: config.showDataLabels === true,
+              barGrouping: config.isStacked ? "stacked" : "clustered",
+            };
+
+            // Tambahkan label sumbu X dan Y jika AI memberikannya
+            if (config.xAxisTitle) {
+              chartOptions.catAxisTitle = config.xAxisTitle;
+              chartOptions.catAxisTitleColor = "94A3B8";
+            }
+            if (config.yAxisTitle) {
+              chartOptions.valAxisTitle = config.yAxisTitle;
+              chartOptions.valAxisTitleColor = "94A3B8";
+            }
+
+            // Gambar Chart!
+            slide.addChart(pptChartType, cData, chartOptions);
           }
         }
       });

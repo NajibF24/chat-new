@@ -362,7 +362,7 @@ RULES:
 
 // ── STEP 3: AI generates JSON structure for Native PPT ─────────────
       console.log(`📊 [PPT] Generating Native JSON slides...`);
-      const jsonPrompt = `You are a data architect for PowerPoint presentations.
+      const jsonPrompt = `You are an elite data architect for Executive PowerPoint presentations.
 Based on the presentation content, create a structured JSON for a native PowerPoint presentation.
       
 Return ONLY valid JSON. No markdown formatting (\`\`\`json).
@@ -382,17 +382,25 @@ Structure:
     {
       "layout": "CHART",
       "title": "Data Comparison (IMPORTANT)",
-      "chartType": "bar",
-      "chartData": [
-        { "name": "Model Tradisional", "labels": ["Q1", "Q2", "Q3"], "values": [10, 25, 40] },
-        { "name": "DevSecOps", "labels": ["Q1", "Q2", "Q3"], "values": [30, 50, 80] }
-      ]
+      "insightText": "Berikan 1-2 kalimat konklusi atau insight bisnis dari data di samping agar slide terlihat seperti buatan konsultan profesional.",
+      "chartConfig": {
+        "type": "bar",
+        "isStacked": false,
+        "showDataLabels": true,
+        "xAxisTitle": "Kategori",
+        "yAxisTitle": "Nilai",
+        "data": [
+          { "name": "Model Tradisional", "labels": ["Q1", "Q2", "Q3"], "values": [10, 25, 40] },
+          { "name": "DevSecOps", "labels": ["Q1", "Q2", "Q3"], "values": [30, 50, 80] }
+        ]
+      }
     }
   ]
 }
 RULES: 
-- Include at least 2 CHART slides (use chartType "bar", "pie", or "line").
-- Make sure "chartData" contains actual numbers and labels relevant to the topic.`;
+- ALWAYS use the "CHART" layout when there is data, comparisons, or metrics. Include at least 2 CHART slides.
+- You MUST provide "insightText" for every CHART slide to explain the business impact of the numbers.
+- Ensure "chartConfig.data" contains actual numbers and labels relevant to the topic.`;
 
       const jsonRes = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
