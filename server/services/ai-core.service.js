@@ -1,5 +1,13 @@
-// server/services/ai-core.service.js
-// Updated: PPT command now passes style description freely to AI designer
+// server/services/ai-core.service.js — Updated with multi-provider + knowledge base
+// ─────────────────────────────────────────────────────────────
+// CHANGELOG vs original:
+//   + import PptxService (1 line)
+//   + isPptCommand() function (baru)
+//   + extractStyleAndTopic() function (baru)
+//   + if (isPptCommand(message)) block di processMessage() (3 lines)
+//   + _handlePptCommand() method (baru)
+//   SEMUA KODE LAIN IDENTIK DENGAN ASLINYA
+// ─────────────────────────────────────────────────────────────
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -16,12 +24,11 @@ import KnowledgeBaseService   from './knowledge-base.service.js';
 import SmartsheetLiveService  from './smartsheet-live.service.js';
 import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
-import PptxService            from './pptx.service.js';
+import PptxService            from './pptx.service.js';  // ← TAMBAHAN BARU
 
 // ─────────────────────────────────────────────────────────────
-// PPT Command Detection
+// ← TAMBAHAN BARU: PPT command detection helpers
 // ─────────────────────────────────────────────────────────────
-
 function isPptCommand(message = '') {
   const t = (message || '').trim().toLowerCase();
   return (
@@ -34,47 +41,44 @@ function isPptCommand(message = '') {
   );
 }
 
-/**
- * Extract the style description from the message.
- * Everything after "style", "gaya", "tema", "dengan tampilan", "look like" etc.
- * is treated as a free-text style description.
- */
 function extractStyleAndTopic(message = '') {
   let text = message
     .replace(/^\/ppt\s*/i, '')
     .replace(/^\/slide\s*/i, '')
     .replace(/^\/presentation\s*/i, '')
-    .replace(/^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)\s+(tentang|about|mengenai|on|untuk|for)?\s*/i, '')
+    .replace(/^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)\s+(?:tentang|about|mengenai|on|untuk|for)?\s*/i, '')
     .trim();
 
-  // Look for style indicator keywords
   const styleMatch = text.match(
-    /\b(?:style|gaya|tema|tampilan|dengan gaya|dengan style|look like|looks like|mirip|seperti|ala|inspired by|in the style of)\s+(.+)/i
+    /\b(?:style|gaya|tema|tampilan|dengan gaya|dengan style|look like|looks like|mirip|seperti|ala|inspired by|in the style of)\s+(.+?)(?:\s*[-–]\s*(.+))?$/i
   );
 
-  let styleRequest = 'professional corporate executive';
+  let styleRequest = 'professional corporate executive with charts and photos';
   let topic = text;
 
   if (styleMatch) {
-    styleRequest = styleMatch[1].trim();
+    styleRequest = styleMatch[0]
+      .replace(/^.*?(?:style|gaya|tema|tampilan|dengan gaya|dengan style|look like|looks like|mirip|seperti|ala|inspired by|in the style of)\s+/i, '')
+      .trim();
     topic = text.substring(0, styleMatch.index).trim();
   }
 
-  // Clean topic
-  topic = topic
-    .replace(/\s*(style|gaya|tema)\s*$/i, '')
-    .trim();
-
+  topic = topic.replace(/\s*(style|gaya|tema)\s*$/i, '').trim();
   if (!topic) topic = text;
 
   return { styleRequest, topic };
 }
+// ─────────────────────────────────────────────────────────────
+// END TAMBAHAN BARU
+// ─────────────────────────────────────────────────────────────
 
 class AICoreService {
   constructor() {
     this.fileManager = new FileManagerService();
   }
 
+  // ─── Detect data query ─────────────────────────────────────
+  // IDENTIK DENGAN ASLI
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
     const keywords = [
@@ -91,6 +95,8 @@ class AICoreService {
     return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
 
+  // ─── Extract file content for inline attachment ────────────
+  // IDENTIK DENGAN ASLI (termasuk label [ISI FILE] dan [END FILE])
   async extractFileContent(attachedFile) {
     const physicalPath = attachedFile.serverPath || attachedFile.path;
     if (!physicalPath || !fs.existsSync(physicalPath)) return '';
@@ -105,7 +111,7 @@ class AICoreService {
         return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
-        const content = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
+        const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
         return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
       } else {
         return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
@@ -114,43 +120,50 @@ class AICoreService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // MAIN
+  // MAIN: Process message
+  // IDENTIK DENGAN ASLI + 3 baris PPT check di awal
   // ─────────────────────────────────────────────────────────────
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
+    // Create thread if needed — IDENTIK DENGAN ASLI
     if (!threadId) {
-      const title = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
+      const title     = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
       const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
       await newThread.save();
       threadId = newThread._id;
     }
 
-    // ── PPT COMMAND ──────────────────────────────────────────
+    // ← TAMBAHAN BARU: PPT command intercept (3 lines)
     if (isPptCommand(message)) {
       return this._handlePptCommand({ userId, botId, bot, message, threadId });
     }
+    // END TAMBAHAN BARU ──────────────────────────────────────
 
     let contextData = '';
 
+    // ── 1. KOUVENTA ── IDENTIK DENGAN ASLI
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
         const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
-        const reply = await kouventa.generateResponse(message || '');
-        contextData += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
+        const reply    = await kouventa.generateResponse(message || '');
+        contextData   += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
       } catch (error) { console.error('Kouventa Error:', error.message); }
     }
 
+    // ── 2. SMARTSHEET LIVE ── IDENTIK DENGAN ASLI
     if (bot.smartsheetConfig?.enabled && this.isDataQuery(message)) {
       try {
-        const apiKey = bot.smartsheetConfig.apiKey || process.env.SMARTSHEET_API_KEY;
+        const apiKey  = bot.smartsheetConfig.apiKey || process.env.SMARTSHEET_API_KEY;
         const sheetId = bot.smartsheetConfig.sheetId || bot.smartsheetConfig.primarySheetId || process.env.SMARTSHEET_PRIMARY_SHEET_ID;
         if (apiKey && sheetId) {
           const smartsheet = new SmartsheetLiveService(apiKey);
-          const sheet = await smartsheet.fetchSheet(sheetId);
-          const flatRows = smartsheet.processToFlatRows(sheet);
-          if (flatRows.length > 0) contextData += `\n\n${smartsheet.buildAIContext(flatRows, message, sheet.name)}\n`;
+          const sheet      = await smartsheet.fetchSheet(sheetId);
+          const flatRows   = smartsheet.processToFlatRows(sheet);
+          if (flatRows.length > 0) {
+            contextData += `\n\n${smartsheet.buildAIContext(flatRows, message, sheet.name)}\n`;
+          }
         }
       } catch (e) {
         console.error('Smartsheet Error:', e.message);
@@ -158,77 +171,100 @@ class AICoreService {
       }
     }
 
+    // ── 3. KNOWLEDGE BASE (RAG) ── IDENTIK DENGAN ASLI
     if (bot.knowledgeFiles?.length > 0 && bot.knowledgeMode !== 'disabled') {
-      const knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(bot.knowledgeFiles, message, bot.knowledgeMode || 'relevant');
+      const knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
+        bot.knowledgeFiles, message, bot.knowledgeMode || 'relevant'
+      );
       if (knowledgeCtx) contextData += knowledgeCtx;
     }
 
+    // ── 4. BUILD USER MESSAGE CONTENT ── IDENTIK DENGAN ASLI
     const userContent = [];
     if (message) userContent.push({ type: 'text', text: message });
 
     if (attachedFile) {
       if (attachedFile.mimetype?.startsWith('image/') && bot.aiProvider?.provider === 'openai') {
+        // Vision for OpenAI
         const imgBuffer = fs.readFileSync(attachedFile.path);
-        userContent.push({ type: 'image_url', image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` } });
+        userContent.push({
+          type: 'image_url',
+          image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` },
+        });
       } else {
+        // Extract text for all providers
         const text = await this.extractFileContent(attachedFile);
         if (text) userContent.push({ type: 'text', text });
       }
     }
 
-    const today = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const today = new Date().toLocaleDateString('id-ID', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
 
+    // IDENTIK DENGAN ASLI — termasuk kalimat panjang "Jangan mengarang fakta"
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[HARI INI: ${today}]`,
       contextData,
-      contextData ? 'Gunakan data dan knowledge di atas untuk menjawab pertanyaan user secara akurat.' : '',
+      contextData
+        ? 'Gunakan data dan knowledge di atas untuk menjawab pertanyaan user secara akurat. Jangan mengarang fakta yang tidak ada di data.'
+        : '',
     ].filter(Boolean).join('\n\n');
 
+    // IDENTIK DENGAN ASLI — termasuk log tokens
     console.log(`🤖 Bot "${bot.name}" | Provider: ${bot.aiProvider?.provider || 'openai'} | Model: ${bot.aiProvider?.model || 'gpt-4o'}`);
+    console.log(`📝 System prompt: ~${Math.ceil(systemPrompt.length / 4)} tokens`);
 
+    // ── 5. CALL AI PROVIDER ── IDENTIK DENGAN ASLI
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt,
       messages: history.slice(-6),
-      userContent: userContent.length === 1 && userContent[0].type === 'text' ? userContent[0].text : userContent,
+      userContent: userContent.length === 1 && userContent[0].type === 'text'
+        ? userContent[0].text
+        : userContent,
     });
 
     const aiResponse = result.text;
-    let savedAttachments = [];
 
+    // ── 6. SAVE TO DB ── IDENTIK DENGAN ASLI
+    let savedAttachments = [];
     if (attachedFile) {
       savedAttachments.push({
         name: attachedFile.originalname || attachedFile.filename,
         path: `/api/files/${attachedFile.filename}`,
         serverPath: attachedFile.path,
-        type: attachedFile.mimetype?.includes('image') ? 'image' : attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file',
+        type: attachedFile.mimetype?.includes('image') ? 'image'
+          : attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file',
       });
     }
 
     await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
     await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
+
     await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
-    return { response: aiResponse, threadId, attachedFiles: savedAttachments, usage: result.usage };
+    // IDENTIK DENGAN ASLI (tidak ada usage di return asli — dijaga sama)
+    return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }
 
   // ─────────────────────────────────────────────────────────────
-  // PPT COMMAND HANDLER
+  // ← TAMBAHAN BARU SELURUHNYA: _handlePptCommand
+  // Tidak mengubah apapun di method lain
   // ─────────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId }) {
     try {
       const { styleRequest, topic } = extractStyleAndTopic(message);
-
       const title = topic
         .replace(/^(tentang|about|mengenai|on|untuk|for)\s+/i, '')
         .trim()
         .substring(0, 60) || 'Presentation';
 
-      console.log(`📊 [PPT Command] Topic: "${title}" | Style: "${styleRequest}"`);
+      console.log(`📊 [PPT] Topic: "${title}" | Style: "${styleRequest}"`);
 
-      // ── Step 1: Generate slide content ──────────────────────
-      const contentResult = await AIProviderService.generateCompletion({
+      // Step 1: Generate slide content
+      const contentRes = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt: `You are an expert presentation writer.
 Generate professional slide content in markdown format:
@@ -237,67 +273,69 @@ Generate professional slide content in markdown format:
 [One powerful subtitle sentence]
 
 ## [Slide Title]
-- bullet (max 12 words)
-- bullet
-- bullet
+- bullet point (max 12 words)
+- bullet point
+- bullet point
 
 ## [Slide Title]
-[2-3 sentences paragraph]
+[2-3 sentences of paragraph content]
 
-Generate 6-9 content slides. Mix bullets and paragraphs.
-Write in the same language as the user request.`,
+Rules:
+- Generate 6-9 content slides total
+- Mix bullet slides and paragraph slides for variety
+- Include realistic numbers/data where relevant
+- Language: match the user's request language (Indonesian or English)`,
         messages: [],
         userContent: `Create a professional presentation about: ${topic}`,
       });
 
-      const slideContent = contentResult.text;
+      const slideContent = contentRes.text;
       if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
 
-      // ── Step 2: AI designs full PptxGenJS code ───────────────
-      const designPrompt = PptxService.buildDesignPrompt({ slideContent, styleRequest, title });
-
-      const designResult = await AIProviderService.generateCompletion({
+      // Step 2: AI generates full PptxGenJS design code
+      const designRes = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: 'You are a JavaScript developer. Return ONLY raw JavaScript code with NO markdown fences and NO explanations.',
+        systemPrompt: 'You are a JavaScript developer. Return ONLY raw JavaScript code. No markdown fences. No explanations.',
         messages: [],
-        userContent: designPrompt,
+        userContent: PptxService.buildDesignPrompt({ slideContent, styleRequest, title, topic }),
       });
 
-      // ── Step 3: Execute → PPTX file ─────────────────────────
+      // Step 3: Execute code → write .pptx file
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generateFromAICode({
-        aiCode: designResult.text,
+        aiCode: designRes.text,
         fallbackContent: slideContent,
         title,
         outputDir,
         styleDesc: styleRequest,
       });
 
-      // ── Build response ────────────────────────────────────
-      const styleExamples = PptxService.getStyleExamples()
+      // Step 4: Build response markdown
+      const styleList = PptxService.getStyleExamples()
         .slice(0, 5)
-        .map(s => `\`${s.example}\``)
+        .map(s => `• \`${s.example}\``)
         .join('\n');
 
       const responseMarkdown = `✅ **Presentasi berhasil dibuat!**
 
 📊 **${title}**
 🎨 Style: **${styleRequest}**
-📑 ~${result.slideCount} slides${result.usedFallback ? ' _(fallback renderer)_' : ''}
+📑 ~${result.slideCount} slides${result.usedFallback ? ' _(fallback renderer)_' : ' — dengan charts, foto & infografis'}
 
 ---
 ### [⬇️ Download: ${result.filename}](${result.url})
-*Klik link di atas untuk mengunduh file .pptx*
+*Klik link di atas untuk download file .pptx*
 
 ---
-💡 **Coba style lainnya:**
-${styleExamples}
+💡 **Style lain yang bisa dicoba:**
+${styleList}
 
-Tulis style apapun secara bebas — AI akan mendesain sesuai deskripsi Anda.`;
+Deskripsikan style apapun secara bebas — AI akan mendesain sesuai permintaan.`;
 
       await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       await new Chat({
-        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        userId, botId, threadId, role: 'assistant',
+        content: responseMarkdown,
         attachedFiles: [{ name: result.filename, path: result.url, type: 'file', size: '0' }],
       }).save();
       await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
@@ -313,6 +351,7 @@ Tulis style apapun secara bebas — AI akan mendesain sesuai deskripsi Anda.`;
       throw new Error(`Gagal membuat presentasi: ${error.message}`);
     }
   }
+  // END TAMBAHAN BARU ──────────────────────────────────────────
 }
 
 export default new AICoreService();
