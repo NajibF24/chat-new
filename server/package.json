@@ -35,6 +35,7 @@
     "uuid": "^9.0.1",
     "adm-zip": "^0.5.10",
     "officeparser": "^4.0.7"
+    "pptxgenjs": "^3.12.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

@@ -13,6 +13,7 @@ import adminRoutes from './routes/admin.js';
 import chatRoutes from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes from './routes/embed.js';
+import pptxRoutes from './routes/pptx.js';  // ← NEW
 
 dotenv.config();
 
@@ -29,7 +30,7 @@ app.set('trust proxy', 1);
 app.use(cors({
   origin: true,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],  // ✅ tambah PATCH untuk avatar
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With']
 }));
 
@@ -69,17 +70,16 @@ app.use((req, res, next) => {
 
 const filesPath = path.join(process.cwd(), 'data', 'files');
 const generatedPath = path.join(filesPath, 'generated');
-const avatarsPath = path.join(process.cwd(), 'uploads', 'avatars'); // ✅ folder avatar
+const avatarsPath = path.join(process.cwd(), 'uploads', 'avatars');
 
 console.log('📂 Serving files from:', filesPath);
 console.log('🖼️  Serving avatars from:', avatarsPath);
 
-// Buat semua folder yang dibutuhkan saat server start
 (async () => {
   try {
     await fs.mkdir(filesPath,    { recursive: true });
     await fs.mkdir(generatedPath,{ recursive: true });
-    await fs.mkdir(avatarsPath,  { recursive: true }); // ✅ pastikan folder avatar ada
+    await fs.mkdir(avatarsPath,  { recursive: true });
     console.log('✅ Directories ensured');
   } catch (e) {
     console.error('❌ Failed to create directories:', e);
@@ -92,7 +92,7 @@ app.use('/api/files', (req, res, next) => {
   next();
 }, express.static(filesPath));
 
-// ✅ Serve avatar images — dipanggil dari frontend via /api/avatars/<filename>
+// Serve avatar images
 app.use('/api/avatars', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   next();
@@ -106,6 +106,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/smartsheet', smartsheetRoutes);
 app.use('/api/embed', embedRoutes);
+app.use('/api/pptx', pptxRoutes);  // ← NEW
+
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint Not Found' }));
