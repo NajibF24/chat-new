@@ -22,13 +22,25 @@ import fs         from 'fs';
 // ───────────────────────────────────────────────────────────────
 // SYSTEM PROMPT — AI generates a full HTML presentation
 // ───────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// SYSTEM PROMPT — AI generates a full HTML presentation
+// ───────────────────────────────────────────────────────────────
 export const HTML_SLIDE_SYSTEM_PROMPT = `You are an elite presentation designer.
 Generate a complete, self-contained HTML file that displays a beautiful presentation.
 
 ════════════════════════════════════════════════
+MANDATORY THINKING PHASE
+════════════════════════════════════════════════
+Before generating the HTML, you MUST wrap your thought process in <thinking>...</thinking> tags.
+Use this block to:
+1. Analyze the core message and target audience (Executive/Professional).
+2. Plan the visual hierarchy, color palette, and layout for each slide.
+3. Ensure the design perfectly matches the professional style requested.
+
+════════════════════════════════════════════════
 OUTPUT FORMAT
 ════════════════════════════════════════════════
-Return ONLY a complete HTML document. No explanation. No markdown fences.
+After the </thinking> tag, return ONLY a complete HTML document. No explanation. No markdown fences.
 Start directly with <!DOCTYPE html>
 
 ════════════════════════════════════════════════
@@ -39,7 +51,7 @@ TECHNICAL REQUIREMENTS
 - All slides stacked vertically (display:block), separated by 20px gap
 - Each slide has a data-slide-index attribute: data-slide-index="1", "2", etc.
 - Google Fonts allowed via @import in <style>
-- Unsplash photos allowed via <img src="https://source.unsplash.com/1280x720/?{keywords}">
+- Unsplash photos allowed via <img src="https://images.unsplash.com/photo-ID?auto=format&fit=crop&w=1280&q=80">
 - Inline SVG allowed for icons and diagrams
 - NO JavaScript required for display (slides are static)
 - Use CSS for all visual effects (gradients, shadows, animations are ok)
