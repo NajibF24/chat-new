@@ -372,21 +372,36 @@ Rules: 7-9 slides, mix bullets/paragraphs, include realistic data, match user la
 
       if (!slideContent?.trim()) throw new Error('Empty slide content');
 
-      // ── STEP 3: AI generates HTML presentation ─────────────
+// ── STEP 3: AI generates HTML presentation ─────────────
       console.log(`📊 [PPT] Generating HTML slides — style: "${styleRequest}"`);
       const htmlRes = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        // Gunakan instruksi tegas agar tidak mengulang output aneh
         systemPrompt: 'You are an expert HTML/CSS presentation designer. Return ONLY a complete HTML document. No markdown fences. No explanation. Start immediately with <!DOCTYPE html>',
         messages: [],
         userContent: PptxService.buildHtmlPrompt({ slideContent, styleRequest, title, topic }),
       });
 
-      if (!htmlRes.text?.includes('<')) throw new Error('AI did not return valid HTML');
+      // 🧹 PEMBERSIHAN RESPONSE (SANGAT PENTING!)
+      // AI terkadang bandel menyertakan tag markdown atau <thinking>
+      let rawHtml = htmlRes.text || '';
+      
+      // 1. Hapus tag <thinking> (jika ada)
+      rawHtml = rawHtml.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+      
+      // 2. Hapus code blocks markdown (```html dan ```)
+      rawHtml = rawHtml.replace(/^```html/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
+
+      // Validasi setelah dibersihkan
+      if (!rawHtml.includes('<html') && !rawHtml.includes('<div')) {
+        console.error('AI Output Invalid:', rawHtml.substring(0, 100));
+        throw new Error('AI did not return valid HTML after cleanup');
+      }
 
       // ── STEP 4: HTML → screenshots → PPTX ─────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generate({
-        htmlCode: htmlRes.text,
+        htmlCode: rawHtml,  // <--- PASTIKAN MENGGUNAKAN rawHtml YANG SUDAH BERSIH
         slideContent,
         title,
         outputDir,
