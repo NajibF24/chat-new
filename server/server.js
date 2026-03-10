@@ -13,7 +13,7 @@ import adminRoutes from './routes/admin.js';
 import chatRoutes from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes from './routes/embed.js';
-import pptxRoutes from './routes/pptx.js';  // ← NEW
+import pptxRoutes from './routes/pptx.js'; // ← NEW
 
 dotenv.config();
 
@@ -24,7 +24,6 @@ const app = express();
 const PORT = process.env.SERVER_PORT || 5000;
 
 connectDB();
-
 app.set('trust proxy', 1);
 
 app.use(cors({
@@ -41,21 +40,10 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'gys-secret-key-fallback',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
-    collectionName: 'sessions',
-    ttl: 24 * 60 * 60
-  }),
-  cookie: {
-    secure: false,
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000,
-    sameSite: 'lax',
-    path: '/'
-  }
+  store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI, collectionName: 'sessions', ttl: 24 * 60 * 60 }),
+  cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000, sameSite: 'lax', path: '/' }
 }));
 
-// Logger
 app.use((req, res, next) => {
   if (!req.path.includes('/files/') && !req.path.includes('static')) {
     const user = req.session?.userId ? `User:${req.session.userId}` : 'Guest';
@@ -63,10 +51,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-// =================================================================
-// 📂 FILE & AVATAR DIRECTORY SETUP
-// =================================================================
 
 const filesPath = path.join(process.cwd(), 'data', 'files');
 const generatedPath = path.join(filesPath, 'generated');
@@ -80,36 +64,31 @@ console.log('🖼️  Serving avatars from:', avatarsPath);
     await fs.mkdir(filesPath,    { recursive: true });
     await fs.mkdir(generatedPath,{ recursive: true });
     await fs.mkdir(avatarsPath,  { recursive: true });
+    await fs.mkdir(path.join(process.cwd(), 'data', 'tmp'), { recursive: true }); // ← for PPTX temp files
     console.log('✅ Directories ensured');
   } catch (e) {
     console.error('❌ Failed to create directories:', e);
   }
 })();
 
-// Serve file uploads biasa
 app.use('/api/files', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 }, express.static(filesPath));
 
-// Serve avatar images
 app.use('/api/avatars', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 }, express.static(avatarsPath));
 
-// =================================================================
-
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/smartsheet', smartsheetRoutes);
 app.use('/api/embed', embedRoutes);
-app.use('/api/pptx', pptxRoutes);  // ← NEW
+app.use('/api/pptx', pptxRoutes); // ← NEW
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
 app.use((req, res) => res.status(404).json({ error: 'Endpoint Not Found' }));
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err);
