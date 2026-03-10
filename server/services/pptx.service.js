@@ -419,8 +419,9 @@ async function executeAICode(code, outputPath) {
   const tmpDir = path.join(process.cwd(), 'data', 'tmp');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   const tmpFile = path.join(tmpDir, `pptx_${Date.now()}.mjs`);
+  let cleanCode = '';
   try {
-    let cleanCode = code
+    cleanCode = code
       .replace(/^```(?:javascript|js|typescript)?\s*\n?/gm, '')
       .replace(/^```\s*$/gm, '')
       .trim();
@@ -434,8 +435,17 @@ async function executeAICode(code, outputPath) {
     await buildFn(outputPath);
     return true;
   } catch (err) {
-    console.error('❌ [PptxService] AI code exec error:', err.message);
-    if (code) console.error('   Code preview:', code.substring(0, 600));
+    // Log detail untuk debugging
+    console.error('❌ [PptxService] AI code execution FAILED');
+    console.error('   Error:', err.message);
+    console.error('   Stack:', err.stack?.split('\n').slice(0, 5).join('\n   '));
+    if (cleanCode) {
+      const lines = cleanCode.split('\n');
+      console.error(`   Generated code (first 40 lines):\n${lines.slice(0, 40).map((l, i) => `     ${i+1}: ${l}`).join('\n')}`);
+      // Simpan file error agar bisa diinspeksi
+      const errFile = path.join(tmpDir, `pptx_ERROR_${Date.now()}.mjs`);
+      try { fs.writeFileSync(errFile, cleanCode, 'utf8'); console.error(`   Full code saved to: ${errFile}`); } catch {}
+    }
     return false;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}

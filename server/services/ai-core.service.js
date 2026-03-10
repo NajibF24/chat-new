@@ -135,9 +135,9 @@ class AICoreService {
       threadId = newThread._id;
     }
 
-    // ← TAMBAHAN BARU: PPT command intercept (3 lines)
+    // ← TAMBAHAN BARU: PPT command intercept
     if (isPptCommand(message)) {
-      return this._handlePptCommand({ userId, botId, bot, message, threadId });
+      return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
     }
     // END TAMBAHAN BARU ──────────────────────────────────────
 
@@ -253,9 +253,21 @@ class AICoreService {
   // ← TAMBAHAN BARU SELURUHNYA: _handlePptCommand
   // Tidak mengubah apapun di method lain
   // ─────────────────────────────────────────────────────────────
-  async _handlePptCommand({ userId, botId, bot, message, threadId }) {
+  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
     try {
-      const { styleRequest, topic } = extractStyleAndTopic(message);
+      // ── Deteksi style dari pesan sekarang, atau cari di history ──
+      let { styleRequest, topic } = extractStyleAndTopic(message);
+
+      // Jika style tidak disebut di pesan terakhir, cari di history chat sebelumnya
+      if (styleRequest === 'professional corporate executive with charts and photos' && history.length > 0) {
+        const historyText = history.map(h => h.content || '').join('\n');
+        const historyStyle = extractStyleAndTopic(historyText);
+        if (historyStyle.styleRequest !== 'professional corporate executive with charts and photos') {
+          styleRequest = historyStyle.styleRequest;
+          console.log(`📊 [PPT] Style ditemukan dari history: "${styleRequest}"`);
+        }
+      }
+
       const title = topic
         .replace(/^(tentang|about|mengenai|on|untuk|for)\s+/i, '')
         .trim()
@@ -263,10 +275,57 @@ class AICoreService {
 
       console.log(`📊 [PPT] Topic: "${title}" | Style: "${styleRequest}"`);
 
-      // Step 1: Generate slide content
-      const contentRes = await AIProviderService.generateCompletion({
-        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: `You are an expert presentation writer.
+      // ── Cek apakah ada konten/outline di history yang bisa langsung dipakai ──
+      // Jika user bilang "berdasar itu", "dari itu", "sesuai itu" dll → pakai history sebagai konten
+      const refersToHistory = /\b(berdasar|berdasarkan|dari|sesuai|pakai|gunakan|itu|tadi|di atas|sebelumnya|tersebut)\b/i.test(message);
+      let slideContent = '';
+
+      if (refersToHistory && history.length > 0) {
+        // Ambil konten dari pesan-pesan sebelumnya (terutama assistant yang punya outline)
+        const previousContent = history
+          .filter(h => h.content && h.content.length > 100)
+          .map(h => h.content)
+          .join('\n\n---\n\n');
+
+        if (previousContent.trim()) {
+          console.log(`📊 [PPT] Menggunakan konten dari history (${previousContent.length} chars)`);
+
+          // Minta AI untuk mengkonversi/merapikan outline dari history menjadi slide content
+          const reworkRes = await AIProviderService.generateCompletion({
+            providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+            systemPrompt: `You are an expert presentation writer.
+The user wants to turn existing content/outline from the conversation into presentation slides.
+Convert the provided content into clean slide markdown format:
+
+# [Presentation Title]
+[One powerful subtitle]
+
+## [Slide Title]
+- bullet (max 12 words)
+- bullet
+
+## [Slide Title]
+[paragraph content]
+
+Rules:
+- Keep ALL the original content, ideas, and structure — do not invent new content
+- Extract every section/point from the source material
+- Generate as many slides as needed to cover all the content (typically 6-10)
+- Match the original language (Indonesian/English)
+- Preserve speaker script/notes in parentheses at end of each slide if present`,
+            messages: [],
+            userContent: `Convert this existing outline/content into slide format:\n\n${previousContent.substring(0, 6000)}`,
+          });
+          slideContent = reworkRes.text;
+        }
+      }
+
+      // Jika tidak ada history yang relevan → generate konten baru dari topic
+      if (!slideContent?.trim()) {
+        console.log(`📊 [PPT] Generating fresh content for topic: "${topic}"`);
+        const contentRes = await AIProviderService.generateCompletion({
+          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+          systemPrompt: `You are an expert presentation writer.
 Generate professional slide content in markdown format:
 
 # [Presentation Title]
@@ -285,11 +344,12 @@ Rules:
 - Mix bullet slides and paragraph slides for variety
 - Include realistic numbers/data where relevant
 - Language: match the user's request language (Indonesian or English)`,
-        messages: [],
-        userContent: `Create a professional presentation about: ${topic}`,
-      });
+          messages: [],
+          userContent: `Create a professional presentation about: ${topic}`,
+        });
+        slideContent = contentRes.text;
+      }
 
-      const slideContent = contentRes.text;
       if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
 
       // Step 2: AI generates full PptxGenJS design code
