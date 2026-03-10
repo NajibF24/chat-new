@@ -300,7 +300,6 @@ class AICoreService {
 
       // ── STEP 2: Siapkan slide content ──────────────────────
       const refersToHistory = /\b(berdasar|berdasarkan|dari|sesuai|pakai|gunakan|itu|tadi|di atas|sebelumnya|tersebut|nya|ini)\b/i.test(message)
-        || message.trim().length < 60;
 
       const historicalContent = allHistory
         .filter(h => {
@@ -346,25 +345,48 @@ RULES:
         const tm = slideContent.match(/^#\s+(.+)/m);
         if (tm) title = tm[1].trim().substring(0, 60);
       } else {
-        // Generate fresh content
-        let { topic: tp } = extractStyleAndTopic(message);
-        tp = tp.replace(/^(tentang|about|mengenai|untuk|for)\s+/i, '').trim() || 'Presentation';
-        title = tp.substring(0, 60);
-        console.log(`📊 [PPT] Generating fresh content: "${title}"`);
-        const res = await AIProviderService.generateCompletion({
-          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-          systemPrompt: `You are a presentation writer. Generate slide content in markdown:
-# [Title]
-[Subtitle]
-## [Slide Title]
-- bullet
-- bullet
-## [Slide Title]
-[paragraph]
-Rules: 7-9 slides, mix bullets/paragraphs, include realistic data, match user language.`,
-          messages: [],
-          userContent: `Create a presentation about: ${tp}`,
-        });
+              // Generate fresh content
+              let { topic: tp } = extractStyleAndTopic(message);
+              tp = tp.replace(/^(tentang|about|mengenai|untuk|for)\s+/i, '').trim() || 'Presentation';
+              title = tp.substring(0, 60);
+              console.log(`📊 [PPT] Generating fresh content: "${title}"`);
+              
+              const res = await AIProviderService.generateCompletion({
+                providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+                systemPrompt: `You are an elite Management Consultant and Executive Presentation Writer.
+      Your task is to create a comprehensive, highly detailed, and persuasive presentation. 
+      DO NOT give short, empty, or lazy slides. Each slide MUST contain substantial, professional content.
+
+      Format strictly in markdown:
+      # [Hero Title: Catchy and Strategic]
+      [Compelling Subtitle]
+
+      ## [Slide 1: Executive Summary]
+      - [Detailed bullet point 1: Explain the core concept thoroughly, minimum 15-25 words].
+      - [Detailed bullet point 2: Highlight the business impact, efficiency, or cost reduction].
+      - [Detailed bullet point 3: Add realistic industry context or metrics].
+      [Short paragraph summarizing the strategic takeaway of this slide]
+
+      ## [Slide 2: The Problem / Current State]
+      - [Detailed analysis point 1]
+      - [Detailed analysis point 2]
+      - [Detailed analysis point 3]
+
+      ## [Slide 3: ...] 
+      (Continue this rich, detailed structure for 7 to 9 slides. Include topics like Core Features, Implementation Strategy, Business Value/ROI, and Conclusion).
+
+      RULES:
+      1. Provide rich, actionable text. Do NOT just write short 3-word bullets.
+      2. Include realistic placeholder data, percentages, or metrics to make it look professional.
+      3. Write in the exact same language as the user's prompt. Make the tone Executive and Professional.`,
+                messages: [],
+                userContent: `Buatkan presentasi lengkap, mendetail, dan sangat profesional tentang: ${tp}`,
+              });
+              
+              slideContent = res.text;
+              const tm = slideContent.match(/^#\s+(.+)/m);
+              if (tm) title = tm[1].trim().substring(0, 60);
+            }
         slideContent = res.text;
         const tm = slideContent.match(/^#\s+(.+)/m);
         if (tm) title = tm[1].trim().substring(0, 60);
@@ -409,52 +431,48 @@ Rules: 7-9 slides, mix bullets/paragraphs, include realistic data, match user la
       });
 
       // ── STEP 5: Response ───────────────────────────────────
+      // PERBAIKAN 1: Hilangkan backtick (`) ganti dengan italic (*) agar tidak jadi blok kode
       const styleList = PptxService.getStyleExamples()
         .slice(0, 5)
-        .map(s => `• \`${s.example}\``)
+        .map(s => `• *${s.example}*`)
         .join('\n');
 
       const responseMarkdown = `✅ **Presentasi berhasil dibuat!**
 
-📊 **${title}**
-🎨 Style: **${styleRequest}**
-📑 ${result.slideCount} slides${result.usedFallback ? ' _(fallback mode)_' : ' — dengan foto, chart & infografis'}
+    📊 **Topik:** ${title}
+    🎨 **Style:** ${styleRequest}
+    📑 **Jumlah:** ${result.slideCount} slides ${result.usedFallback ? '_(mode teks dasar)_' : ''}
 
----
-### [⬇️ Download .pptx](${result.pptxUrl})
-### [🌐 Preview di Browser](${result.htmlUrl})
+    ---
+    ### [⬇️ Download File Presentasi (.pptx)](${result.pptxUrl})
 
-*Preview HTML bisa dibuka langsung di browser. Download .pptx untuk edit di PowerPoint.*
+    💡 **Ingin mencoba style lain? Cukup ketik salah satu contoh berikut:**
+    ${styleList}`;
 
----
-💡 **Coba style lain:**
-${styleList}`;
+          // PERBAIKAN 2: Hanya lampirkan file PPTX, file HTML dibuang agar tidak membingungkan
+          await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+          await new Chat({
+            userId, botId, threadId, role: 'assistant',
+            content: responseMarkdown,
+            attachedFiles: [
+              { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }
+            ],
+          }).save();
+          await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
-      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
-      await new Chat({
-        userId, botId, threadId, role: 'assistant',
-        content: responseMarkdown,
-        attachedFiles: [
-          { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' },
-          { name: result.htmlName, path: result.htmlUrl, type: 'file', size: '0' },
-        ],
-      }).save();
-      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+          return {
+            response: responseMarkdown,
+            threadId,
+            attachedFiles: [
+              { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }
+            ],
+          };
 
-      return {
-        response: responseMarkdown,
-        threadId,
-        attachedFiles: [
-          { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' },
-          { name: result.htmlName, path: result.htmlUrl, type: 'file', size: '0' },
-        ],
-      };
-
-    } catch (error) {
-      console.error('❌ [PPT Command]', error);
-      throw new Error(`Gagal membuat presentasi: ${error.message}`);
-    }
-  }
+        } catch (error) {
+          console.error('❌ [PPT Command]', error);
+          throw new Error(`Gagal membuat presentasi: ${error.message}`);
+        }
+      }
   // END TAMBAHAN BARU ──────────────────────────────────────────
 }
 
