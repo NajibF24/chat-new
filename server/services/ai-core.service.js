@@ -360,35 +360,61 @@ RULES:
 
       if (!slideContent?.trim()) throw new Error('Empty slide content');
 
-      // ── STEP 3: AI generates HTML presentation ─────────────
-      console.log(`📊 [PPT] Generating HTML slides — style: "${styleRequest}"`);
-      const htmlRes = await AIProviderService.generateCompletion({
+// ── STEP 3: AI generates JSON structure for Native PPT ─────────────
+      console.log(`📊 [PPT] Generating Native JSON slides...`);
+      const jsonPrompt = `You are a data architect for PowerPoint presentations.
+Based on the presentation content, create a structured JSON for a native PowerPoint presentation.
+      
+Return ONLY valid JSON. No markdown formatting (\`\`\`json).
+Structure:
+{
+  "slides": [
+    {
+      "layout": "TITLE",
+      "title": "Hero Title",
+      "subtitle": "Subtitle text here"
+    },
+    {
+      "layout": "CONTENT",
+      "title": "Slide Title",
+      "bullets": ["Point 1", "Point 2", "Point 3"]
+    },
+    {
+      "layout": "CHART",
+      "title": "Data Comparison (IMPORTANT)",
+      "chartType": "bar",
+      "chartData": [
+        { "name": "Model Tradisional", "labels": ["Q1", "Q2", "Q3"], "values": [10, 25, 40] },
+        { "name": "DevSecOps", "labels": ["Q1", "Q2", "Q3"], "values": [30, 50, 80] }
+      ]
+    }
+  ]
+}
+RULES: 
+- Include at least 2 CHART slides (use chartType "bar", "pie", or "line").
+- Make sure "chartData" contains actual numbers and labels relevant to the topic.`;
+
+      const jsonRes = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: 'You are an expert HTML/CSS presentation designer. Return ONLY a complete HTML document. No markdown fences. No explanation. Start immediately with <!DOCTYPE html>',
+        systemPrompt: jsonPrompt,
         messages: [],
-        userContent: PptxService.buildHtmlPrompt({ slideContent, styleRequest, title, topic }),
+        userContent: `Convert this content into the requested JSON format:\n\n${slideContent}`
       });
 
-      // 🧹 PEMBERSIHAN RESPONSE
-      let rawHtml = htmlRes.text || '';
-      
-      const htmlMatch = rawHtml.match(/<html[\s\S]*?<\/html>/i);
-      if (htmlMatch) {
-        rawHtml = `<!DOCTYPE html>\n${htmlMatch[0]}`;
-      } else {
-        rawHtml = rawHtml.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
-        rawHtml = rawHtml.replace(/^```html/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
+      // Bersihkan output JSON
+      let rawJson = jsonRes.text.replace(/```json/gi, '').replace(/```/gi, '').trim();
+      let pptData;
+      try {
+        pptData = JSON.parse(rawJson);
+      } catch (err) {
+        console.error("AI JSON Parse Error:", rawJson.substring(0, 100));
+        throw new Error("AI gagal menghasilkan format data native PPT.");
       }
 
-      if (!rawHtml.includes('<html') && !rawHtml.includes('<div')) {
-        console.error('AI Output Invalid:', rawHtml.substring(0, 100));
-        throw new Error('AI did not return valid HTML after cleanup');
-      }
-
-      // ── STEP 4: HTML → screenshots → PPTX ─────────────────
+      // ── STEP 4: Render JSON to NATIVE PPTX ─────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generate({
-        htmlCode: rawHtml,
+        pptData: pptData, // <-- KIRIM DATA JSON KE SERVICE
         slideContent,
         title,
         outputDir,
