@@ -270,7 +270,8 @@ class AICoreService {
       }
 
       // ── STEP 2: Siapkan slide content ──────────────────────
-      const refersToHistory = /\b(berdasarkan history|berdasarkan chat|dari data di atas|percakapan sebelumnya|teks tadi|yang tadi)\b/i.test(message);
+      const isTopicEmpty = topic.replace(/buatkan|file|ppt|-nya|nya|tolong/gi, '').trim().length === 0;
+      const refersToHistory = isTopicEmpty || /\b(berdasarkan history|berdasarkan chat|dari data di atas|percakapan sebelumnya|teks tadi|yang tadi|ppt nya|ppt-nya)\b/i.test(message);
 
       const historicalContent = allHistory
         .filter(h => {
@@ -368,9 +369,16 @@ RULES:
         userContent: PptxService.buildHtmlPrompt({ slideContent, styleRequest, title, topic }),
       });
 
+      // 🧹 PEMBERSIHAN RESPONSE
       let rawHtml = htmlRes.text || '';
-      rawHtml = rawHtml.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
-      rawHtml = rawHtml.replace(/^```html/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
+      
+      const htmlMatch = rawHtml.match(/<html[\s\S]*?<\/html>/i);
+      if (htmlMatch) {
+        rawHtml = `<!DOCTYPE html>\n${htmlMatch[0]}`;
+      } else {
+        rawHtml = rawHtml.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+        rawHtml = rawHtml.replace(/^```html/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
+      }
 
       if (!rawHtml.includes('<html') && !rawHtml.includes('<div')) {
         console.error('AI Output Invalid:', rawHtml.substring(0, 100));
