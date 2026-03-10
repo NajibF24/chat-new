@@ -1,14 +1,4 @@
-// server/services/ai-core.service.js — Updated with multi-provider + knowledge base
-// ─────────────────────────────────────────────────────────────
-// CHANGELOG vs original:
-//   + import PptxService (1 line)
-//   + isPptCommand() function
-//   + extractStyleAndTopic() function
-//   + if (isPptCommand(message)) block di processMessage()
-//   + _handlePptCommand() method — REDESIGNED: AI generates HTML, puppeteer → PPTX
-//   SEMUA KODE LAIN IDENTIK DENGAN ASLINYA
-// ─────────────────────────────────────────────────────────────
-
+// server/services/ai-core.service.js
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
 import XLSX     from 'xlsx';
@@ -24,11 +14,8 @@ import KnowledgeBaseService   from './knowledge-base.service.js';
 import SmartsheetLiveService  from './smartsheet-live.service.js';
 import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
-import PptxService            from './pptx.service.js';  // ← TAMBAHAN BARU
+import PptxService            from './pptx.service.js';
 
-// ─────────────────────────────────────────────────────────────
-// ← TAMBAHAN BARU: PPT helpers
-// ─────────────────────────────────────────────────────────────
 function isPptCommand(message = '') {
   const t = (message || '').trim().toLowerCase();
   return (
@@ -69,10 +56,9 @@ function extractStyleAndTopic(message = '') {
   return { styleRequest, topic };
 }
 
-// Markers to exclude PPT bot responses from history
 const PPT_RESPONSE_MARKERS = [
   '✅ **Presentasi berhasil',
-  '⬇️ Download:',
+  '⬇️ Download File Presentasi',
   'Style lain yang bisa dicoba',
   'fallback renderer',
   'Deskripsikan style apapun',
@@ -80,17 +66,14 @@ const PPT_RESPONSE_MARKERS = [
   '.pptx',
   '🎨 Style:',
   '📑 ~',
+  '📑 Jumlah:'
 ];
-// ─────────────────────────────────────────────────────────────
-// END TAMBAHAN BARU
-// ─────────────────────────────────────────────────────────────
 
 class AICoreService {
   constructor() {
     this.fileManager = new FileManagerService();
   }
 
-  // IDENTIK DENGAN ASLI
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
     const keywords = [
@@ -107,7 +90,6 @@ class AICoreService {
     return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
 
-  // IDENTIK DENGAN ASLI
   async extractFileContent(attachedFile) {
     const physicalPath = attachedFile.serverPath || attachedFile.path;
     if (!physicalPath || !fs.existsSync(physicalPath)) return '';
@@ -130,7 +112,6 @@ class AICoreService {
     } catch { return ''; }
   }
 
-  // IDENTIK DENGAN ASLI + PPT intercept
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
@@ -142,15 +123,12 @@ class AICoreService {
       threadId = newThread._id;
     }
 
-    // ← TAMBAHAN BARU
     if (isPptCommand(message)) {
       return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
     }
-    // END TAMBAHAN BARU
 
     let contextData = '';
 
-    // IDENTIK DENGAN ASLI
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
         const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
@@ -245,10 +223,6 @@ class AICoreService {
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // ← TAMBAHAN BARU: _handlePptCommand (REDESIGNED)
-  // AI generates HTML → Puppeteer screenshots → PPTX
-  // ─────────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
     try {
       // ── STEP 0: Ambil history dari DB ──────────────────────
@@ -266,14 +240,12 @@ class AICoreService {
             .lean();
           dbHistory = dbHistory.reverse();
         }
-        // Filter: buang PPT command dan PPT response bot sebelumnya
         dbHistory = dbHistory.filter(h => {
           if (!h.content) return false;
           if (isPptCommand(h.content)) return false;
           if (PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))) return false;
           return true;
         });
-        console.log(`📊 [PPT] History: ${dbHistory.length} pesan relevan`);
       } catch (e) {
         console.warn('⚠️ [PPT] DB query failed:', e.message);
         dbHistory = history.filter(h => !PPT_RESPONSE_MARKERS.some(m => (h.content||'').includes(m)));
@@ -291,7 +263,6 @@ class AICoreService {
         if (fromHistory.styleRequest !== DEFAULT_STYLE) {
           styleRequest = fromHistory.styleRequest;
         }
-        // Scan explicit style keywords
         const styleKw = histText.match(/\b(apple keynote|mckinsey|dark futuristic|startup pitch|bloomberg|editorial|minimal|cinematic|hitam|navy|gradient|warm|nature|healthcare)\b/gi);
         if (styleKw && styleRequest === DEFAULT_STYLE) {
           styleRequest = [...new Set(styleKw.map(s => s.toLowerCase()))].slice(0,3).join(', ') + ' style';
@@ -299,7 +270,7 @@ class AICoreService {
       }
 
       // ── STEP 2: Siapkan slide content ──────────────────────
-      const refersToHistory = /\b(berdasar|berdasarkan|dari|sesuai|pakai|gunakan|itu|tadi|di atas|sebelumnya|tersebut|nya|ini)\b/i.test(message)
+      const refersToHistory = /\b(berdasarkan history|berdasarkan chat|dari data di atas|percakapan sebelumnya|teks tadi|yang tadi)\b/i.test(message);
 
       const historicalContent = allHistory
         .filter(h => {
@@ -315,7 +286,6 @@ class AICoreService {
       let title = 'Presentation';
 
       if (refersToHistory && hasHistory) {
-        // Konversi history ke slide content
         console.log(`📊 [PPT] Converting history (${historicalContent.length} chars) → slides`);
         const res = await AIProviderService.generateCompletion({
           providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
@@ -345,48 +315,43 @@ RULES:
         const tm = slideContent.match(/^#\s+(.+)/m);
         if (tm) title = tm[1].trim().substring(0, 60);
       } else {
-              // Generate fresh content
-              let { topic: tp } = extractStyleAndTopic(message);
-              tp = tp.replace(/^(tentang|about|mengenai|untuk|for)\s+/i, '').trim() || 'Presentation';
-              title = tp.substring(0, 60);
-              console.log(`📊 [PPT] Generating fresh content: "${title}"`);
-              
-              const res = await AIProviderService.generateCompletion({
-                providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-                systemPrompt: `You are an elite Management Consultant and Executive Presentation Writer.
-      Your task is to create a comprehensive, highly detailed, and persuasive presentation. 
-      DO NOT give short, empty, or lazy slides. Each slide MUST contain substantial, professional content.
+        let { topic: tp } = extractStyleAndTopic(message);
+        tp = tp.replace(/^(tentang|about|mengenai|untuk|for)\s+/i, '').trim() || 'Presentation';
+        title = tp.substring(0, 60);
+        console.log(`📊 [PPT] Generating fresh content: "${title}"`);
+        
+        const res = await AIProviderService.generateCompletion({
+          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+          systemPrompt: `You are an elite Management Consultant and Executive Presentation Writer.
+Your task is to create a comprehensive, highly detailed, and persuasive presentation. 
+DO NOT give short, empty, or lazy slides. Each slide MUST contain substantial, professional content.
 
-      Format strictly in markdown:
-      # [Hero Title: Catchy and Strategic]
-      [Compelling Subtitle]
+Format strictly in markdown:
+# [Hero Title: Catchy and Strategic]
+[Compelling Subtitle]
 
-      ## [Slide 1: Executive Summary]
-      - [Detailed bullet point 1: Explain the core concept thoroughly, minimum 15-25 words].
-      - [Detailed bullet point 2: Highlight the business impact, efficiency, or cost reduction].
-      - [Detailed bullet point 3: Add realistic industry context or metrics].
-      [Short paragraph summarizing the strategic takeaway of this slide]
+## [Slide 1: Executive Summary]
+- [Detailed bullet point 1: Explain the core concept thoroughly, minimum 15-25 words].
+- [Detailed bullet point 2: Highlight the business impact, efficiency, or cost reduction].
+- [Detailed bullet point 3: Add realistic industry context or metrics].
+[Short paragraph summarizing the strategic takeaway of this slide]
 
-      ## [Slide 2: The Problem / Current State]
-      - [Detailed analysis point 1]
-      - [Detailed analysis point 2]
-      - [Detailed analysis point 3]
+## [Slide 2: The Problem / Current State]
+- [Detailed analysis point 1]
+- [Detailed analysis point 2]
+- [Detailed analysis point 3]
 
-      ## [Slide 3: ...] 
-      (Continue this rich, detailed structure for 7 to 9 slides. Include topics like Core Features, Implementation Strategy, Business Value/ROI, and Conclusion).
+## [Slide 3: ...] 
+(Continue this rich, detailed structure for 7 to 9 slides. Include topics like Core Features, Implementation Strategy, Business Value/ROI, and Conclusion).
 
-      RULES:
-      1. Provide rich, actionable text. Do NOT just write short 3-word bullets.
-      2. Include realistic placeholder data, percentages, or metrics to make it look professional.
-      3. Write in the exact same language as the user's prompt. Make the tone Executive and Professional.`,
-                messages: [],
-                userContent: `Buatkan presentasi lengkap, mendetail, dan sangat profesional tentang: ${tp}`,
-              });
-              
-              slideContent = res.text;
-              const tm = slideContent.match(/^#\s+(.+)/m);
-              if (tm) title = tm[1].trim().substring(0, 60);
-            }
+RULES:
+1. Provide rich, actionable text. Do NOT just write short 3-word bullets.
+2. Include realistic placeholder data, percentages, or metrics to make it look professional.
+3. Write in the exact same language as the user's prompt. Make the tone Executive and Professional.`,
+          messages: [],
+          userContent: `Buatkan presentasi lengkap, mendetail, dan sangat profesional tentang: ${tp}`,
+        });
+        
         slideContent = res.text;
         const tm = slideContent.match(/^#\s+(.+)/m);
         if (tm) title = tm[1].trim().substring(0, 60);
@@ -394,27 +359,19 @@ RULES:
 
       if (!slideContent?.trim()) throw new Error('Empty slide content');
 
-// ── STEP 3: AI generates HTML presentation ─────────────
+      // ── STEP 3: AI generates HTML presentation ─────────────
       console.log(`📊 [PPT] Generating HTML slides — style: "${styleRequest}"`);
       const htmlRes = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        // Gunakan instruksi tegas agar tidak mengulang output aneh
         systemPrompt: 'You are an expert HTML/CSS presentation designer. Return ONLY a complete HTML document. No markdown fences. No explanation. Start immediately with <!DOCTYPE html>',
         messages: [],
         userContent: PptxService.buildHtmlPrompt({ slideContent, styleRequest, title, topic }),
       });
 
-      // 🧹 PEMBERSIHAN RESPONSE (SANGAT PENTING!)
-      // AI terkadang bandel menyertakan tag markdown atau <thinking>
       let rawHtml = htmlRes.text || '';
-      
-      // 1. Hapus tag <thinking> (jika ada)
       rawHtml = rawHtml.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
-      
-      // 2. Hapus code blocks markdown (```html dan ```)
       rawHtml = rawHtml.replace(/^```html/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
 
-      // Validasi setelah dibersihkan
       if (!rawHtml.includes('<html') && !rawHtml.includes('<div')) {
         console.error('AI Output Invalid:', rawHtml.substring(0, 100));
         throw new Error('AI did not return valid HTML after cleanup');
@@ -423,7 +380,7 @@ RULES:
       // ── STEP 4: HTML → screenshots → PPTX ─────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generate({
-        htmlCode: rawHtml,  // <--- PASTIKAN MENGGUNAKAN rawHtml YANG SUDAH BERSIH
+        htmlCode: rawHtml,
         slideContent,
         title,
         outputDir,
@@ -431,7 +388,6 @@ RULES:
       });
 
       // ── STEP 5: Response ───────────────────────────────────
-      // PERBAIKAN 1: Hilangkan backtick (`) ganti dengan italic (*) agar tidak jadi blok kode
       const styleList = PptxService.getStyleExamples()
         .slice(0, 5)
         .map(s => `• *${s.example}*`)
@@ -439,41 +395,39 @@ RULES:
 
       const responseMarkdown = `✅ **Presentasi berhasil dibuat!**
 
-    📊 **Topik:** ${title}
-    🎨 **Style:** ${styleRequest}
-    📑 **Jumlah:** ${result.slideCount} slides ${result.usedFallback ? '_(mode teks dasar)_' : ''}
+📊 **Topik:** ${title}
+🎨 **Style:** ${styleRequest}
+📑 **Jumlah:** ${result.slideCount} slides ${result.usedFallback ? '_(mode teks dasar)_' : ''}
 
-    ---
-    ### [⬇️ Download File Presentasi (.pptx)](${result.pptxUrl})
+---
+### [⬇️ Download File Presentasi (.pptx)](${result.pptxUrl})
 
-    💡 **Ingin mencoba style lain? Cukup ketik salah satu contoh berikut:**
-    ${styleList}`;
+💡 **Ingin mencoba style lain? Cukup ketik salah satu contoh berikut:**
+${styleList}`;
 
-          // PERBAIKAN 2: Hanya lampirkan file PPTX, file HTML dibuang agar tidak membingungkan
-          await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
-          await new Chat({
-            userId, botId, threadId, role: 'assistant',
-            content: responseMarkdown,
-            attachedFiles: [
-              { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }
-            ],
-          }).save();
-          await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      await new Chat({
+        userId, botId, threadId, role: 'assistant',
+        content: responseMarkdown,
+        attachedFiles: [
+          { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }
+        ],
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
-          return {
-            response: responseMarkdown,
-            threadId,
-            attachedFiles: [
-              { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }
-            ],
-          };
+      return {
+        response: responseMarkdown,
+        threadId,
+        attachedFiles: [
+          { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }
+        ],
+      };
 
-        } catch (error) {
-          console.error('❌ [PPT Command]', error);
-          throw new Error(`Gagal membuat presentasi: ${error.message}`);
-        }
-      }
-  // END TAMBAHAN BARU ──────────────────────────────────────────
+    } catch (error) {
+      console.error('❌ [PPT Command]', error);
+      throw new Error(`Gagal membuat presentasi: ${error.message}`);
+    }
+  }
 }
 
 export default new AICoreService();
