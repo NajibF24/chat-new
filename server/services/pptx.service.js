@@ -293,8 +293,12 @@ FONT SIZES:
 ════════════════════════════════════════════════
 NOW GENERATE THE CODE
 ════════════════════════════════════════════════
-Output ONLY the JavaScript code. Start immediately with:
-import PptxGenJS from 'pptxgenjs';`;
+IMPORTANT: Do NOT write any import statements.
+PptxGenJS is already available as a global variable.
+Start your code DIRECTLY with:
+
+export default async function buildPresentation(outputPath) {`;
+
 
 // ─────────────────────────────────────────────────────────────
 // Parse slide content (for fallback)
@@ -414,20 +418,42 @@ async function buildFallbackPresentation(title, slides, outputPath) {
 
 // ─────────────────────────────────────────────────────────────
 // Execute AI-generated code via temp .mjs file
+// ROOT CAUSE FIX: temp file di /data/tmp/ tidak bisa resolve
+// 'pptxgenjs' karena tidak ada node_modules di sana.
+// Solusi: ganti `import PptxGenJS from 'pptxgenjs'` dengan
+// createRequire yang point ke node_modules project.
 // ─────────────────────────────────────────────────────────────
 async function executeAICode(code, outputPath) {
   const tmpDir = path.join(process.cwd(), 'data', 'tmp');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   const tmpFile = path.join(tmpDir, `pptx_${Date.now()}.mjs`);
+  const projectRoot = process.cwd(); // path ke folder server/ yang punya node_modules
   let cleanCode = '';
   try {
     cleanCode = code
       .replace(/^```(?:javascript|js|typescript)?\s*\n?/gm, '')
       .replace(/^```\s*$/gm, '')
       .trim();
-    if (!cleanCode.includes('import PptxGenJS')) {
-      cleanCode = `import PptxGenJS from 'pptxgenjs';\n${cleanCode}`;
-    }
+
+    // ── KUNCI FIX: ganti import PptxGenJS from 'pptxgenjs' ──
+    // dengan createRequire yang resolve dari project root
+    // Ini fix masalah "Cannot find package 'pptxgenjs'" karena
+    // temp file ada di /data/tmp/ yang tidak punya node_modules
+    const pptxImportShim = `
+import { createRequire } from 'module';
+const require = createRequire(${JSON.stringify(projectRoot + '/package.json')});
+const PptxGenJS = require('pptxgenjs');
+`.trim();
+
+    // Hapus semua variasi import pptxgenjs dari AI code
+    cleanCode = cleanCode
+      .replace(/^import\s+PptxGenJS\s+from\s+['"]pptxgenjs['"];?\s*\n?/gm, '')
+      .replace(/^const\s+PptxGenJS\s*=\s*require\(['"]pptxgenjs['"]\);?\s*\n?/gm, '')
+      .trim();
+
+    // Inject shim di awal
+    cleanCode = pptxImportShim + '\n\n' + cleanCode;
+
     fs.writeFileSync(tmpFile, cleanCode, 'utf8');
     const mod = await import(pathToFileURL(tmpFile).href);
     const buildFn = mod.default || mod.buildPresentation;
@@ -435,16 +461,14 @@ async function executeAICode(code, outputPath) {
     await buildFn(outputPath);
     return true;
   } catch (err) {
-    // Log detail untuk debugging
     console.error('❌ [PptxService] AI code execution FAILED');
     console.error('   Error:', err.message);
     console.error('   Stack:', err.stack?.split('\n').slice(0, 5).join('\n   '));
     if (cleanCode) {
       const lines = cleanCode.split('\n');
-      console.error(`   Generated code (first 40 lines):\n${lines.slice(0, 40).map((l, i) => `     ${i+1}: ${l}`).join('\n')}`);
-      // Simpan file error agar bisa diinspeksi
+      console.error(`   Code (first 40 lines):\n${lines.slice(0, 40).map((l, i) => `     ${i+1}: ${l}`).join('\n')}`);
       const errFile = path.join(tmpDir, `pptx_ERROR_${Date.now()}.mjs`);
-      try { fs.writeFileSync(errFile, cleanCode, 'utf8'); console.error(`   Full code saved to: ${errFile}`); } catch {}
+      try { fs.writeFileSync(errFile, cleanCode, 'utf8'); console.error(`   Saved to: ${errFile}`); } catch {}
     }
     return false;
   } finally {
@@ -519,7 +543,10 @@ IMPORTANT for photos:
 - Vary keywords per slide to get different relevant photos
 - Always add a semi-transparent dark overlay (transparency: 40-60) over photos before adding text
 
-Generate the complete JavaScript code now. START IMMEDIATELY with "import PptxGenJS from 'pptxgenjs';"`;
+Do NOT write any import statements — PptxGenJS is already available.
+START YOUR CODE IMMEDIATELY with:
+
+export default async function buildPresentation(outputPath) {`;
   },
 
   getStyleExamples() {
