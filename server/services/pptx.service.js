@@ -1,509 +1,371 @@
 // server/services/pptx.service.js
-// ─────────────────────────────────────────────────────────────
-// AI-DRIVEN PPT Generator — Rich Visual Edition
-// AI writes full PptxGenJS code with:
-//   • Native bar/line/pie/doughnut charts
-//   • Infographic shapes (progress bars, stat callouts, icon-like geometry)
-//   • Real photos from Unsplash (free, no API key needed)
-//   • Tables with styled headers
-//   • Varied layouts per slide — never the same twice
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// REDESIGNED: AI generates HTML slides (like Gamma/Nano Banana)
+// Flow:
+//   1. AI generates full HTML presentation (beautiful, visual)
+//   2. Puppeteer screenshots each slide → PNG images
+//   3. PptxGenJS embeds images → .pptx file
+//   4. HTML file saved for in-chat preview
+//
+// Why HTML approach:
+//   - AI can use CSS, photos, SVG, gradients, animations
+//   - Cannot crash like PptxGenJS code execution
+//   - Output is visually rich by default
+//   - Same approach as Gamma, Beautiful.ai, Tome
+// ═══════════════════════════════════════════════════════════════
 
-import PptxGenJS from 'pptxgenjs';
-import path from 'path';
-import fs from 'fs';
-import { pathToFileURL } from 'url';
+import PptxGenJS  from 'pptxgenjs';
+import puppeteer  from 'puppeteer';
+import path       from 'path';
+import fs         from 'fs';
 
-// ─────────────────────────────────────────────────────────────
-// SYSTEM PROMPT — Teaches AI ALL visual capabilities
-// ─────────────────────────────────────────────────────────────
-export const PPTX_CODE_SYSTEM_PROMPT = `You are an elite presentation designer and JavaScript developer.
-Generate complete, runnable PptxGenJS v3 ES-module code for a visually rich PowerPoint presentation.
-
-════════════════════════════════════════════════
-OUTPUT FORMAT — CRITICAL
-════════════════════════════════════════════════
-Return ONLY raw JavaScript. No markdown fences, no explanation, no prose.
-Your entire response must be valid JavaScript that starts with:
-
-import PptxGenJS from 'pptxgenjs';
-
-export default async function buildPresentation(outputPath) {
-  const pres = new PptxGenJS();
-  pres.layout = 'LAYOUT_16x9';
-  // ... all slides ...
-  await pres.writeFile({ fileName: outputPath });
-}
+// ───────────────────────────────────────────────────────────────
+// SYSTEM PROMPT — AI generates a full HTML presentation
+// ───────────────────────────────────────────────────────────────
+export const HTML_SLIDE_SYSTEM_PROMPT = `You are an elite presentation designer.
+Generate a complete, self-contained HTML file that displays a beautiful presentation.
 
 ════════════════════════════════════════════════
-PPTXGENJS HARD RULES — violations corrupt the file
+OUTPUT FORMAT
 ════════════════════════════════════════════════
-1. NO "#" prefix in hex colors:          "FF0000" ✅   "#FF0000" ❌
-2. NO 8-char hex for shadow opacity:     {color:"000000",opacity:0.15} ✅   {color:"00000026"} ❌
-3. NO negative shadow offset:            offset:2 ✅   offset:-2 ❌
-4. NO unicode bullet chars "•":          bullet:true ✅   "• text" ❌
-5. NEVER reuse option objects across calls — PptxGenJS mutates them in-place.
-   Always inline or recreate for every addShape/addText/addChart call.
-   BAD:  const fill = {color:"FF0000"}; addShape(...,{fill}); addShape(...,{fill}); // 2nd call is corrupt
-   GOOD: addShape(...,{fill:{color:"FF0000"}}); addShape(...,{fill:{color:"FF0000"}});
-6. ROUNDED_RECTANGLE + rectangular accent bar = corner mismatch → use RECTANGLE instead
-7. breakLine:true required between array text runs
-8. All coords must stay in bounds: x+w ≤ 10, y+h ≤ 5.625 (LAYOUT_16x9)
-9. Chart data: values must be numbers, labels must be strings
+Return ONLY a complete HTML document. No explanation. No markdown fences.
+Start directly with <!DOCTYPE html>
 
 ════════════════════════════════════════════════
-SLIDE DIMENSIONS
+TECHNICAL REQUIREMENTS
 ════════════════════════════════════════════════
-LAYOUT_16x9 = 10.0" wide × 5.625" tall. All coordinates in inches.
-Minimum margin from slide edge: 0.3"
+- Single HTML file, fully self-contained (no external files except Google Fonts & Unsplash)
+- Each slide is a <div class="slide"> with fixed size: width:1280px height:720px
+- All slides stacked vertically (display:block), separated by 20px gap
+- Each slide has a data-slide-index attribute: data-slide-index="1", "2", etc.
+- Google Fonts allowed via @import in <style>
+- Unsplash photos allowed via <img src="https://source.unsplash.com/1280x720/?{keywords}">
+- Inline SVG allowed for icons and diagrams
+- NO JavaScript required for display (slides are static)
+- Use CSS for all visual effects (gradients, shadows, animations are ok)
 
 ════════════════════════════════════════════════
-VISUAL TOOLKIT — use ALL of these across slides
+VISUAL CAPABILITIES — USE ALL OF THESE
 ════════════════════════════════════════════════
 
-── 1. NATIVE CHARTS ────────────────────────────
-Use real chart data that matches the slide topic. Make data plausible and specific.
+── 1. FULL-BLEED PHOTO BACKGROUNDS ──
+<div class="slide" style="position:relative; overflow:hidden;">
+  <img src="https://source.unsplash.com/1280x720/?steel,factory,industrial"
+       style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;">
+  <div style="position:absolute;top:0;left:0;width:100%;height:100%;
+              background:linear-gradient(135deg,rgba(0,0,0,0.75) 0%,rgba(0,20,60,0.6) 100%);z-index:1;"></div>
+  <div style="position:relative;z-index:2; padding:60px;">
+    <!-- content here -->
+  </div>
+</div>
 
-// Bar chart (vertical columns)
-slide.addChart(pres.charts.BAR, [{
-  name: "Revenue", labels: ["Q1","Q2","Q3","Q4"], values: [4200,5800,6100,7400]
-}], {
-  x: 0.4, y: 1.2, w: 9.2, h: 3.8, barDir: "col",
-  chartColors: ["1E3A8A","3B82F6","93C5FD"],
-  chartArea: { fill: { color: "FFFFFF" }, roundedCorners: true },
-  catAxisLabelColor: "64748B", valAxisLabelColor: "64748B",
-  valGridLine: { color: "E2E8F0", size: 0.5 }, catGridLine: { style: "none" },
-  showValue: true, dataLabelColor: "1E293B", dataLabelFontSize: 10,
-  showLegend: false,
-});
+── 2. SPLIT LAYOUT (photo right, content left) ──
+<div class="slide" style="display:flex;">
+  <div style="width:55%;padding:60px;background:#0F1923;display:flex;flex-direction:column;justify-content:center;">
+    <!-- text content -->
+  </div>
+  <div style="width:45%;position:relative;">
+    <img src="https://source.unsplash.com/600x720/?technology,AI"
+         style="width:100%;height:100%;object-fit:cover;">
+    <div style="position:absolute;inset:0;background:rgba(0,30,80,0.3);"></div>
+  </div>
+</div>
 
-// Line chart (trends)
-slide.addChart(pres.charts.LINE, [{
-  name: "Growth", labels: ["Jan","Feb","Mar","Apr","May","Jun"], values: [42,55,61,58,70,84]
-}], {
-  x: 0.4, y: 1.2, w: 9.2, h: 3.8,
-  chartColors: ["0EA5E9"],
-  chartArea: { fill: { color: "FFFFFF" } },
-  lineSize: 3, lineSmooth: true,
-  catAxisLabelColor: "64748B", valAxisLabelColor: "64748B",
-  valGridLine: { color: "E2E8F0" }, catGridLine: { style: "none" },
-  showValue: false, showLegend: false,
-});
+── 3. INLINE SVG CHARTS (no external libs needed) ──
+<!-- Bar chart using SVG rects -->
+<svg width="900" height="300" style="overflow:visible;">
+  <!-- Y axis -->
+  <line x1="60" y1="10" x2="60" y2="260" stroke="#334155" stroke-width="1"/>
+  <!-- Bars -->
+  <rect x="80"  y="60"  width="120" height="200" fill="#0EA5E9" rx="4"/>
+  <rect x="230" y="100" width="120" height="160" fill="#0EA5E9" rx="4" opacity="0.8"/>
+  <rect x="380" y="40"  width="120" height="220" fill="#0EA5E9" rx="4" opacity="0.9"/>
+  <rect x="530" y="130" width="120" height="130" fill="#0EA5E9" rx="4" opacity="0.7"/>
+  <!-- Labels -->
+  <text x="140" y="278" text-anchor="middle" fill="#94A3B8" font-size="13" font-family="Inter">Q1</text>
+  <text x="290" y="278" text-anchor="middle" fill="#94A3B8" font-size="13" font-family="Inter">Q2</text>
+  <text x="440" y="278" text-anchor="middle" fill="#94A3B8" font-size="13" font-family="Inter">Q3</text>
+  <text x="590" y="278" text-anchor="middle" fill="#94A3B8" font-size="13" font-family="Inter">Q4</text>
+  <!-- Values -->
+  <text x="140" y="52" text-anchor="middle" fill="#E2E8F0" font-size="14" font-weight="bold" font-family="Inter">$4.2M</text>
+  <text x="290" y="92" text-anchor="middle" fill="#E2E8F0" font-size="14" font-weight="bold" font-family="Inter">$3.8M</text>
+  <text x="440" y="32" text-anchor="middle" fill="#E2E8F0" font-size="14" font-weight="bold" font-family="Inter">$5.1M</text>
+  <text x="590" y="122" text-anchor="middle" fill="#E2E8F0" font-size="14" font-weight="bold" font-family="Inter">$3.3M</text>
+</svg>
 
-// Pie / Doughnut chart
-slide.addChart(pres.charts.DOUGHNUT, [{
-  name: "Distribution", labels: ["Category A","Category B","Category C","Other"],
-  values: [38, 29, 21, 12]
-}], {
-  x: 2.5, y: 0.9, w: 5, h: 4.2,
-  chartColors: ["1E3A8A","0EA5E9","38BDF8","BAE6FD"],
-  showPercent: true, showLegend: true, legendPos: "b",
-  dataLabelFontSize: 12, dataLabelColor: "1E293B",
-  chartArea: { fill: { color: "F8FAFC" } },
-});
+<!-- Donut/pie chart using SVG stroke-dasharray trick -->
+<svg width="200" height="200" viewBox="0 0 200 200">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#1E293B" stroke-width="30"/>
+  <!-- Segment 1: 40% = 200.96 of 502.4 circumference -->
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#0EA5E9" stroke-width="30"
+          stroke-dasharray="201 301" stroke-dashoffset="0" transform="rotate(-90 100 100)"/>
+  <!-- Segment 2: 35% -->
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#10B981" stroke-width="30"
+          stroke-dasharray="176 326" stroke-dashoffset="-201" transform="rotate(-90 100 100)"/>
+  <!-- Segment 3: 25% -->
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#F59E0B" stroke-width="30"
+          stroke-dasharray="125 377" stroke-dashoffset="-377" transform="rotate(-90 100 100)"/>
+  <!-- Center label -->
+  <text x="100" y="95" text-anchor="middle" fill="white" font-size="22" font-weight="bold" font-family="Inter">100%</text>
+  <text x="100" y="115" text-anchor="middle" fill="#94A3B8" font-size="11" font-family="Inter">Total</text>
+</svg>
 
-── 2. INFOGRAPHIC SHAPES ────────────────────────
-Build visual elements entirely from shapes — no external assets needed.
+── 4. KPI STAT CARDS ──
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;padding:40px 60px;">
+  <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+              border-radius:16px;padding:28px;border-top:3px solid #0EA5E9;">
+    <div style="font-size:42px;font-weight:800;color:#0EA5E9;font-family:'Montserrat';">94%</div>
+    <div style="font-size:13px;color:#94A3B8;margin-top:8px;font-family:'Inter';">Client Retention</div>
+  </div>
+  <!-- repeat for other KPIs -->
+</div>
 
-// Progress bars (one per metric)
-function addProgressBar(slide, x, y, w, label, pct, color, bgColor) {
-  // Background track
-  slide.addShape(pres.shapes.RECTANGLE, { x, y, w, h:0.18, fill:{color:bgColor}, line:{color:bgColor} });
-  // Filled portion
-  slide.addShape(pres.shapes.RECTANGLE, { x, y, w: w * (pct/100), h:0.18, fill:{color}, line:{color} });
-  // Label + percentage
-  slide.addText(label, { x, y:y+0.22, w:w*0.7, h:0.22, fontSize:11, color:"475569", fontFace:"Calibri", margin:0 });
-  slide.addText(pct+"%", { x:x+w*0.72, y:y+0.22, w:w*0.28, h:0.22, fontSize:11, bold:true, color, fontFace:"Calibri", align:"right", margin:0 });
-}
-// Usage:
-addProgressBar(slide, 0.6, 1.5, 4.0, "Project Alpha", 87, "0EA5E9", "E0F2FE");
-addProgressBar(slide, 0.6, 2.1, 4.0, "Project Beta",  64, "10B981", "D1FAE5");
-addProgressBar(slide, 0.6, 2.7, 4.0, "Project Gamma", 41, "F59E0B", "FEF3C7");
+── 5. PROGRESS BARS ──
+<div style="padding:20px 0;">
+  <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+    <span style="color:#E2E8F0;font-size:14px;font-family:'Inter';">Project Alpha</span>
+    <span style="color:#0EA5E9;font-size:14px;font-weight:700;font-family:'Inter';">87%</span>
+  </div>
+  <div style="background:rgba(255,255,255,0.1);border-radius:999px;height:8px;">
+    <div style="background:linear-gradient(90deg,#0EA5E9,#38BDF8);width:87%;height:8px;border-radius:999px;"></div>
+  </div>
+</div>
 
-// KPI stat boxes (3 or 4 across)
-function addKpiBox(slide, pres, x, y, w, h, value, label, color, bgColor) {
-  slide.addShape(pres.shapes.RECTANGLE, { x, y, w, h, fill:{color:bgColor}, line:{color:"E2E8F0",width:0.5},
-    shadow:{type:"outer",blur:6,offset:2,angle:135,color:"000000",opacity:0.08} });
-  slide.addShape(pres.shapes.RECTANGLE, { x, y, w, h:0.08, fill:{color}, line:{color} });
-  slide.addText(value, { x, y:y+0.25, w, h:0.8, fontSize:38, bold:true, fontFace:"Georgia", color, align:"center", margin:0 });
-  slide.addText(label, { x, y:y+h-0.45, w, h:0.35, fontSize:11, fontFace:"Calibri", color:"475569", align:"center", margin:0 });
-}
-// Usage (4 boxes):
-addKpiBox(slide, pres, 0.3, 1.3, 2.1, 1.7, "$4.2M",  "Total Revenue",  "1E3A8A", "F8FAFC");
-addKpiBox(slide, pres, 2.6, 1.3, 2.1, 1.7, "94%",    "Client Retention","10B981","F0FDF4");
-addKpiBox(slide, pres, 4.9, 1.3, 2.1, 1.7, "3,840",  "Units Delivered", "F59E0B","FFFBEB");
-addKpiBox(slide, pres, 7.2, 1.3, 2.1, 1.7, "↑ 12%",  "YoY Growth",      "0EA5E9","F0F9FF");
+── 6. TIMELINE / PROCESS STEPS ──
+<div style="display:flex;gap:0;align-items:flex-start;padding:40px 60px;">
+  <div style="flex:1;text-align:center;position:relative;">
+    <div style="width:48px;height:48px;border-radius:50%;background:#0EA5E9;color:white;
+                font-size:18px;font-weight:800;display:flex;align-items:center;justify-content:center;
+                margin:0 auto 16px;font-family:'Montserrat';">1</div>
+    <div style="position:absolute;top:24px;left:50%;width:100%;height:2px;background:rgba(14,165,233,0.3);z-index:-1;"></div>
+    <div style="font-size:13px;font-weight:700;color:#E2E8F0;font-family:'Inter';">Discovery</div>
+    <div style="font-size:11px;color:#94A3B8;margin-top:6px;font-family:'Inter';">Week 1-2</div>
+  </div>
+  <!-- repeat steps -->
+</div>
 
-// Timeline / process steps (horizontal)
-function addTimeline(slide, pres, steps, colors, y) {
-  const n = steps.length;
-  const boxW = 9.0 / n;
-  steps.forEach((step, i) => {
-    const x = 0.5 + i * boxW;
-    const col = colors[i % colors.length];
-    // Connector line
-    if (i < n-1) slide.addShape(pres.shapes.LINE, {
-      x: x + boxW - 0.05, y: y + 0.35, w: 0.1, h: 0,
-      line: {color:"CBD5E1", width:1.5}
-    });
-    // Step box
-    slide.addShape(pres.shapes.RECTANGLE, { x, y, w: boxW - 0.15, h: 1.1,
-      fill:{color:col}, line:{color:col},
-      shadow:{type:"outer",blur:5,offset:2,angle:135,color:"000000",opacity:0.1} });
-    // Number badge
-    slide.addShape(pres.shapes.OVAL, { x: x + (boxW-0.15)/2 - 0.22, y: y - 0.22, w: 0.44, h: 0.44,
-      fill:{color:"FFFFFF"}, line:{color:col,width:2} });
-    slide.addText(String(i+1), { x: x + (boxW-0.15)/2 - 0.22, y: y - 0.22, w: 0.44, h: 0.44,
-      fontSize:12, bold:true, color:col, align:"center", valign:"middle", margin:0 });
-    slide.addText(step.title, { x: x+0.08, y: y+0.1, w: boxW-0.3, h: 0.35,
-      fontSize:11, bold:true, color:"FFFFFF", align:"center", fontFace:"Calibri", margin:0 });
-    if (step.desc) slide.addText(step.desc, { x: x+0.08, y: y+0.5, w: boxW-0.3, h: 0.5,
-      fontSize:9, color:"FFFFFF", align:"center", fontFace:"Calibri", margin:0 });
-  });
-}
+── 7. ICON-LIKE SVG ELEMENTS ──
+<!-- Checkmark icon -->
+<svg width="32" height="32" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="16" fill="#10B981"/>
+  <polyline points="8,16 13,22 24,10" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/>
+</svg>
 
-// Comparison two-column with colored headers
-function addComparisonColumns(slide, pres, left, right, leftColor, rightColor) {
-  // Left card
-  slide.addShape(pres.shapes.RECTANGLE, {x:0.3, y:1.1, w:4.5, h:4.2,
-    fill:{color:"FFFFFF"}, line:{color:"E2E8F0",width:0.5},
-    shadow:{type:"outer",blur:6,offset:2,angle:135,color:"000000",opacity:0.07}});
-  slide.addShape(pres.shapes.RECTANGLE, {x:0.3, y:1.1, w:4.5, h:0.55, fill:{color:leftColor}, line:{color:leftColor}});
-  slide.addText(left.title, {x:0.35, y:1.12, w:4.4, h:0.5, fontSize:14, bold:true, color:"FFFFFF", fontFace:"Calibri", align:"center", margin:0});
-  const leftItems = left.items.map((t,i)=>({text:t, options:{color:"1E293B",fontSize:12,fontFace:"Calibri",bullet:true,breakLine:i<left.items.length-1}}));
-  slide.addText(leftItems, {x:0.45, y:1.75, w:4.2, h:3.4, valign:"top", paraSpaceAfter:8, margin:[4,4,4,4]});
-  // Right card
-  slide.addShape(pres.shapes.RECTANGLE, {x:5.2, y:1.1, w:4.5, h:4.2,
-    fill:{color:"FFFFFF"}, line:{color:"E2E8F0",width:0.5},
-    shadow:{type:"outer",blur:6,offset:2,angle:135,color:"000000",opacity:0.07}});
-  slide.addShape(pres.shapes.RECTANGLE, {x:5.2, y:1.1, w:4.5, h:0.55, fill:{color:rightColor}, line:{color:rightColor}});
-  slide.addText(right.title, {x:5.25, y:1.12, w:4.4, h:0.5, fontSize:14, bold:true, color:"FFFFFF", fontFace:"Calibri", align:"center", margin:0});
-  const rightItems = right.items.map((t,i)=>({text:t, options:{color:"1E293B",fontSize:12,fontFace:"Calibri",bullet:true,breakLine:i<right.items.length-1}}));
-  slide.addText(rightItems, {x:5.3, y:1.75, w:4.2, h:3.4, valign:"top", paraSpaceAfter:8, margin:[4,4,4,4]});
-}
+<!-- Gear/settings icon -->
+<svg width="32" height="32" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="5" fill="none" stroke="#0EA5E9" stroke-width="2.5"/>
+  <path d="M16 4 L18 8 L22 6 L22 10 L26 12 L24 16 L26 20 L22 22 L22 26 L18 24 L16 28 L14 24 L10 26 L10 22 L6 20 L8 16 L6 12 L10 10 L10 6 L14 8 Z"
+        fill="none" stroke="#0EA5E9" stroke-width="2" stroke-linejoin="round"/>
+</svg>
 
-── 3. PHOTOS FROM UNSPLASH ──────────────────────
-Use landscape photos as full or half-slide backgrounds.
-Unsplash Source API — always available, no key needed:
-  https://source.unsplash.com/1600x900/?{keyword1},{keyword2}
-
-Example keywords by topic:
-  business meeting → "office,business,team"
-  technology       → "technology,computer,digital"
-  finance          → "finance,money,charts"
-  nature/ESG       → "nature,forest,sustainability"
-  construction     → "construction,engineering,building"
-  healthcare       → "hospital,medical,healthcare"
-  energy           → "energy,solar,power"
-  manufacturing    → "factory,manufacturing,industrial"
-
-// Full-bleed background photo with dark overlay
-slide.background = { path: "https://source.unsplash.com/1600x900/?office,business" };
-slide.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:10, h:5.625,
-  fill:{color:"000000", transparency:45}, line:{color:"000000",transparency:45} });
-
-// Half-slide photo (right side), content on left
-slide.addImage({
-  path: "https://source.unsplash.com/800x600/?technology,digital",
-  x: 5.2, y: 0, w: 4.8, h: 5.625,
-  sizing: { type: "cover", w: 4.8, h: 5.625 }
-});
-// Subtle overlay on photo side
-slide.addShape(pres.shapes.RECTANGLE, { x:5.2, y:0, w:4.8, h:5.625,
-  fill:{color:"000000", transparency:60}, line:{color:"000000",transparency:60} });
-
-// Photo in a card/frame
-slide.addImage({
-  path: "https://source.unsplash.com/800x500/?engineering,project",
-  x: 5.4, y: 1.3, w: 4.2, h: 2.8,
-  sizing: { type: "cover", w: 4.2, h: 2.8 }
-});
-
-── 4. TABLES ────────────────────────────────────
-slide.addTable([
-  [
-    {text:"Project",  options:{bold:true, fill:{color:"1E3A8A"}, color:"FFFFFF", fontSize:11}},
-    {text:"Status",   options:{bold:true, fill:{color:"1E3A8A"}, color:"FFFFFF", fontSize:11}},
-    {text:"Progress", options:{bold:true, fill:{color:"1E3A8A"}, color:"FFFFFF", fontSize:11}},
-    {text:"Due Date", options:{bold:true, fill:{color:"1E3A8A"}, color:"FFFFFF", fontSize:11}},
-  ],
-  ["Alpha Pipeline", "On Track", "87%", "Dec 2025"],
-  ["Beta Upgrade",   "At Risk",  "42%", "Nov 2025"],
-  ["Gamma Launch",   "Complete", "100%","Sep 2025"],
-], {
-  x: 0.4, y: 1.3, w: 9.2, colW: [3.2, 1.8, 1.8, 2.4],
-  border: { type:"solid", pt:0.5, color:"E2E8F0" },
-  autoPage: false,
-  fontSize: 11, fontFace: "Calibri",
-  align: "left",
-  rowH: 0.42,
-});
-
-── 5. ICON-LIKE ELEMENTS ────────────────────────
-Build icons from basic shapes (no external icon library needed):
-
-// Checkmark circle
-slide.addShape(pres.shapes.OVAL, {x:0.5, y:1.5, w:0.5, h:0.5, fill:{color:"10B981"}, line:{color:"10B981"}});
-slide.addText("✓", {x:0.5, y:1.5, w:0.5, h:0.5, fontSize:16, bold:true, color:"FFFFFF", align:"center", valign:"middle", margin:0});
-
-// Warning diamond (rotated square)
-slide.addShape(pres.shapes.RECTANGLE, {x:0.5, y:1.5, w:0.4, h:0.4, fill:{color:"F59E0B"}, line:{color:"F59E0B"}, rotate:45});
-slide.addText("!", {x:0.5, y:1.52, w:0.4, h:0.36, fontSize:14, bold:true, color:"FFFFFF", align:"center", margin:0});
-
-// Numbered circle
-slide.addShape(pres.shapes.OVAL, {x:0.4, y:1.4, w:0.55, h:0.55, fill:{color:"1E3A8A"}, line:{color:"1E3A8A"}});
-slide.addText("1", {x:0.4, y:1.4, w:0.55, h:0.55, fontSize:18, bold:true, color:"FFFFFF", align:"center", valign:"middle", margin:0});
+── 8. INLINE SVG DIAGRAMS ──
+<!-- Architecture/layer diagram -->
+<svg width="700" height="300" style="overflow:visible;">
+  <!-- Layer boxes with labels -->
+  <rect x="50" y="20" width="600" height="55" rx="8" fill="rgba(14,165,233,0.15)" stroke="#0EA5E9" stroke-width="1.5"/>
+  <text x="350" y="52" text-anchor="middle" fill="#0EA5E9" font-size="16" font-weight="700" font-family="Inter">AI Intelligence Layer</text>
+  
+  <rect x="50" y="110" width="600" height="55" rx="8" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5"/>
+  <text x="350" y="142" text-anchor="middle" fill="#CBD5E1" font-size="16" font-family="Inter">Machines &amp; Sensors (OT)</text>
+  
+  <rect x="50" y="200" width="600" height="55" rx="8" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5"/>
+  <text x="350" y="232" text-anchor="middle" fill="#CBD5E1" font-size="16" font-family="Inter">ERP / IT Systems</text>
+  
+  <!-- Arrows -->
+  <line x1="350" y1="75" x2="350" y2="108" stroke="#0EA5E9" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="350" y1="167" x2="350" y2="198" stroke="#0EA5E9" stroke-width="2" marker-end="url(#arr)"/>
+  <defs><marker id="arr" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+    <path d="M0,0 L8,4 L0,8 Z" fill="#0EA5E9"/>
+  </marker></defs>
+</svg>
 
 ════════════════════════════════════════════════
 DESIGN RULES
 ════════════════════════════════════════════════
 
-PALETTE: Choose 3 colors specifically designed for this topic & style.
-  - Dominant (60-70%), Support, Sharp Accent
-  - Never default to generic blue — pick what fits the mood
+PALETTE: Pick a strong theme matching the style request.
+- Dark/tech: bg #0A0F1E, accent #0EA5E9/#38BDF8, text white
+- Minimal: bg white, accent #1E3A8A, text #1E293B  
+- Warm exec: bg #1A0A00, accent #D97706/#F59E0B, text white
+- Nature/ESG: bg #0A1A0A, accent #10B981/#34D399, text white
 
-FONTS: Interesting pairings — vary per style:
-  Georgia+Calibri (authority), Trebuchet MS+Calibri (modern),
-  Arial Black+Arial (bold), Cambria+Calibri (classic), Palatino+Garamond (luxury)
+FONTS via Google Fonts (pick per style):
+- Tech/modern: Montserrat + Inter
+- Executive: Playfair Display + Inter
+- Minimal: DM Sans + DM Serif Display
+- Bold: Bebas Neue + Inter
 
-LAYOUT VARIETY — each slide MUST use a different layout:
-  Slide 1 (Title):   Full photo background + overlay + large title
-  Slide 2:           KPI stat boxes (3-4 across)
-  Slide 3:           Half-photo split + bullet content
-  Slide 4:           Native chart (bar/line matching the data)
-  Slide 5:           Progress bars infographic
-  Slide 6:           Timeline / process steps
-  Slide 7:           Comparison two-column OR table
-  Slide 8:           Doughnut/pie chart + insight text
-  Slide N (Closing): Full photo background + overlay + "Thank You"
+SLIDE VARIETY — never repeat same layout:
+- Slide 1 (Title): Full-bleed photo bg + overlay + large centered title
+- Slide 2: KPI stat cards (3-4 across)  
+- Slide 3: Split (content left, photo right)
+- Slide 4: SVG chart (bar or line matching topic data)
+- Slide 5: Progress bars or timeline
+- Slide 6: SVG diagram or infographic (architecture, flow, etc.)
+- Slide 7: Two-column comparison or feature grid with icons
+- Slide 8: Donut chart + key insights text
+- Closing: Full-bleed photo + overlay + closing statement
 
-EVERY slide must have at least one of: photo, chart, infographic shape, or decorative geometry.
-NO plain white slides with only text bullets.
+PHOTOS — use Unsplash with precise keywords:
+https://source.unsplash.com/1280x720/?steel,factory,industrial
+https://source.unsplash.com/600x720/?artificial,intelligence,technology
+(Vary keywords per slide for different photos)
 
-CHART DATA: Invent plausible, specific data that fits the slide topic. Use real-looking numbers.
-PHOTO KEYWORDS: Match keywords precisely to slide topic for relevant Unsplash photos.
+CHART DATA — invent plausible, specific numbers matching the topic.
 
-FONT SIZES:
-  Title slide heading: 42-48pt bold
-  Section/slide titles: 22-28pt bold  
-  Body / bullets: 12-14pt
-  Captions / KPI labels: 9-11pt
-  KPI values: 36-48pt bold
+SLIDE STRUCTURE (each slide must be exactly 1280x720):
+<div class="slide" data-slide-index="N" style="width:1280px;height:720px;overflow:hidden;position:relative;box-sizing:border-box;">
+
+SLIDE TITLE (always present, except title slide):
+<div style="position:absolute;top:0;left:0;right:0;height:72px;
+            background:rgba(0,0,0,0.4);display:flex;align-items:center;padding:0 60px;
+            border-bottom:1px solid rgba(255,255,255,0.08);">
+  <h2 style="margin:0;font-size:22px;font-weight:700;color:white;font-family:'Montserrat';">Slide Title Here</h2>
+</div>
+
+PAGE NUMBER (bottom right, always):
+<div style="position:absolute;bottom:20px;right:40px;font-size:12px;color:rgba(255,255,255,0.35);font-family:'Inter';">N / TOTAL</div>
 
 ════════════════════════════════════════════════
-NOW GENERATE THE CODE
+HTML WRAPPER STRUCTURE
 ════════════════════════════════════════════════
-IMPORTANT: Do NOT write any import statements.
-PptxGenJS is already available as a global variable.
-Start your code DIRECTLY with:
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;800;900&family=Inter:wght@400;500;600&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#111; display:flex; flex-direction:column; align-items:center; gap:20px; padding:20px; }
+  .slide { width:1280px; height:720px; overflow:hidden; position:relative; border-radius:4px; }
+</style>
+</head>
+<body>
+  <!-- slides here, one per section -->
+</body>
+</html>`;
 
-export default async function buildPresentation(outputPath) {`;
+// ───────────────────────────────────────────────────────────────
+// Screenshot each slide via Puppeteer → PNG buffers
+// ───────────────────────────────────────────────────────────────
+async function screenshotSlides(htmlFilePath) {
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--window-size=1280,720',
+      ],
+    });
 
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1.5 }); // retina quality
 
-// ─────────────────────────────────────────────────────────────
-// Parse slide content (for fallback)
-// ─────────────────────────────────────────────────────────────
-function parseSlides(content) {
-  const slides = [];
-  const chunks = content.split(/\n(?=#{1,3}\s|---+)/i).filter(c => c.trim().length > 0);
-  for (const chunk of chunks) {
-    const lines = chunk.trim().split('\n').filter(l => l.trim());
-    if (!lines.length) continue;
-    let title = '', bodyLines = [];
-    for (const line of lines) {
-      const t = line.trim();
-      if (t.match(/^---+$/)) continue;
-      const h = t.match(/^#{1,3}\s+(.+)/);
-      const b = t.match(/^\*\*(.+)\*\*$/);
-      if (!title && (h || b)) { title = (h ? h[1] : b[1]).trim(); }
-      else if (t.length > 0) bodyLines.push(t);
+    const fileUrl = `file://${htmlFilePath}`;
+    await page.goto(fileUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // Wait for fonts and images
+    await page.waitForTimeout(2000);
+
+    // Get all slide elements
+    const slideCount = await page.evaluate(() =>
+      document.querySelectorAll('.slide').length
+    );
+
+    console.log(`📸 [PPT] Screenshotting ${slideCount} slides...`);
+
+    const screenshots = [];
+    for (let i = 0; i < slideCount; i++) {
+      const slideEl = await page.$$(`.slide`);
+      if (!slideEl[i]) continue;
+
+      const box = await slideEl[i].boundingBox();
+      const png = await page.screenshot({
+        clip: { x: box.x, y: box.y, width: 1280, height: 720 },
+        type: 'png',
+      });
+      screenshots.push(png);
+      console.log(`  📸 Slide ${i + 1}/${slideCount} captured`);
     }
-    if (!title && bodyLines.length > 0) title = bodyLines.shift();
-    const bullets = [], paragraphs = [];
-    for (const line of bodyLines) {
-      const bm = line.match(/^[-*•]\s+(.+)/);
-      const nm = line.match(/^\d+\.\s+(.+)/);
-      if (bm) bullets.push(bm[1]);
-      else if (nm) bullets.push(nm[1]);
-      else if (line.trim()) paragraphs.push(line.trim());
-    }
-    if (title) slides.push({ title, bullets, paragraphs });
+
+    return screenshots;
+  } finally {
+    if (browser) await browser.close();
   }
-  if (!slides.length) slides.push({ title: 'Presentation', bullets: [], paragraphs: [content.substring(0, 300)] });
-  return slides;
 }
 
-// ─────────────────────────────────────────────────────────────
-// FALLBACK static builder (when AI code execution fails)
-// ─────────────────────────────────────────────────────────────
-async function buildFallbackPresentation(title, slides, outputPath) {
+// ───────────────────────────────────────────────────────────────
+// Build PPTX from slide screenshots
+// ───────────────────────────────────────────────────────────────
+async function buildPptxFromScreenshots(screenshots, title, outputPath) {
   const pres = new PptxGenJS();
-  pres.layout = 'LAYOUT_16x9';
-  const W = 10, H = 5.625;
-  const COL = { dark: '0F2942', accent: 'E6A817', mid: '1E5799', light: 'F4F6F9', muted: '7BA7C4' };
+  pres.layout  = 'LAYOUT_16x9';
+  pres.title   = title;
+  pres.subject = title;
 
-  // Title slide with chart
-  const ts = pres.addSlide();
-  ts.background = { color: COL.dark };
-  ts.addShape(pres.shapes.RECTANGLE, { x:0,y:0, w:0.28,h:H, fill:{color:COL.accent}, line:{color:COL.accent} });
-  ts.addShape(pres.shapes.OVAL, { x:6.5,y:-1, w:5.5,h:5.5, fill:{color:COL.accent,transparency:90}, line:{color:COL.accent,transparency:90} });
-  ts.addShape(pres.shapes.OVAL, { x:7.5,y:0.8, w:3,h:3, fill:{color:'FFFFFF',transparency:95}, line:{color:'FFFFFF',transparency:95} });
-  ts.addText(title, { x:0.7,y:1.6, w:7.8,h:1.6, fontSize:40, bold:true, fontFace:'Georgia', color:'FFFFFF', margin:0 });
-  ts.addShape(pres.shapes.RECTANGLE, { x:0.7,y:3.35, w:1.8,h:0.06, fill:{color:COL.accent}, line:{color:COL.accent} });
-  ts.addText(new Date().toLocaleDateString('en-US',{year:'numeric',month:'long'}), { x:0.7,y:3.5, w:6,h:0.4, fontSize:13, color:COL.muted, fontFace:'Calibri', margin:0 });
-
-  // Slide with chart (first content slide if data-like)
-  if (slides.length > 1) {
-    const cs = pres.addSlide();
-    cs.background = { color: COL.light };
-    cs.addShape(pres.shapes.RECTANGLE, { x:0,y:0, w:W,h:1.0, fill:{color:COL.dark}, line:{color:COL.dark} });
-    cs.addShape(pres.shapes.RECTANGLE, { x:0,y:0, w:0.18,h:1.0, fill:{color:COL.accent}, line:{color:COL.accent} });
-    cs.addText('Overview', { x:0.4,y:0.15, w:9,h:0.72, fontSize:24, bold:true, fontFace:'Georgia', color:'FFFFFF', margin:0 });
-    // Add a sample bar chart
-    cs.addChart(pres.charts.BAR, [{
-      name:'Progress', labels:slides.slice(0,5).map(s=>s.title.substring(0,15)),
-      values: slides.slice(0,5).map(()=>Math.floor(40+Math.random()*55))
-    }], {
-      x:0.4, y:1.1, w:9.2, h:4.2, barDir:'col',
-      chartColors:[COL.mid,'0EA5E9','38BDF8','1D4ED8','7C3AED'],
-      chartArea:{ fill:{color:'FFFFFF'}, roundedCorners:true },
-      catAxisLabelColor:'64748B', valAxisLabelColor:'64748B',
-      valGridLine:{color:'E2E8F0',size:0.5}, catGridLine:{style:'none'},
-      showValue:true, dataLabelColor:'1E293B', dataLabelFontSize:10, showLegend:false,
+  for (const png of screenshots) {
+    const slide = pres.addSlide();
+    const b64   = png.toString('base64');
+    slide.addImage({
+      data: `image/png;base64,${b64}`,
+      x: 0, y: 0, w: 10, h: 5.625,
     });
   }
-
-  // Remaining content slides
-  slides.forEach((slide, idx) => {
-    if (idx === 0) return; // skip, already covered above
-    const s = pres.addSlide();
-    s.background = { color: COL.light };
-    s.addShape(pres.shapes.RECTANGLE, { x:0,y:0, w:W,h:1.0, fill:{color:COL.dark}, line:{color:COL.dark} });
-    s.addShape(pres.shapes.RECTANGLE, { x:0,y:0, w:0.18,h:1.0, fill:{color:COL.accent}, line:{color:COL.accent} });
-    s.addText(slide.title, { x:0.4,y:0.15, w:9,h:0.72, fontSize:24, bold:true, fontFace:'Georgia', color:'FFFFFF', margin:0 });
-
-    // Card
-    s.addShape(pres.shapes.RECTANGLE, { x:0.35,y:1.15, w:9.3,h:4.15,
-      fill:{color:'FFFFFF'}, line:{color:'E2E8F0',width:0.5},
-      shadow:{type:'outer',blur:8,offset:2,angle:135,color:'000000',opacity:0.07}
-    });
-    s.addShape(pres.shapes.RECTANGLE, { x:0.35,y:1.15, w:0.1,h:4.15, fill:{color:COL.accent}, line:{color:COL.accent} });
-
-    const items = [...(slide.bullets||[]), ...(slide.paragraphs||[])];
-    if (items.length > 0) {
-      const textItems = items.map((b,i) => ({
-        text: b,
-        options: { color:'1A2F45', fontSize:13, fontFace:'Calibri', bullet:true, breakLine: i < items.length-1 }
-      }));
-      s.addText(textItems, { x:0.6,y:1.3, w:8.9,h:3.9, valign:'top', paraSpaceAfter:9, margin:[8,8,8,0] });
-    }
-
-    s.addShape(pres.shapes.RECTANGLE, { x:0,y:5.33, w:W,h:0.3, fill:{color:COL.dark}, line:{color:COL.dark} });
-    s.addText(`${idx+2} / ${slides.length+1}`, { x:8.5,y:5.34, w:1.3,h:0.24, fontSize:9, color:COL.muted, fontFace:'Calibri', align:'right', margin:0 });
-    s.addText(title, { x:0.35,y:5.34, w:6,h:0.24, fontSize:9, color:COL.muted, fontFace:'Calibri', margin:0 });
-  });
-
-  // Closing
-  const cs2 = pres.addSlide();
-  cs2.background = { color: COL.dark };
-  cs2.addShape(pres.shapes.OVAL, { x:-1.2,y:2.2, w:5,h:5, fill:{color:COL.accent,transparency:88}, line:{color:COL.accent,transparency:88} });
-  cs2.addShape(pres.shapes.OVAL, { x:7.2,y:-0.8, w:4,h:4, fill:{color:COL.accent,transparency:85}, line:{color:COL.accent,transparency:85} });
-  cs2.addShape(pres.shapes.RECTANGLE, { x:3.5,y:3.05, w:3,h:0.07, fill:{color:COL.accent}, line:{color:COL.accent} });
-  cs2.addText('Thank You', { x:1,y:1.7, w:8,h:1.2, fontSize:44, bold:true, fontFace:'Georgia', color:'FFFFFF', align:'center', margin:0 });
-  cs2.addText(title, { x:1,y:3.2, w:8,h:0.5, fontSize:14, color:COL.muted, fontFace:'Calibri', align:'center', margin:0 });
 
   await pres.writeFile({ fileName: outputPath });
-  return slides.length + 2;
+  return screenshots.length;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Execute AI-generated code via temp .mjs file
-// ROOT CAUSE FIX: temp file di /data/tmp/ tidak bisa resolve
-// 'pptxgenjs' karena tidak ada node_modules di sana.
-// Solusi: ganti `import PptxGenJS from 'pptxgenjs'` dengan
-// createRequire yang point ke node_modules project.
-// ─────────────────────────────────────────────────────────────
-async function executeAICode(code, outputPath) {
-  const tmpDir = path.join(process.cwd(), 'data', 'tmp');
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-  const tmpFile = path.join(tmpDir, `pptx_${Date.now()}.mjs`);
-  const projectRoot = process.cwd(); // path ke folder server/ yang punya node_modules
-  let cleanCode = '';
-  try {
-    cleanCode = code
-      .replace(/^```(?:javascript|js|typescript)?\s*\n?/gm, '')
-      .replace(/^```\s*$/gm, '')
-      .trim();
+// ───────────────────────────────────────────────────────────────
+// Fallback: plain PPTX from slide content (no screenshots)
+// ───────────────────────────────────────────────────────────────
+async function buildFallbackPptx(title, slideContent, outputPath) {
+  const pres = new PptxGenJS();
+  pres.layout = 'LAYOUT_16x9';
 
-    // ── KUNCI FIX: ganti import PptxGenJS from 'pptxgenjs' ──
-    // dengan createRequire yang resolve dari project root
-    // Ini fix masalah "Cannot find package 'pptxgenjs'" karena
-    // temp file ada di /data/tmp/ yang tidak punya node_modules
-    const pptxImportShim = `
-import { createRequire } from 'module';
-const require = createRequire(${JSON.stringify(projectRoot + '/package.json')});
-const PptxGenJS = require('pptxgenjs');
-`.trim();
+  const slides = slideContent.split(/\n(?=##\s)/m).filter(s => s.trim());
 
-    // Hapus semua variasi import pptxgenjs dari AI code
-    cleanCode = cleanCode
-      .replace(/^import\s+PptxGenJS\s+from\s+['"]pptxgenjs['"];?\s*\n?/gm, '')
-      .replace(/^const\s+PptxGenJS\s*=\s*require\(['"]pptxgenjs['"]\);?\s*\n?/gm, '')
-      .trim();
+  // Title slide
+  const ts = pres.addSlide();
+  ts.background = { color: '0A0F1E' };
+  ts.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:0.3, h:5.625, fill:{color:'0EA5E9'}, line:{color:'0EA5E9'} });
+  ts.addText(title, { x:0.6, y:1.8, w:8.8, h:1.8, fontSize:38, bold:true, color:'FFFFFF', fontFace:'Calibri', margin:0 });
+  ts.addText(new Date().toLocaleDateString('en-US',{year:'numeric',month:'long'}),
+    { x:0.6, y:3.8, w:6, h:0.4, fontSize:14, color:'94A3B8', fontFace:'Calibri', margin:0 });
 
-    // Inject shim di awal
-    cleanCode = pptxImportShim + '\n\n' + cleanCode;
+  for (const block of slides.slice(0, 8)) {
+    const lines = block.trim().split('\n');
+    const slideTitle = lines[0].replace(/^##\s+/, '').trim();
+    const bullets = lines.slice(1).filter(l => l.trim()).map(l => l.replace(/^[-*]\s+/, '').trim());
 
-    fs.writeFileSync(tmpFile, cleanCode, 'utf8');
-    const mod = await import(pathToFileURL(tmpFile).href);
-    const buildFn = mod.default || mod.buildPresentation;
-    if (typeof buildFn !== 'function') throw new Error('No default export function found');
-    await buildFn(outputPath);
-    return true;
-  } catch (err) {
-    console.error('❌ [PptxService] AI code execution FAILED');
-    console.error('   Error:', err.message);
-    console.error('   Stack:', err.stack?.split('\n').slice(0, 5).join('\n   '));
-    if (cleanCode) {
-      const lines = cleanCode.split('\n');
-      console.error(`   Code (first 40 lines):\n${lines.slice(0, 40).map((l, i) => `     ${i+1}: ${l}`).join('\n')}`);
-      const errFile = path.join(tmpDir, `pptx_ERROR_${Date.now()}.mjs`);
-      try { fs.writeFileSync(errFile, cleanCode, 'utf8'); console.error(`   Saved to: ${errFile}`); } catch {}
+    const s = pres.addSlide();
+    s.background = { color: '0A0F1E' };
+    s.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:10, h:0.9, fill:{color:'0F172A'}, line:{color:'0F172A'} });
+    s.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:0.18, h:0.9, fill:{color:'0EA5E9'}, line:{color:'0EA5E9'} });
+    s.addText(slideTitle, { x:0.35, y:0.1, w:9.3, h:0.72, fontSize:22, bold:true, color:'FFFFFF', fontFace:'Calibri', margin:0 });
+    if (bullets.length) {
+      const items = bullets.map((b,i) => ({ text:b, options:{color:'CBD5E1', fontSize:14, fontFace:'Calibri', bullet:true, breakLine:i<bullets.length-1} }));
+      s.addText(items, { x:0.4, y:1.1, w:9.2, h:4.3, valign:'top', paraSpaceAfter:10, margin:[6,6,6,0] });
     }
-    return false;
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
   }
+
+  await pres.writeFile({ fileName: outputPath });
+  return Math.min(slides.length + 1, 9);
 }
 
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
 // MAIN SERVICE
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
 const PptxService = {
-  PPTX_CODE_SYSTEM_PROMPT,
+  HTML_SLIDE_SYSTEM_PROMPT,
 
-  async generateFromAICode({ aiCode, fallbackContent, title, outputDir, styleDesc }) {
-    const safeTitle = title.replace(/[^a-zA-Z0-9\s-]/g,'').replace(/\s+/g,'-').substring(0,40) || 'Presentation';
-    const filename = `${safeTitle}-${Date.now()}.pptx`;
-    const filepath = path.join(outputDir, filename);
-
-    let slideCount = 0, usedFallback = false;
-    const aiSuccess = await executeAICode(aiCode, filepath);
-
-    if (!aiSuccess) {
-      console.warn('⚠️ [PptxService] Falling back to static builder');
-      const slides = parseSlides(fallbackContent || title);
-      slideCount = await buildFallbackPresentation(title, slides, filepath);
-      usedFallback = true;
-    } else {
-      try { slideCount = Math.max(6, Math.floor(fs.statSync(filepath).size / 40000)); } catch { slideCount = 8; }
-    }
-    console.log(`✅ [PptxService] "${filename}" | Style: ${styleDesc} | Fallback: ${usedFallback}`);
-    return { filename, filepath, url: `/api/files/${filename}`, styleDesc, slideCount, usedFallback };
-  },
-
-  buildDesignPrompt({ slideContent, styleRequest, title, topic }) {
-    // Derive photo keywords from topic
+  // Build the prompt sent to AI for HTML generation
+  buildHtmlPrompt({ slideContent, styleRequest, title, topic }) {
     const photoKeywords = (topic || title)
       .toLowerCase()
       .replace(/[^a-z\s]/g, '')
@@ -512,60 +374,102 @@ const PptxService = {
       .slice(0, 3)
       .join(',') || 'business,professional';
 
-    return `${PPTX_CODE_SYSTEM_PROMPT}
+    return `${HTML_SLIDE_SYSTEM_PROMPT}
 
 ═══════════════════════════════════════
 PRESENTATION TO BUILD
 ═══════════════════════════════════════
 Title: "${title}"
 Style: "${styleRequest}"
-Photo keywords for Unsplash: "${photoKeywords}"
+Primary photo keywords: "${photoKeywords}"
 
-SLIDE CONTENT:
+SLIDE CONTENT TO VISUALIZE:
 ${slideContent}
 
 ═══════════════════════════════════════
 YOUR TASK
 ═══════════════════════════════════════
-Design a stunning presentation based on the style "${styleRequest}".
+Create a stunning HTML presentation in the style: "${styleRequest}"
 
-For EVERY slide, choose the most appropriate visual approach:
-- Data/metrics slides → native chart (addChart)
-- Progress/status slides → progress bar infographic
-- KPI slides → stat boxes
-- Process/workflow slides → timeline
-- Comparison slides → two-column cards
-- Overview/intro slides → half-photo split layout
-- Opening/closing → full photo background with overlay
+Rules:
+- Match the EXACT slide structure from the content above (same titles, same sections)
+- For each slide, choose the most fitting visual:
+  • Data/numbers → SVG bar chart or donut chart with real numbers from the content
+  • Process/steps → Timeline or flowchart diagram  
+  • Comparisons → Two-column or grid layout
+  • Key metrics → KPI stat cards
+  • Overview/intro → Full-bleed photo with overlay
+  • Architecture/layers → SVG layered diagram
+- EVERY slide must have at minimum: a photo background OR chart/diagram OR infographic
+- NO plain text-only slides
+- Invent specific, realistic data for charts that fits the topic
+- Photo keywords must match the slide topic specifically
 
-IMPORTANT for photos:
-- Use the Unsplash URL format: https://source.unsplash.com/1600x900/?{keywords}
-- Vary keywords per slide to get different relevant photos
-- Always add a semi-transparent dark overlay (transparency: 40-60) over photos before adding text
+Return ONLY the complete HTML. Start immediately with <!DOCTYPE html>`;
+  },
 
-Do NOT write any import statements — PptxGenJS is already available.
-START YOUR CODE IMMEDIATELY with:
+  // Main generator: HTML → screenshots → PPTX
+  async generate({ htmlCode, slideContent, title, outputDir, styleDesc }) {
+    const safeTitle = title
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 40) || 'Presentation';
+    const timestamp  = Date.now();
+    const htmlFile   = path.join(outputDir, `${safeTitle}-${timestamp}.html`);
+    const pptxFile   = path.join(outputDir, `${safeTitle}-${timestamp}.pptx`);
 
-export default async function buildPresentation(outputPath) {`;
+    // 1. Save HTML file (for in-chat preview)
+    let cleanHtml = htmlCode
+      .replace(/^```html\s*\n?/gm, '')
+      .replace(/^```\s*$/gm, '')
+      .trim();
+    if (!cleanHtml.startsWith('<!DOCTYPE') && !cleanHtml.startsWith('<html')) {
+      throw new Error('AI did not return valid HTML');
+    }
+    fs.writeFileSync(htmlFile, cleanHtml, 'utf8');
+    console.log(`✅ [PPT] HTML saved: ${path.basename(htmlFile)}`);
+
+    // 2. Screenshot slides via Puppeteer
+    let slideCount = 0;
+    let usedFallback = false;
+    try {
+      const screenshots = await screenshotSlides(htmlFile);
+      if (screenshots.length === 0) throw new Error('No slides captured');
+      slideCount = await buildPptxFromScreenshots(screenshots, title, pptxFile);
+      console.log(`✅ [PPT] PPTX built from ${slideCount} screenshots`);
+    } catch (err) {
+      console.error('⚠️ [PPT] Puppeteer failed, using fallback:', err.message);
+      slideCount = await buildFallbackPptx(title, slideContent, pptxFile);
+      usedFallback = true;
+    }
+
+    return {
+      htmlFile,
+      pptxFile,
+      htmlUrl:   `/api/files/${path.basename(htmlFile)}`,
+      pptxUrl:   `/api/files/${path.basename(pptxFile)}`,
+      pptxName:  path.basename(pptxFile),
+      htmlName:  path.basename(htmlFile),
+      slideCount,
+      usedFallback,
+      styleDesc,
+    };
   },
 
   getStyleExamples() {
     return [
-      { label: 'McKinsey / BCG',         example: 'style McKinsey consulting deck — dark navy, sharp data charts, gold accents' },
-      { label: 'Apple Keynote',           example: 'style Apple Keynote — pure black, cinematic full-bleed photos, white text' },
-      { label: 'Google Material',         example: 'style Google Slides clean — white cards, colorful charts, material shadows' },
-      { label: 'Dark Futuristic',         example: 'style dark futuristic tech — black background, neon cyan charts, glow effects' },
-      { label: 'Startup Pitch',           example: 'style startup pitch deck — bold gradient, large KPI stats, investor-ready' },
-      { label: 'Corporate Executive',     example: 'style executive boardroom — deep navy, gold, formal typography' },
-      { label: 'Warm Editorial',          example: 'style editorial magazine — terracotta, cream, organic full-page photos' },
-      { label: 'Finance / Bloomberg',     example: 'style finance report — slate gray, gold, data-heavy charts, Bloomberg feel' },
-      { label: 'Nature / ESG',            example: 'style sustainability ESG — forest green, earthy photos, nature-inspired' },
-      { label: 'Healthcare / Medical',    example: 'style medical report — clinical white, teal accents, clean data tables' },
-      { label: 'Bold Marketing',          example: 'style bold ad agency — high contrast black/red, punchy full-bleed photos' },
-      { label: 'Tech / SaaS Product',     example: 'style SaaS product deck — dark blue gradient, line charts, modern sans-serif' },
+      { label: 'McKinsey / BCG',      example: 'style McKinsey consulting — navy, data charts, sharp typography' },
+      { label: 'Apple Keynote',       example: 'style Apple Keynote — pure black, full-bleed photos, white text' },
+      { label: 'Dark Futuristic',     example: 'style dark futuristic tech — black background, neon cyan, glowing charts' },
+      { label: 'Startup Pitch',       example: 'style startup pitch deck — bold gradient, large KPI stats, investor-ready' },
+      { label: 'Corporate Executive', example: 'style executive boardroom — deep navy, gold accents, formal' },
+      { label: 'Warm Editorial',      example: 'style editorial magazine — terracotta, cream, organic photos' },
+      { label: 'Finance / Bloomberg', example: 'style finance report — slate gray, gold, data-heavy charts' },
+      { label: 'Nature / ESG',        example: 'style sustainability ESG — forest green, earthy photos, nature' },
+      { label: 'Healthcare',          example: 'style medical report — clinical white, teal accents, clean tables' },
+      { label: 'Bold Marketing',      example: 'style bold agency — high contrast, punchy, full-bleed photos' },
     ];
   },
 };
 
 export default PptxService;
-export { parseSlides, buildFallbackPresentation };

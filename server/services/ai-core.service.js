@@ -2,10 +2,10 @@
 // ─────────────────────────────────────────────────────────────
 // CHANGELOG vs original:
 //   + import PptxService (1 line)
-//   + isPptCommand() function (baru)
-//   + extractStyleAndTopic() function (baru)
-//   + if (isPptCommand(message)) block di processMessage() (3 lines)
-//   + _handlePptCommand() method (baru)
+//   + isPptCommand() function
+//   + extractStyleAndTopic() function
+//   + if (isPptCommand(message)) block di processMessage()
+//   + _handlePptCommand() method — REDESIGNED: AI generates HTML, puppeteer → PPTX
 //   SEMUA KODE LAIN IDENTIK DENGAN ASLINYA
 // ─────────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ import KouventaService        from './kouventa.service.js';
 import PptxService            from './pptx.service.js';  // ← TAMBAHAN BARU
 
 // ─────────────────────────────────────────────────────────────
-// ← TAMBAHAN BARU: PPT command detection helpers
+// ← TAMBAHAN BARU: PPT helpers
 // ─────────────────────────────────────────────────────────────
 function isPptCommand(message = '') {
   const t = (message || '').trim().toLowerCase();
@@ -53,7 +53,7 @@ function extractStyleAndTopic(message = '') {
     /\b(?:style|gaya|tema|tampilan|dengan gaya|dengan style|look like|looks like|mirip|seperti|ala|inspired by|in the style of)\s+(.+?)(?:\s*[-–]\s*(.+))?$/i
   );
 
-  let styleRequest = 'professional corporate executive with charts and photos';
+  let styleRequest = 'professional corporate executive — dark navy, data charts, clean typography';
   let topic = text;
 
   if (styleMatch) {
@@ -68,6 +68,19 @@ function extractStyleAndTopic(message = '') {
 
   return { styleRequest, topic };
 }
+
+// Markers to exclude PPT bot responses from history
+const PPT_RESPONSE_MARKERS = [
+  '✅ **Presentasi berhasil',
+  '⬇️ Download:',
+  'Style lain yang bisa dicoba',
+  'fallback renderer',
+  'Deskripsikan style apapun',
+  '/api/files/',
+  '.pptx',
+  '🎨 Style:',
+  '📑 ~',
+];
 // ─────────────────────────────────────────────────────────────
 // END TAMBAHAN BARU
 // ─────────────────────────────────────────────────────────────
@@ -77,7 +90,6 @@ class AICoreService {
     this.fileManager = new FileManagerService();
   }
 
-  // ─── Detect data query ─────────────────────────────────────
   // IDENTIK DENGAN ASLI
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
@@ -95,8 +107,7 @@ class AICoreService {
     return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
 
-  // ─── Extract file content for inline attachment ────────────
-  // IDENTIK DENGAN ASLI (termasuk label [ISI FILE] dan [END FILE])
+  // IDENTIK DENGAN ASLI
   async extractFileContent(attachedFile) {
     const physicalPath = attachedFile.serverPath || attachedFile.path;
     if (!physicalPath || !fs.existsSync(physicalPath)) return '';
@@ -119,15 +130,11 @@ class AICoreService {
     } catch { return ''; }
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // MAIN: Process message
-  // IDENTIK DENGAN ASLI + 3 baris PPT check di awal
-  // ─────────────────────────────────────────────────────────────
+  // IDENTIK DENGAN ASLI + PPT intercept
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
     const bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
-    // Create thread if needed — IDENTIK DENGAN ASLI
     if (!threadId) {
       const title     = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
       const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
@@ -135,15 +142,15 @@ class AICoreService {
       threadId = newThread._id;
     }
 
-    // ← TAMBAHAN BARU: PPT command intercept
+    // ← TAMBAHAN BARU
     if (isPptCommand(message)) {
       return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
     }
-    // END TAMBAHAN BARU ──────────────────────────────────────
+    // END TAMBAHAN BARU
 
     let contextData = '';
 
-    // ── 1. KOUVENTA ── IDENTIK DENGAN ASLI
+    // IDENTIK DENGAN ASLI
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
         const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
@@ -152,7 +159,6 @@ class AICoreService {
       } catch (error) { console.error('Kouventa Error:', error.message); }
     }
 
-    // ── 2. SMARTSHEET LIVE ── IDENTIK DENGAN ASLI
     if (bot.smartsheetConfig?.enabled && this.isDataQuery(message)) {
       try {
         const apiKey  = bot.smartsheetConfig.apiKey || process.env.SMARTSHEET_API_KEY;
@@ -171,7 +177,6 @@ class AICoreService {
       }
     }
 
-    // ── 3. KNOWLEDGE BASE (RAG) ── IDENTIK DENGAN ASLI
     if (bot.knowledgeFiles?.length > 0 && bot.knowledgeMode !== 'disabled') {
       const knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
         bot.knowledgeFiles, message, bot.knowledgeMode || 'relevant'
@@ -179,20 +184,17 @@ class AICoreService {
       if (knowledgeCtx) contextData += knowledgeCtx;
     }
 
-    // ── 4. BUILD USER MESSAGE CONTENT ── IDENTIK DENGAN ASLI
     const userContent = [];
     if (message) userContent.push({ type: 'text', text: message });
 
     if (attachedFile) {
       if (attachedFile.mimetype?.startsWith('image/') && bot.aiProvider?.provider === 'openai') {
-        // Vision for OpenAI
         const imgBuffer = fs.readFileSync(attachedFile.path);
         userContent.push({
           type: 'image_url',
           image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` },
         });
       } else {
-        // Extract text for all providers
         const text = await this.extractFileContent(attachedFile);
         if (text) userContent.push({ type: 'text', text });
       }
@@ -202,7 +204,6 @@ class AICoreService {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
-    // IDENTIK DENGAN ASLI — termasuk kalimat panjang "Jangan mengarang fakta"
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[HARI INI: ${today}]`,
@@ -212,11 +213,9 @@ class AICoreService {
         : '',
     ].filter(Boolean).join('\n\n');
 
-    // IDENTIK DENGAN ASLI — termasuk log tokens
     console.log(`🤖 Bot "${bot.name}" | Provider: ${bot.aiProvider?.provider || 'openai'} | Model: ${bot.aiProvider?.model || 'gpt-4o'}`);
     console.log(`📝 System prompt: ~${Math.ceil(systemPrompt.length / 4)} tokens`);
 
-    // ── 5. CALL AI PROVIDER ── IDENTIK DENGAN ASLI
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt,
@@ -228,7 +227,6 @@ class AICoreService {
 
     const aiResponse = result.text;
 
-    // ── 6. SAVE TO DB ── IDENTIK DENGAN ASLI
     let savedAttachments = [];
     if (attachedFile) {
       savedAttachments.push({
@@ -242,207 +240,160 @@ class AICoreService {
 
     await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
     await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
-
     await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
-    // IDENTIK DENGAN ASLI (tidak ada usage di return asli — dijaga sama)
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }
 
   // ─────────────────────────────────────────────────────────────
-  // ← TAMBAHAN BARU SELURUHNYA: _handlePptCommand
-  // Tidak mengubah apapun di method lain
+  // ← TAMBAHAN BARU: _handlePptCommand (REDESIGNED)
+  // AI generates HTML → Puppeteer screenshots → PPTX
   // ─────────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
     try {
-      // ─────────────────────────────────────────────────────────
-      // STEP 0: Ambil history langsung dari DB (lebih reliable
-      // daripada mengandalkan history yang dikirim frontend)
-      // ─────────────────────────────────────────────────────────
+      // ── STEP 0: Ambil history dari DB ──────────────────────
       let dbHistory = [];
       try {
         if (threadId) {
-          // Query by threadId — paling akurat
           dbHistory = await Chat.find({ threadId })
             .sort({ createdAt: 1 })
             .limit(30)
             .lean();
         } else {
-          // Fallback: ambil dari userId+botId (thread baru, belum punya ID)
           dbHistory = await Chat.find({ userId, botId })
             .sort({ createdAt: -1 })
             .limit(20)
             .lean();
           dbHistory = dbHistory.reverse();
         }
-        // Exclude pesan PPT command yang sekarang (belum disave, tapi jaga-jaga)
-        dbHistory = dbHistory.filter(h =>
-          h.content && !isPptCommand(h.content)
-        );
-        console.log(`📊 [PPT] DB history: ${dbHistory.length} pesan dari threadId=${threadId}`);
+        // Filter: buang PPT command dan PPT response bot sebelumnya
+        dbHistory = dbHistory.filter(h => {
+          if (!h.content) return false;
+          if (isPptCommand(h.content)) return false;
+          if (PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))) return false;
+          return true;
+        });
+        console.log(`📊 [PPT] History: ${dbHistory.length} pesan relevan`);
       } catch (e) {
-        console.warn('⚠️ [PPT] Gagal ambil history dari DB:', e.message);
-        dbHistory = history;
+        console.warn('⚠️ [PPT] DB query failed:', e.message);
+        dbHistory = history.filter(h => !PPT_RESPONSE_MARKERS.some(m => (h.content||'').includes(m)));
       }
 
       const allHistory = dbHistory.length > 0 ? dbHistory : history;
 
-      // ─────────────────────────────────────────────────────────
-      // STEP 1: Deteksi apakah user merujuk ke konten sebelumnya
-      // ─────────────────────────────────────────────────────────
-      // Kata kunci referensi: "itu", "tadi", "berdasar", dll
-      const refersToHistory = /\b(berdasar|berdasarkan|dari|sesuai|pakai|gunakan|itu|tadi|di atas|sebelumnya|tersebut|nya|ini)\b/i.test(message)
-        || message.trim().length < 60; // pesan pendek hampir pasti merujuk ke sebelumnya
+      // ── STEP 1: Deteksi style ──────────────────────────────
+      const DEFAULT_STYLE = 'professional corporate executive — dark navy, data charts, clean typography';
+      let { styleRequest, topic } = extractStyleAndTopic(message);
 
-      // Kumpulkan semua konten dari history yang substantial (>150 char)
+      if (styleRequest === DEFAULT_STYLE && allHistory.length > 0) {
+        const histText = allHistory.map(h => h.content || '').join('\n');
+        const fromHistory = extractStyleAndTopic(histText);
+        if (fromHistory.styleRequest !== DEFAULT_STYLE) {
+          styleRequest = fromHistory.styleRequest;
+        }
+        // Scan explicit style keywords
+        const styleKw = histText.match(/\b(apple keynote|mckinsey|dark futuristic|startup pitch|bloomberg|editorial|minimal|cinematic|hitam|navy|gradient|warm|nature|healthcare)\b/gi);
+        if (styleKw && styleRequest === DEFAULT_STYLE) {
+          styleRequest = [...new Set(styleKw.map(s => s.toLowerCase()))].slice(0,3).join(', ') + ' style';
+        }
+      }
+
+      // ── STEP 2: Siapkan slide content ──────────────────────
+      const refersToHistory = /\b(berdasar|berdasarkan|dari|sesuai|pakai|gunakan|itu|tadi|di atas|sebelumnya|tersebut|nya|ini)\b/i.test(message)
+        || message.trim().length < 60;
+
       const historicalContent = allHistory
-        .filter(h => h.content && h.content.length > 150)
+        .filter(h => {
+          if (!h.content || h.content.length < 200) return false;
+          if (h.role === 'assistant' && (h.content.includes('⬇️') || h.content.includes('/api/files/'))) return false;
+          return true;
+        })
         .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
         .join('\n\n---\n\n');
 
-      const hasRelevantHistory = historicalContent.trim().length > 200;
-
-      console.log(`📊 [PPT] refersToHistory=${refersToHistory} | hasHistory=${hasRelevantHistory} | historyItems=${allHistory.length}`);
-
-      // ─────────────────────────────────────────────────────────
-      // STEP 2: Deteksi style — dari pesan sekarang ATAU history
-      // ─────────────────────────────────────────────────────────
-      let { styleRequest, topic } = extractStyleAndTopic(message);
-      const DEFAULT_STYLE = 'professional corporate executive with charts and photos';
-
-      if (styleRequest === DEFAULT_STYLE && hasRelevantHistory) {
-        // Cari style keyword di seluruh history
-        const historyStyleMatch = extractStyleAndTopic(historicalContent);
-        if (historyStyleMatch.styleRequest !== DEFAULT_STYLE) {
-          styleRequest = historyStyleMatch.styleRequest;
-          console.log(`📊 [PPT] Style dari history: "${styleRequest}"`);
-        }
-        // Cari juga keyword Apple/McKinsey/dark dll secara eksplisit
-        const styleKeywords = historicalContent.match(/\b(apple keynote|mckinsey|dark futuristic|startup pitch|bloomberg|minimal|cinematic|hitam|black background|navy|gradient)\b/gi);
-        if (styleKeywords && styleRequest === DEFAULT_STYLE) {
-          styleRequest = styleKeywords.slice(0, 3).join(', ') + ' style';
-          console.log(`📊 [PPT] Style dari keyword scan: "${styleRequest}"`);
-        }
-      }
-
-      // ─────────────────────────────────────────────────────────
-      // STEP 3: Siapkan slide content
-      // ─────────────────────────────────────────────────────────
+      const hasHistory = historicalContent.trim().length > 200;
       let slideContent = '';
       let title = 'Presentation';
 
-      if (refersToHistory && hasRelevantHistory) {
-        // ── CASE A: Ada outline/konten di history → konversi langsung ──
-        console.log(`📊 [PPT] Converting ${historicalContent.length} chars of history to slides`);
-
-        const reworkRes = await AIProviderService.generateCompletion({
+      if (refersToHistory && hasHistory) {
+        // Konversi history ke slide content
+        console.log(`📊 [PPT] Converting history (${historicalContent.length} chars) → slides`);
+        const res = await AIProviderService.generateCompletion({
           providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-          systemPrompt: `You are an expert presentation writer.
-The user wants to turn existing content/outline from this conversation into a PowerPoint presentation.
+          systemPrompt: `You are a presentation writer. Extract and structure all content from the conversation into slide format.
 
-Your job:
-1. Extract ALL content from the conversation history provided
-2. Convert it into clean slide markdown format
-3. Preserve ALL original ideas, titles, sections, bullets, and scripts
-4. Do NOT invent new content — only use what is already in the conversation
+Output format (markdown):
+# [Exact title from the source content]
+[Subtitle]
 
-Output format:
-# [Exact Presentation Title from the content]
-[Subtitle from the content]
-
-## [Slide Title exactly as in the source]
-- bullet from source (keep original wording)
+## [Slide Title exactly as in source]
 - bullet from source
-
-[SCRIPT: speaker notes if present in source]
+- bullet from source
+[SCRIPT: speaker notes if present]
 
 ## [Next Slide Title]
-[paragraph if the source uses paragraphs]
+[paragraph content]
 
-Rules:
-- Generate exactly as many slides as there are sections in the source
-- Keep SLIDE TITLES exactly as in the source (e.g. "EXECUTIVE HERO", "CURRENT STATE", etc.)
-- Keep ALL bullet points from the source verbatim
-- Keep ALL speaker scripts/notes
-- Language: keep original language (English/Indonesian as in source)`,
+RULES:
+- Keep ALL original content, titles, bullets, scripts verbatim
+- Do not invent new content
+- Match original language (EN/ID)
+- Produce as many ## sections as there are slides/sections in the source`,
           messages: [],
-          userContent: `Convert this conversation content into slide format. Extract every slide, section, title, bullet, and script:\n\n${historicalContent.substring(0, 8000)}`,
+          userContent: `Convert this conversation into slide markdown:\n\n${historicalContent.substring(0, 8000)}`,
         });
-
-        slideContent = reworkRes.text;
-
-        // Ekstrak judul dari konten yang dikonversi
-        const titleMatch = slideContent.match(/^#\s+(.+)/m);
-        if (titleMatch) {
-          title = titleMatch[1].trim().substring(0, 60);
-        } else {
-          // Cari judul dari history langsung
-          const titleScan = historicalContent.match(/TITLE[:\s]+([^\n]{5,60})/i)
-            || historicalContent.match(/^#\s+(.+)/m);
-          if (titleScan) title = titleScan[1].replace(/[*_]/g, '').trim().substring(0, 60);
-        }
-
+        slideContent = res.text;
+        const tm = slideContent.match(/^#\s+(.+)/m);
+        if (tm) title = tm[1].trim().substring(0, 60);
       } else {
-        // ── CASE B: Tidak ada history → generate konten baru dari topic ──
-        let { topic: extractedTopic } = extractStyleAndTopic(message);
-        extractedTopic = extractedTopic
-          .replace(/^(tentang|about|mengenai|on|untuk|for)\s+/i, '')
-          .trim() || 'Presentation';
-        title = extractedTopic.substring(0, 60);
-
-        console.log(`📊 [PPT] Generating fresh content for: "${title}"`);
-
-        const contentRes = await AIProviderService.generateCompletion({
+        // Generate fresh content
+        let { topic: tp } = extractStyleAndTopic(message);
+        tp = tp.replace(/^(tentang|about|mengenai|untuk|for)\s+/i, '').trim() || 'Presentation';
+        title = tp.substring(0, 60);
+        console.log(`📊 [PPT] Generating fresh content: "${title}"`);
+        const res = await AIProviderService.generateCompletion({
           providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-          systemPrompt: `You are an expert presentation writer.
-Generate professional slide content in markdown format:
-
-# [Presentation Title]
-[One powerful subtitle]
-
+          systemPrompt: `You are a presentation writer. Generate slide content in markdown:
+# [Title]
+[Subtitle]
 ## [Slide Title]
-- bullet (max 12 words)
 - bullet
-
+- bullet
 ## [Slide Title]
-[2-3 sentence paragraph]
-
-Rules:
-- 6-9 content slides
-- Mix bullets and paragraphs
-- Include realistic data/numbers
-- Language: match user's language`,
+[paragraph]
+Rules: 7-9 slides, mix bullets/paragraphs, include realistic data, match user language.`,
           messages: [],
-          userContent: `Create a professional presentation about: ${extractedTopic}`,
+          userContent: `Create a presentation about: ${tp}`,
         });
-        slideContent = contentRes.text;
-
-        const titleMatch2 = slideContent.match(/^#\s+(.+)/m);
-        if (titleMatch2) title = titleMatch2[1].trim().substring(0, 60);
+        slideContent = res.text;
+        const tm = slideContent.match(/^#\s+(.+)/m);
+        if (tm) title = tm[1].trim().substring(0, 60);
       }
 
-      if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
-      console.log(`📊 [PPT] Title: "${title}" | Style: "${styleRequest}" | Content: ${slideContent.length} chars`);
+      if (!slideContent?.trim()) throw new Error('Empty slide content');
 
-      // Step 2: AI generates full PptxGenJS design code
-      const designRes = await AIProviderService.generateCompletion({
+      // ── STEP 3: AI generates HTML presentation ─────────────
+      console.log(`📊 [PPT] Generating HTML slides — style: "${styleRequest}"`);
+      const htmlRes = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: 'You are a JavaScript developer. Return ONLY raw JavaScript code. No markdown fences. No explanations.',
+        systemPrompt: 'You are an expert HTML/CSS presentation designer. Return ONLY a complete HTML document. No markdown fences. No explanation. Start immediately with <!DOCTYPE html>',
         messages: [],
-        userContent: PptxService.buildDesignPrompt({ slideContent, styleRequest, title, topic }),
+        userContent: PptxService.buildHtmlPrompt({ slideContent, styleRequest, title, topic }),
       });
 
-      // Step 3: Execute code → write .pptx file
+      if (!htmlRes.text?.includes('<')) throw new Error('AI did not return valid HTML');
+
+      // ── STEP 4: HTML → screenshots → PPTX ─────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
-      const result = await PptxService.generateFromAICode({
-        aiCode: designRes.text,
-        fallbackContent: slideContent,
+      const result = await PptxService.generate({
+        htmlCode: htmlRes.text,
+        slideContent,
         title,
         outputDir,
         styleDesc: styleRequest,
       });
 
-      // Step 4: Build response markdown
+      // ── STEP 5: Response ───────────────────────────────────
       const styleList = PptxService.getStyleExamples()
         .slice(0, 5)
         .map(s => `• \`${s.example}\``)
@@ -452,30 +403,36 @@ Rules:
 
 📊 **${title}**
 🎨 Style: **${styleRequest}**
-📑 ~${result.slideCount} slides${result.usedFallback ? ' _(fallback renderer)_' : ' — dengan charts, foto & infografis'}
+📑 ${result.slideCount} slides${result.usedFallback ? ' _(fallback mode)_' : ' — dengan foto, chart & infografis'}
 
 ---
-### [⬇️ Download: ${result.filename}](${result.url})
-*Klik link di atas untuk download file .pptx*
+### [⬇️ Download .pptx](${result.pptxUrl})
+### [🌐 Preview di Browser](${result.htmlUrl})
+
+*Preview HTML bisa dibuka langsung di browser. Download .pptx untuk edit di PowerPoint.*
 
 ---
-💡 **Style lain yang bisa dicoba:**
-${styleList}
-
-Deskripsikan style apapun secara bebas — AI akan mendesain sesuai permintaan.`;
+💡 **Coba style lain:**
+${styleList}`;
 
       await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       await new Chat({
         userId, botId, threadId, role: 'assistant',
         content: responseMarkdown,
-        attachedFiles: [{ name: result.filename, path: result.url, type: 'file', size: '0' }],
+        attachedFiles: [
+          { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' },
+          { name: result.htmlName, path: result.htmlUrl, type: 'file', size: '0' },
+        ],
       }).save();
       await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
       return {
         response: responseMarkdown,
         threadId,
-        attachedFiles: [{ name: result.filename, path: result.url, type: 'file', size: '0' }],
+        attachedFiles: [
+          { name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' },
+          { name: result.htmlName, path: result.htmlUrl, type: 'file', size: '0' },
+        ],
       };
 
     } catch (error) {

@@ -1,35 +1,46 @@
 FROM node:20-alpine
-#contoh
-# Install dumb-init (Penting untuk signal handling di non-root user)
-RUN apk add --no-cache dumb-init
 
-# WORKDIR sudah otomatis dimiliki root saat dibuat, kita akan ubah nanti
+# 1. Install dependensi sistem untuk Chromium dan dumb-init
+# Kita gabungkan dalam satu perintah RUN untuk mengoptimalkan ukuran image
+RUN apk add --no-cache \
+    dumb-init \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 WORKDIR /usr/src/app
 
-# Copy package files dan install dependencies
+# 3. Copy package files dan install dependencies
 COPY package*.json ./
 RUN npm install --production
 
-# Copy aplikasi
+# 4. Copy sisa kode aplikasi
 COPY . .
 
-# [SECURITY FIX]
-# 1. Buat folder data (jika belum ada)
-# 2. Ubah kepemilikan folder kerja (/usr/src/app) ke user bawaan 'node'
+# 5. [SECURITY FIX] Setup folder dan permission
+# Memastikan semua folder yang dibutuhkan tersedia dan dimiliki oleh user 'node'
 RUN mkdir -p /usr/src/app/data && \
     mkdir -p /usr/src/app/uploads/avatars && \
     mkdir -p /usr/src/app/uploads/knowledge && \
     mkdir -p /usr/src/app/public/embed && \
     chown -R node:node /usr/src/app
 
-# [SECURITY FIX] Beralih ke User 'node' (Bukan Root lagi)
+# 6. Beralih ke User 'node' demi keamanan (Non-Root)
 USER node
 
 EXPOSE 5000
 
+# 7. Healthcheck untuk memantau status aplikasi
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:5000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
-# Gunakan dumb-init sebagai entrypoint agar proses node bisa dimatikan dengan bersih
+# 8. Entrypoint menggunakan dumb-init untuk menangani signal terminasi (SIGTERM) dengan benar
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["node", "server.js"]
