@@ -315,7 +315,7 @@ router.post('/bots', requireAdmin, async (req, res) => {
     const {
       name, description, persona, tone,
       systemPrompt, prompt, starterQuestions,
-      smartsheetConfig, kouventaConfig, onedriveConfig,
+      smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
 
@@ -378,7 +378,7 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
     const {
       name, description, persona, tone,
       systemPrompt, prompt, starterQuestions,
-      smartsheetConfig, kouventaConfig, onedriveConfig,
+      smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
 
