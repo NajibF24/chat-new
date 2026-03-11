@@ -3,13 +3,19 @@
 // ✅ FULLY DYNAMIC — Tidak ada hardcode kolom
 // Semua kolom dibaca langsung dari sheet apapun yang dikonfigurasi di bot.
 // Kalau sheet baru ditambahkan dengan kolom berbeda, otomatis terbaca.
+//
+// CHANGELOG (patch):
+//   + Tambah COLUMN_ALIASES untuk: user, fileDate, fileName, activityTime, docLink
+//   + Fix isDocSheet detection: pakai kolom 'User' dan 'Activity' (lebih robust)
+//   + Rewrite buildDocContext: tampilkan 6 kolom yang diminta (File Date, File Name,
+//     Activity, User, Activity Time, Document Link)
+//   + Fix normalisasi ActivityTime: handle 'Activity Time' (dengan spasi)
+//   + Null safety: kolom kosong tampil sebagai '-'
 
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────
 // COLUMN ALIAS MAP
-// Digunakan untuk mengenali kolom "penting" tanpa peduli nama persisnya.
-// Key = nama canonical internal, Value = array kemungkinan nama di Smartsheet
 // ─────────────────────────────────────────────────────────────
 const COLUMN_ALIASES = {
   projectName:  ['Project Name', 'Name', 'Nama Proyek', 'Project Title', 'Title'],
@@ -26,6 +32,12 @@ const COLUMN_ALIASES = {
   remarks:      ['Remarks', 'Notes', 'Catatan', 'Comment'],
   lastModified: ['Last Modified Overall', 'Last Modified', 'Modified At', 'Last Updated'],
   daysSinceUpdate: ['Days Since Last Update', 'Days Since Update', 'Days Since Modified', 'Days Since Last Modified', 'Last Update (Days)', 'Stale Days'],
+  // ── Doc Tracking columns (BP Revamp & similar) ───────────
+  user:         ['User', 'Modified By', 'Changed By', 'Uploaded By', 'Editor'],
+  fileDate:     ['File Date', 'FileDate', 'Date', 'Tanggal'],
+  fileName:     ['File Name', 'FileName', 'Document Name', 'Doc Name', 'Nama File'],
+  activityTime: ['Activity Time', 'ActivityTime', 'Timestamp', 'Time', 'Date Time', 'DateTime'],
+  docLink:      ['Documents Link', 'Document Link', 'Link of the document', 'Link', 'URL', 'Doc Link'],
 };
 
 class SmartsheetLiveService {
@@ -70,49 +82,45 @@ class SmartsheetLiveService {
   // PROSES RAW SHEET → FLAT ROWS (dinamis, semua kolom)
   // ─────────────────────────────────────────────────────────────
   processToFlatRows(sheet) {
-  if (!sheet.rows || !sheet.columns) return [];
+    if (!sheet.rows || !sheet.columns) return [];
 
-  const colMap = {};
-  sheet.columns.forEach(col => { colMap[col.id] = col.title; });
+    const colMap = {};
+    sheet.columns.forEach(col => { colMap[col.id] = col.title; });
 
-  // ✅ FIX: Detect & skip duplicate header rows
-  // Baris dianggap header jika cell pertama isinya sama dengan nama kolom pertama
-  const firstColTitle = sheet.columns[0]?.title || '';
+    // ✅ FIX: Detect & skip duplicate header rows
+    const firstColTitle = sheet.columns[0]?.title || '';
 
-  return sheet.rows
-    .filter(row => {
-      const firstCell = row.cells?.[0];
-      const firstVal  = firstCell?.displayValue ?? firstCell?.value ?? '';
-      // Skip jika row ini isinya = nama kolom (header duplikat)
-      return String(firstVal).trim() !== firstColTitle.trim();
-    })
-    .map(row => {
-      const flat = {};
-      row.cells.forEach(cell => {
-        const title = colMap[cell.columnId];
-        if (title) {
-          // ✅ FIX: displayValue dulu (formula columns), fallback ke value
-          flat[title] = cell.displayValue ?? cell.value ?? null;
-        }
+    return sheet.rows
+      .filter(row => {
+        const firstCell = row.cells?.[0];
+        const firstVal  = firstCell?.displayValue ?? firstCell?.value ?? '';
+        return String(firstVal).trim() !== firstColTitle.trim();
+      })
+      .map(row => {
+        const flat = {};
+        row.cells.forEach(cell => {
+          const title = colMap[cell.columnId];
+          if (title) {
+            flat[title] = cell.displayValue ?? cell.value ?? null;
+          }
+        });
+        return flat;
       });
-      return flat;
-    });
-}
+  }
 
   // ─────────────────────────────────────────────────────────────
-  // RESOLVE ALIAS: cari nilai dari flat row berdasarkan alias map
+  // RESOLVE ALIAS
   // ─────────────────────────────────────────────────────────────
   resolveField(row, canonicalKey) {
     const aliases = COLUMN_ALIASES[canonicalKey] || [];
     for (const alias of aliases) {
-      if (row[alias] !== undefined && row[alias] !== null) {
+      if (row[alias] !== undefined && row[alias] !== null && row[alias] !== '') {
         return row[alias];
       }
     }
     return null;
   }
 
-  // Resolve alias + return actual column name found
   resolveFieldName(row, canonicalKey) {
     const aliases = COLUMN_ALIASES[canonicalKey] || [];
     for (const alias of aliases) {
@@ -125,7 +133,6 @@ class SmartsheetLiveService {
 
   // ─────────────────────────────────────────────────────────────
   // DETECT COLUMNS AVAILABLE IN THIS SHEET
-  // Returns object: { hasIssues, hasHealth, hasBudget, hasDepartment, ... }
   // ─────────────────────────────────────────────────────────────
   detectAvailableColumns(flatRows) {
     if (!flatRows.length) return {};
@@ -152,9 +159,13 @@ class SmartsheetLiveService {
       remarks:      has('remarks'),
       lastModified: has('lastModified'),
       daysSinceUpdate: has('daysSinceUpdate'),
-      // Extra: detect any budget columns dynamically
+      // Doc tracking
+      user:         has('user'),
+      fileDate:     has('fileDate'),
+      fileName:     has('fileName'),
+      activityTime: has('activityTime'),
+      docLink:      has('docLink'),
       budgetCols:   allKeys.filter(k => k.toLowerCase().includes('budget') || k.toLowerCase().includes('afe') || k.toLowerCase().includes('cost')),
-      // All raw column names (for unknown sheet types)
       allColumns:   allKeys,
     };
   }
@@ -172,10 +183,10 @@ class SmartsheetLiveService {
     context     += `Total data: ${flatRows.length} rows\n`;
     context     += `Kolom tersedia: ${cols.allColumns.join(', ')}\n\n`;
 
-    // ── Detect sheet type ──────────────────────────────────────
-    const isDocSheet = cols.allColumns.some(k =>
-      ['Activity', 'ActivityTime', 'Activity Time', 'File Name'].includes(k)
-    );
+    // ── FIX: Detect doc sheet — lebih robust, cek kolom 'Activity' dan ('User' atau 'Activity Time')
+    const isDocSheet = cols.allColumns.some(k => k === 'Activity') &&
+      (cols.allColumns.some(k => k === 'User') ||
+       cols.allColumns.some(k => k === 'Activity Time' || k === 'ActivityTime'));
 
     if (isDocSheet) {
       return this.buildDocContext(flatRows, msg, today, context, cols);
@@ -190,50 +201,39 @@ class SmartsheetLiveService {
   buildProjectContext(flatRows, msg, today, context, cols) {
     const categorized = this.categorizeRows(flatRows, today, cols);
 
-    // Summary counts
     context += `--- RINGKASAN STATUS ---\n`;
     context += `✅ Completed : ${categorized.completed.length}\n`;
     context += `🔴 Overdue   : ${categorized.overdue.length}\n`;
     context += `🟢 Active    : ${categorized.active.length}\n`;
     context += `⛔ Canceled  : ${categorized.canceled.length}\n\n`;
 
-    // Route by intent
     if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
       context += `--- PROYEK OVERDUE (${categorized.overdue.length}) ---\n`;
       context += this.rowsToTable(categorized.overdue, today, cols, true);
-
     } else if (/selesai|complete|done|finish/i.test(msg)) {
       context += `--- PROYEK COMPLETED (${categorized.completed.length}) ---\n`;
       context += this.rowsToTable(categorized.completed, today, cols, false);
-
     } else if (/aktif|active|on.?track|berjalan|in.?progress/i.test(msg)) {
       context += `--- PROYEK ACTIVE (${categorized.active.length}) ---\n`;
       context += this.rowsToTable(categorized.active, today, cols, false);
-
     } else if (/budget|biaya|cost|anggaran/i.test(msg)) {
       context += `--- DATA BUDGET PROYEK ---\n`;
       context += this.rowsToTableWithBudget(flatRows, cols);
-
     } else if (/issue|masalah|kendala|risk|problem/i.test(msg)) {
-      // Show all with issues
       const withIssues = flatRows.filter(row => {
         const issue = this.resolveField(row, 'issues');
         return issue && issue !== '-' && issue.toLowerCase() !== 'no issue' && issue.trim() !== '';
       });
       context += `--- PROYEK DENGAN ISSUES (${withIssues.length}) ---\n`;
       context += this.rowsToTable(withIssues, today, cols, false);
-
     } else if (/summary|overview|dashboard|semua|all|statistik/i.test(msg)) {
-      // Full summary: overdue + active
       const relevant = [...categorized.overdue, ...categorized.active];
       context += `--- SEMUA PROYEK AKTIF & OVERDUE (${relevant.length}) ---\n`;
       context += this.rowsToTable(relevant, today, cols, true);
       if (categorized.completed.length > 0) {
         context += `\n(${categorized.completed.length} proyek Completed tidak ditampilkan untuk ringkas.)\n`;
       }
-
     } else {
-      // Default: overdue + active
       const relevant = [...categorized.overdue, ...categorized.active];
       context += `--- PROYEK AKTIF & OVERDUE (${relevant.length}) ---\n`;
       context += this.rowsToTable(relevant, today, cols, true);
@@ -246,7 +246,7 @@ class SmartsheetLiveService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // KATEGORISASI ROWS (dinamis via alias)
+  // KATEGORISASI ROWS
   // ─────────────────────────────────────────────────────────────
   categorizeRows(flatRows, today, cols) {
     const result = { completed: [], overdue: [], active: [], canceled: [] };
@@ -255,27 +255,19 @@ class SmartsheetLiveService {
       const status    = String(this.resolveField(row, 'status') || '').trim();
       const targetEnd = this.parseDate(this.resolveField(row, 'targetEnd'));
 
-      // Normalize progress: Smartsheet sends 0-1 float OR 0-100
       const progressRaw = parseFloat(this.resolveField(row, 'progress') || 0) || 0;
       const progressPct = progressRaw > 1 ? progressRaw : progressRaw * 100;
 
-      // Completed
       if (
         status.toLowerCase() === 'complete' ||
         status.toLowerCase() === 'completed' ||
         progressPct >= 100
-      ) {
-        result.completed.push(row);
-        return;
-      }
+      ) { result.completed.push(row); return; }
 
-      // Canceled
       if (status.toLowerCase() === 'canceled' || status.toLowerCase() === 'cancelled') {
-        result.canceled.push(row);
-        return;
+        result.canceled.push(row); return;
       }
 
-      // Overdue
       if (targetEnd && targetEnd < today) {
         const daysOverdue = Math.floor((today - targetEnd) / (1000 * 60 * 60 * 24));
         row._daysOverdue  = daysOverdue;
@@ -283,23 +275,19 @@ class SmartsheetLiveService {
         return;
       }
 
-      // Active
       result.active.push(row);
     });
 
-    // Sort overdue: most days first
     result.overdue.sort((a, b) => (b._daysOverdue || 0) - (a._daysOverdue || 0));
-
     return result;
   }
 
   // ─────────────────────────────────────────────────────────────
-  // FORMAT TABLE — Dinamis: hanya tampilkan kolom yang ada
+  // FORMAT TABLE — Project
   // ─────────────────────────────────────────────────────────────
   rowsToTable(rows, today, cols, showDaysOverdue = false) {
     if (!rows.length) return 'Tidak ada data.\n\n';
 
-    // Build header dynamically based on what columns exist
     const headers = ['Project Name'];
     if (cols.pm)         headers.push('PM');
     if (cols.department) headers.push('Dept');
@@ -312,7 +300,7 @@ class SmartsheetLiveService {
     if (cols.daysSinceUpdate) headers.push('Days Since Update');
 
     let table = `| ${headers.join(' | ')} |\n`;
-    table    += `| ${headers.map((h, i) => {
+    table    += `| ${headers.map(h => {
       if (h === 'Progress' || h === 'Health' || h === 'Days Overdue') return ':---:';
       return ':---';
     }).join(' | ')} |\n`;
@@ -334,16 +322,13 @@ class SmartsheetLiveService {
 
       const targetEndRaw = this.resolveField(row, 'targetEnd');
       const targetEnd    = targetEndRaw ? this.formatDate(targetEndRaw) : '-';
-
       const daysOverdue  = row._daysOverdue ? `${row._daysOverdue} hari` : '-';
 
-      // Issues: clean up '-' and 'No Issue', truncate long text
       const issueRaw    = this.resolveField(row, 'issues') || '';
       const issues      = (!issueRaw || issueRaw === '-' || issueRaw.toLowerCase() === 'no issue')
                           ? '-'
                           : this.truncate(issueRaw.replace(/\n/g, ' '), 150);
 
-      // Build row values in same order as headers
       const values = [name];
       if (cols.pm)         values.push(pm);
       if (cols.department) values.push(dept);
@@ -369,18 +354,17 @@ class SmartsheetLiveService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // BUDGET TABLE — Dinamis: ambil semua kolom budget yang ada
+  // BUDGET TABLE
   // ─────────────────────────────────────────────────────────────
   rowsToTableWithBudget(rows, cols) {
     if (!rows.length) return 'Tidak ada data.\n\n';
 
-    // Find all budget columns dynamically
     const allCols   = cols.allColumns;
     const budgetCols = allCols.filter(k => {
       const lower = k.toLowerCase();
       return (lower.includes('budget') || lower.includes('afe') || lower.includes('cost'))
         && !lower.includes('migrated') && !lower.includes('before') && !lower.includes('num');
-    }).slice(0, 5); // max 5 budget cols to keep table readable
+    }).slice(0, 5);
 
     const headers = ['Project Name', 'PM', 'Currency', ...budgetCols];
     let table = `| ${headers.join(' | ')} |\n`;
@@ -403,12 +387,15 @@ class SmartsheetLiveService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // CONTEXT: DOCUMENTATION TRACKING SHEET (dinamis)
+  // CONTEXT: DOCUMENTATION TRACKING SHEET
+  // ── FIXED: Tampilkan 6 kolom yang diminta:
+  //    File Date | File Name | Activity | User | Activity Time | Document Link
   // ─────────────────────────────────────────────────────────────
   buildDocContext(flatRows, msg, today, context, cols) {
-    // Normalize ActivityTime column name
+    // ── Normalize baris: pastikan semua alias activityTime terbaca dengan key standar
     const normalizedRows = flatRows.map(row => {
       const norm = { ...row };
+      // Normalize 'Activity Time' (spasi) → juga bisa diakses via resolveField('activityTime')
       if (!norm['ActivityTime'] && norm['Activity Time']) {
         norm['ActivityTime'] = norm['Activity Time'];
       }
@@ -417,59 +404,106 @@ class SmartsheetLiveService {
 
     let filtered = [...normalizedRows];
 
-    // Filter by activity type
-    if (/hapus|delete|dihapus|deleted/i.test(msg))        filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'delete');
-    else if (/edit|diubah|modified|changed/i.test(msg))   filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'edit');
-    else if (/upload|add|ditambah|baru|terbaru|latest|recent/i.test(msg)) filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'add');
+    // ── Filter berdasarkan tipe aktivitas
+    if (/hapus|delete|dihapus|deleted/i.test(msg))
+      filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'delete');
+    else if (/edit|diubah|modified|changed/i.test(msg))
+      filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'edit');
+    else if (/upload|add|ditambah|baru|terbaru|latest|recent/i.test(msg))
+      filtered = filtered.filter(r => (r['Activity'] || '').toLowerCase() === 'add');
 
-    // Filter by date
+    // ── Filter berdasarkan waktu
     if (/minggu ini|this week/i.test(msg)) {
       const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
-      filtered = filtered.filter(r => { const d = this.parseDate(r['ActivityTime']); return d && d >= weekAgo; });
+      filtered = filtered.filter(r => {
+        const d = this.parseDate(this.resolveField(r, 'activityTime'));
+        return d && d >= weekAgo;
+      });
     } else if (/hari ini|today/i.test(msg)) {
-      filtered = filtered.filter(r => { const d = this.parseDate(r['ActivityTime']); return d && d.toDateString() === today.toDateString(); });
+      filtered = filtered.filter(r => {
+        const d = this.parseDate(this.resolveField(r, 'activityTime'));
+        return d && d.toDateString() === today.toDateString();
+      });
     } else if (/bulan ini|this month/i.test(msg)) {
-      filtered = filtered.filter(r => { const d = this.parseDate(r['ActivityTime']); return d && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear(); });
+      filtered = filtered.filter(r => {
+        const d = this.parseDate(this.resolveField(r, 'activityTime'));
+        return d && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+      });
     }
 
-    // Sort newest first
+    // ── Filter berdasarkan nama user (jika disebut di pesan)
+    const userMatch = msg.match(/(?:dari|by|oleh|user)\s+([a-z]+(?:\s+[a-z]+)?)/i);
+    if (userMatch) {
+      const searchName = userMatch[1].toLowerCase();
+      filtered = filtered.filter(r => {
+        const user = String(this.resolveField(r, 'user') || '').toLowerCase();
+        return user.includes(searchName);
+      });
+    }
+
+    // ── Sort: terbaru dulu
     filtered.sort((a, b) => {
-      const da = this.parseDate(a['ActivityTime']) || new Date(0);
-      const db = this.parseDate(b['ActivityTime']) || new Date(0);
+      const da = this.parseDate(this.resolveField(a, 'activityTime')) || new Date(0);
+      const db = this.parseDate(this.resolveField(b, 'activityTime')) || new Date(0);
       return db - da;
     });
 
     const limited   = filtered.slice(0, 50);
     const truncated = filtered.length > 50;
 
-    const addCount    = normalizedRows.filter(r => r['Activity'] === 'Add').length;
-    const editCount   = normalizedRows.filter(r => r['Activity'] === 'Edit').length;
-    const deleteCount = normalizedRows.filter(r => r['Activity'] === 'Delete').length;
+    // ── Hitung statistik
+    const addCount    = normalizedRows.filter(r => String(r['Activity'] || '').toLowerCase() === 'add').length;
+    const editCount   = normalizedRows.filter(r => String(r['Activity'] || '').toLowerCase() === 'edit').length;
+    const deleteCount = normalizedRows.filter(r => String(r['Activity'] || '').toLowerCase() === 'delete').length;
 
+    // ── Ringkasan
     context += `--- RINGKASAN AKTIVITAS ---\n`;
-    context += `📥 Add: ${addCount} | ✏️ Edit: ${editCount} | 🗑️ Delete: ${deleteCount}\n\n`;
+    context += `📥 Add: ${addCount} | ✏️ Edit: ${editCount} | 🗑️ Delete: ${deleteCount}\n`;
+    context += `👥 Total Records: ${normalizedRows.length}\n\n`;
+
+    if (limited.length === 0) {
+      context += `Tidak ada data yang cocok dengan filter.\n`;
+      return context;
+    }
+
     context += `--- DOKUMEN (${limited.length}${truncated ? ` dari ${filtered.length}` : ''}) ---\n`;
 
-    // Dynamic columns for doc table
-    const docCols = cols.allColumns.filter(k =>
-      !['Documents Link', 'Link of the document', 'Folder Location'].includes(k)
-    ).slice(0, 8);
-
-    const linkCol = cols.allColumns.find(k => k.toLowerCase().includes('link') || k.toLowerCase().includes('url'));
-
-    context += `| ${docCols.join(' | ')}${linkCol ? ' | Link' : ''} |\n`;
-    context += `| ${docCols.map(() => ':---').join(' | ')}${linkCol ? ' | :---' : ''} |\n`;
+    // ── Tabel dengan 6 kolom yang diminta: File Date | File Name | Activity | User | Activity Time | Document Link
+    context += `| File Date | File Name | Activity | User | Activity Time | Document Link |\n`;
+    context += `| :--- | :--- | :---: | :--- | :--- | :--- |\n`;
 
     limited.forEach(row => {
-      const vals = docCols.map(col => this.truncate(String(row[col] || '-'), 40));
-      if (linkCol) {
-        const link = row[linkCol];
-        vals.push(link ? `[Buka](${link})` : '-');
-      }
-      context += `| ${vals.join(' | ')} |\n`;
+      // File Date — bisa kosong, fallback '-'
+      const fileDate    = this.formatDate(this.resolveField(row, 'fileDate')) || '-';
+
+      // File Name — truncate panjang
+      const fileNameRaw = this.resolveField(row, 'fileName') || '-';
+      const fileName    = this.truncate(String(fileNameRaw), 50);
+
+      // Activity — Add / Edit / Delete
+      const activityRaw = row['Activity'] || '-';
+      const actEmoji    = activityRaw.toLowerCase() === 'add'    ? '📥 Add'
+                        : activityRaw.toLowerCase() === 'edit'   ? '✏️ Edit'
+                        : activityRaw.toLowerCase() === 'delete' ? '🗑️ Delete'
+                        : activityRaw;
+
+      // User — FIX: sebelumnya kosong karena alias tidak terdaftar
+      const user        = this.truncate(String(this.resolveField(row, 'user') || '-'), 30);
+
+      // Activity Time — format tanggal + jam
+      const actTimeRaw  = this.resolveField(row, 'activityTime');
+      const actTime     = this.formatDateTime(actTimeRaw) || '-';
+
+      // Document Link — buat markdown link jika ada
+      const linkRaw     = this.resolveField(row, 'docLink');
+      const docLink     = linkRaw ? `[🔗 Buka](${linkRaw})` : '-';
+
+      context += `| ${fileDate} | ${fileName} | ${actEmoji} | ${user} | ${actTime} | ${docLink} |\n`;
     });
 
-    if (truncated) context += `\n⚠️ Menampilkan 50 dari ${filtered.length} hasil. Gunakan filter lebih spesifik.\n`;
+    if (truncated) {
+      context += `\n⚠️ Menampilkan 50 dari ${filtered.length} hasil. Gunakan filter lebih spesifik (contoh: "edit minggu ini", "add oleh Felix").\n`;
+    }
 
     return context;
   }
@@ -484,8 +518,21 @@ class SmartsheetLiveService {
 
   formatDate(str) {
     const d = this.parseDate(str);
-    if (!d) return '-';
+    if (!d) return null;
     return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  // ── NEW: format tanggal + jam untuk Activity Time
+  formatDateTime(str) {
+    const d = this.parseDate(str);
+    if (!d) return null;
+    return d.toLocaleString('id-ID', {
+      day:    '2-digit',
+      month:  'short',
+      year:   'numeric',
+      hour:   '2-digit',
+      minute: '2-digit',
+    });
   }
 
   formatNumber(num) {
