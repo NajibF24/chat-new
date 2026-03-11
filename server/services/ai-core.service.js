@@ -14,6 +14,7 @@ import KnowledgeBaseService   from './knowledge-base.service.js';
 import SmartsheetLiveService  from './smartsheet-live.service.js';
 import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
+import AzureSearchService from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
 
 function isPptCommand(message = '') {
@@ -135,6 +136,18 @@ class AICoreService {
         const reply    = await kouventa.generateResponse(message || '');
         contextData   += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
       } catch (error) { console.error('Kouventa Error:', error.message); }
+    }
+    if (bot.azureSearchConfig?.enabled && bot.azureSearchConfig?.endpoint) {
+      try {
+        const azureSearch = new AzureSearchService(
+          bot.azureSearchConfig.apiKey,
+          bot.azureSearchConfig.endpoint,
+        );
+        const reply = await azureSearch.generateResponse(message || '');
+        contextData += `\n\n=== REFERENSI AZURE AI SEARCH ===\n${reply}\n`;
+      } catch (error) {
+        console.error('Azure Search Error:', error.message);
+      }
     }
 
     if (bot.smartsheetConfig?.enabled && this.isDataQuery(message)) {

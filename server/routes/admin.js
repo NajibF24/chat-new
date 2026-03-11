@@ -337,6 +337,11 @@ router.post('/bots', requireAdmin, async (req, res) => {
       capabilities: sanitizeCapabilities(capabilities),
       smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
       kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
+      azureSearchConfig: {
+        enabled:  azureSearchConfig?.enabled  || false,
+        apiKey:   azureSearchConfig?.apiKey   || '',
+        endpoint: azureSearchConfig?.endpoint || '',
+      },
       onedriveConfig:   { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...onedriveConfig },
       avatar: {
         type:      avatar?.type      || 'emoji',
@@ -400,6 +405,14 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
           ? existing.kouventaConfig?.apiKey
           : (kouventaConfig?.apiKey || ''),
         endpoint: kouventaConfig?.endpoint || '',
+      },
+      azureSearchConfig: {
+        enabled:  azureSearchConfig?.enabled  || false,
+        endpoint: azureSearchConfig?.endpoint || '',
+        // Jika apiKey === '***' berarti user tidak mengganti, pakai yang lama
+        apiKey: azureSearchConfig?.apiKey === '***'
+          ? existing.azureSearchConfig?.apiKey
+          : (azureSearchConfig?.apiKey || ''),
       },
       onedriveConfig: {
         enabled:      onedriveConfig?.enabled      || false,

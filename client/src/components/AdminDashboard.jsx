@@ -114,6 +114,7 @@ const initialBotState = {
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
   smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '' },
   kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
+  azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
   onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '' },
   avatar: { type: 'emoji', emoji: '🤖', bgColor: '#6366f1', textColor: '#ffffff' },
 };
@@ -403,6 +404,7 @@ function AdminDashboard({ user, handleLogout }) {
       },
       smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', ...bot.smartsheetConfig },
       kouventaConfig:    { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
+      azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
       onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
       avatar: bot.avatar || { type: 'emoji', emoji: '🤖', bgColor: '#6366f1' },
     });
@@ -697,9 +699,10 @@ function AdminDashboard({ user, handleLogout }) {
                     <div className="flex items-center justify-between flex-wrap gap-1 mt-auto pt-3 border-t border-steel-light/20">
                       <div className="flex flex-wrap gap-1">
                         {bot.smartsheetConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded font-bold">Smartsheet</span>}
-                        {bot.kouventaConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold">Kouventa</span>}
-                        {bot.onedriveConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded font-bold">OneDrive</span>}
-                        {!bot.smartsheetConfig?.enabled && !bot.kouventaConfig?.enabled && !bot.onedriveConfig?.enabled && <span className="text-[9px] text-steel">No integrations</span>}
+                        {bot.kouventaConfig?.enabled      && <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold">Kouventa</span>}
+                        {bot.onedriveConfig?.enabled      && <span className="text-[9px] px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded font-bold">OneDrive</span>}
+                        {bot.azureSearchConfig?.enabled   && <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold">Azure Search</span>}
+                        {!bot.smartsheetConfig?.enabled && !bot.kouventaConfig?.enabled && !bot.onedriveConfig?.enabled && !bot.azureSearchConfig?.enabled && <span className="text-[9px] text-steel">No integrations</span>}
                       </div>
                       <button onClick={() => setEmbedBot(bot)} className="text-[10px] font-bold px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1" title="Get embed code">⊞ Embed</button>
                     </div>
@@ -1249,8 +1252,9 @@ function AdminDashboard({ user, handleLogout }) {
                 <div className="space-y-4">
                   {/* Smartsheet */}
                   {[
-                    { key: 'smartsheet', label: 'Smartsheet Integration', icon: '📊', fields: [{ key: 'sheetId', label: 'Sheet ID', type: 'text' }, { key: 'apiKey', label: 'API Key (override .env)', type: 'password' }] },
-                    { key: 'kouventa',   label: 'Kouventa AI Engine',     icon: '🔗', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
+                    { key: 'smartsheet',   label: 'Smartsheet Integration', icon: '📊', fields: [{ key: 'sheetId', label: 'Sheet ID', type: 'text' }, { key: 'apiKey', label: 'API Key (override .env)', type: 'password' }] },
+                    { key: 'kouventa',     label: 'Kouventa AI Engine',     icon: '🔗', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
+                    { key: 'azureSearch',  label: 'Azure AI Search',        icon: '🔍', fields: [{ key: 'endpoint', label: 'Endpoint URL (full, incl. index name)', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
                   ].map(intg => {
                     const configKey = `${intg.key}Config`;
                     const config = botForm[configKey] || {};
