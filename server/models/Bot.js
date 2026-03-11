@@ -82,11 +82,9 @@ const botSchema = new mongoose.Schema({
     endpoint: { type: String, default: '' },
   },
   azureSearchConfig: {
-    enabled:  { type: Boolean, default: false },
-    apiKey:   { type: String,  default: '' },
-    endpoint: { type: String,  default: '' },
-    // Contoh endpoint lengkap:
-    // https://ai-search-gys.search.windows.net/indexes/NAMA-INDEX/docs/search?api-version=2023-11-01
+    enabled: { type: Boolean, default: false },
+    apiKey: { type: String, default: '' },
+    endpoint: { type: String, default: '' },
   },
 
   onedriveConfig: {

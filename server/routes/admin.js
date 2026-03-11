@@ -337,11 +337,7 @@ router.post('/bots', requireAdmin, async (req, res) => {
       capabilities: sanitizeCapabilities(capabilities),
       smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
       kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
-      azureSearchConfig: {
-        enabled:  azureSearchConfig?.enabled  || false,
-        apiKey:   azureSearchConfig?.apiKey   || '',
-        endpoint: azureSearchConfig?.endpoint || '',
-      },
+      azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
       onedriveConfig:   { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...onedriveConfig },
       avatar: {
         type:      avatar?.type      || 'emoji',

@@ -114,7 +114,7 @@ class AICoreService {
   }
 
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
-    const bot = await Bot.findById(botId);
+    let bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
 
     if (!threadId) {
@@ -137,18 +137,28 @@ class AICoreService {
         contextData   += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
       } catch (error) { console.error('Kouventa Error:', error.message); }
     }
-    if (bot.azureSearchConfig?.enabled && bot.azureSearchConfig?.endpoint) {
+    
+    if (bot.azureSearchConfig?.enabled && bot.azureSearchConfig?.apiKey && bot.azureSearchConfig?.endpoint) {
       try {
         const azureSearch = new AzureSearchService(
           bot.azureSearchConfig.apiKey,
-          bot.azureSearchConfig.endpoint,
+          bot.azureSearchConfig.endpoint
         );
-        const reply = await azureSearch.generateResponse(message || '');
-        contextData += `\n\n=== REFERENSI AZURE AI SEARCH ===\n${reply}\n`;
-      } catch (error) {
-        console.error('Azure Search Error:', error.message);
+        const context = await azureSearch.generateResponse(message || '');
+        if (context) {
+          // Inject retrieved context into the system prompt structure
+          contextData += `\n\n=== REFERENSI AZURE AI SEARCH ===\n${context}\n`;
+          
+          // Following your specific instruction to augment the bot's system prompt object:
+          const augmentedSystemPrompt = (bot.systemPrompt || bot.prompt || '') + '\n\n' + context;
+          bot = { ...bot.toObject(), systemPrompt: augmentedSystemPrompt };
+        }
+      } catch (err) {
+        console.error('Azure Search error:', err.message);
+        // Continue without context rather than failing
       }
     }
+    // ── End Azure AI Search ────────────────────────────────
 
     if (bot.smartsheetConfig?.enabled && this.isDataQuery(message)) {
       try {
