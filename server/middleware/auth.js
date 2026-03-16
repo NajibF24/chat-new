@@ -11,3 +11,10 @@ export const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+export const requireAdminOrBotCreator = (req, res, next) => {
+  if (!req.session.userId || (!req.session.isAdmin && !req.session.isBotCreator)) {
+    return res.status(403).json({ error: 'Admin or Bot Creator access required' });
+  }
+  next();
+};
