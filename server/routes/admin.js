@@ -1,4 +1,4 @@
-// server/routes/admin.js — Enhanced: capabilities, PPT support, new model catalog + Audit Trail
+// server/routes/admin.js — Enhanced: capabilities, PPT support, new model catalog, WAHA + Audit Trail
 
 import express    from 'express';
 import bcrypt     from 'bcryptjs';
@@ -10,11 +10,12 @@ import Bot        from '../models/Bot.js';
 import Chat       from '../models/Chat.js';
 import Thread     from '../models/Thread.js';
 import AuditLog   from '../models/AuditLog.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, requireAdminOrBotCreator } from '../middleware/auth.js';
 import AIProviderService, { AI_PROVIDERS } from '../services/ai-provider.service.js';
 import KnowledgeBaseService from '../services/knowledge-base.service.js';
 import AuditService from '../services/audit.service.js';
 import OneDriveService from '../services/onedrive.service.js';
+import crypto     from 'crypto';
 
 const router = express.Router();
 
@@ -99,7 +100,8 @@ function buildDiff(before, after, keys) {
 // ============================================================
 // 📊 STATS
 // ============================================================
-router.get('/stats', requireAdmin, async (req, res) => {
+// ✅ MODIFIKASI: requireAdmin -> requireAdminOrBotCreator
+router.get('/stats', requireAdminOrBotCreator, async (req, res) => {
   try {
     const [totalUsers, totalBots, totalChats, totalThreads] = await Promise.all([
       User.countDocuments(), Bot.countDocuments(), Chat.countDocuments(), Thread.countDocuments(),
@@ -134,12 +136,14 @@ router.get('/stats', requireAdmin, async (req, res) => {
 // ============================================================
 // 📋 AI PROVIDERS CATALOG
 // ============================================================
-router.get('/ai-providers', requireAdmin, (req, res) => { res.json(AI_PROVIDERS); });
+// ✅ MODIFIKASI: requireAdmin -> requireAdminOrBotCreator
+router.get('/ai-providers', requireAdminOrBotCreator, (req, res) => { res.json(AI_PROVIDERS); });
 
 // ============================================================
 // 🧪 TEST AI CONNECTION
 // ============================================================
-router.post('/bots/:id/test-ai', requireAdmin, async (req, res) => {
+// ✅ MODIFIKASI: requireAdmin -> requireAdminOrBotCreator
+router.post('/bots/:id/test-ai', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
@@ -148,7 +152,8 @@ router.post('/bots/:id/test-ai', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ ok: false, message: err.message }); }
 });
 
-router.post('/test-ai-config', requireAdmin, async (req, res) => {
+// ✅ MODIFIKASI: requireAdmin -> requireAdminOrBotCreator
+router.post('/test-ai-config', requireAdminOrBotCreator, async (req, res) => {
   try {
     const result = await AIProviderService.testConnection(req.body);
     res.json(result);
@@ -220,14 +225,16 @@ router.get('/users', requireAdmin, async (req, res) => {
 
 router.post('/users', requireAdmin, async (req, res) => {
   try {
-    const { username, password, isAdmin, assignedBots } = req.body;
+    const { username, password, isAdmin, isBotCreator, assignedBots } = req.body;
     const existing = await User.findOne({ username });
     if (existing) return res.status(400).json({ error: 'Username already exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new User({
       username, password: hashedPassword,
-      isAdmin: isAdmin || false, assignedBots: assignedBots || [],
+      isAdmin: isAdmin || false,
+      isBotCreator: isBotCreator || false,
+      assignedBots: assignedBots || [],
     });
     await user.save();
     await user.populate('assignedBots');
@@ -244,12 +251,12 @@ router.post('/users', requireAdmin, async (req, res) => {
 
 router.put('/users/:id', requireAdmin, async (req, res) => {
   try {
-    const { username, password, isAdmin, assignedBots } = req.body;
+    const { username, password, isAdmin, isBotCreator, assignedBots } = req.body;
 
     const existing = await User.findById(req.params.id).select('-password');
     if (!existing) return res.status(404).json({ error: 'User not found' });
 
-    const updateData = { username, isAdmin, assignedBots };
+    const updateData = { username, isAdmin, isBotCreator, assignedBots };
     const passwordChanged = Boolean(password?.trim());
     if (passwordChanged) updateData.password = await bcrypt.hash(password, 10);
 
@@ -290,13 +297,17 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
 // ============================================================
 // 🤖 BOT MANAGEMENT
 // ============================================================
-router.get('/bots', async (req, res) => {
+router.get('/bots', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bots = await Bot.find({}).lean();
     const sanitized = bots.map(b => ({
       ...b,
+      botApiKey: b.botApiKey ? '***' : '',
       aiProvider: b.aiProvider
         ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' }
+        : {},
+      wahaConfig: b.wahaConfig
+        ? { ...b.wahaConfig, apiKey: b.wahaConfig.apiKey ? '***' : '' }
         : {},
       smartsheetConfig: b.smartsheetConfig
         ? { ...b.smartsheetConfig, apiKey: b.smartsheetConfig.apiKey ? '***' : '' }
@@ -310,11 +321,12 @@ router.get('/bots', async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.post('/bots', requireAdmin, async (req, res) => {
+router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
   try {
     const {
       name, description, persona, tone,
       systemPrompt, prompt, starterQuestions,
+      botApiKey, wahaConfig,
       smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
@@ -326,6 +338,7 @@ router.post('/bots', requireAdmin, async (req, res) => {
       prompt: prompt || '',
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
+      botApiKey: botApiKey || ('gys-bot-' + crypto.randomBytes(24).toString('hex')),
       aiProvider: {
         provider:    aiProvider?.provider    || 'openai',
         model:       aiProvider?.model       || 'gpt-4.1',
@@ -335,6 +348,13 @@ router.post('/bots', requireAdmin, async (req, res) => {
         maxTokens:   aiProvider?.maxTokens   ?? 2000,
       },
       capabilities: sanitizeCapabilities(capabilities),
+      wahaConfig: {
+        enabled: wahaConfig?.enabled || false,
+        endpoint: wahaConfig?.endpoint || '',
+        chatId: wahaConfig?.chatId || '',
+        session: wahaConfig?.session || 'default',
+        apiKey: wahaConfig?.apiKey || ''
+      },
       smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
       kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
@@ -369,11 +389,12 @@ router.post('/bots', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/bots/:id', requireAdmin, async (req, res) => {
+router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
   try {
     const {
       name, description, persona, tone,
       systemPrompt, prompt, starterQuestions,
+      botApiKey, wahaConfig,
       smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
@@ -388,6 +409,16 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
       capabilities: sanitizeCapabilities(capabilities),
+      botApiKey: botApiKey === '***' ? existing.botApiKey : (botApiKey || ''),
+      wahaConfig: {
+        enabled: wahaConfig?.enabled || false,
+        endpoint: wahaConfig?.endpoint || '',
+        chatId: wahaConfig?.chatId || '',
+        session: wahaConfig?.session || 'default',
+        apiKey: wahaConfig?.apiKey === '***'
+          ? existing.wahaConfig?.apiKey
+          : (wahaConfig?.apiKey || '')
+      },
       smartsheetConfig: {
         enabled: smartsheetConfig?.enabled || false,
         sheetId: smartsheetConfig?.sheetId || '',
@@ -405,7 +436,6 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       azureSearchConfig: {
         enabled:  azureSearchConfig?.enabled  || false,
         endpoint: azureSearchConfig?.endpoint || '',
-        // Jika apiKey === '***' berarti user tidak mengganti, pakai yang lama
         apiKey: azureSearchConfig?.apiKey === '***'
           ? existing.azureSearchConfig?.apiKey
           : (azureSearchConfig?.apiKey || ''),
@@ -446,7 +476,6 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       };
     }
 
-    // Build before/after diff for audit
     const diff = buildDiff(
       { name: existing.name, model: existing.aiProvider?.model, provider: existing.aiProvider?.provider, tone: existing.tone, knowledgeMode: existing.knowledgeMode },
       { name: updateData.name, model: updateData.aiProvider?.model, provider: updateData.aiProvider?.provider, tone: updateData.tone, knowledgeMode: updateData.knowledgeMode },
@@ -468,7 +497,7 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/bots/:id', requireAdmin, async (req, res) => {
+router.delete('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     const botName = bot?.name ?? req.params.id;
@@ -494,7 +523,7 @@ router.delete('/bots/:id', requireAdmin, async (req, res) => {
 // ============================================================
 // 🖼️ BOT AVATAR
 // ============================================================
-router.post('/bots/:id/avatar', requireAdmin, avatarUpload.single('avatar'), async (req, res) => {
+router.post('/bots/:id/avatar', requireAdminOrBotCreator, avatarUpload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
     const bot = await Bot.findById(req.params.id);
@@ -513,7 +542,7 @@ router.post('/bots/:id/avatar', requireAdmin, avatarUpload.single('avatar'), asy
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.patch('/bots/:id/avatar', requireAdmin, async (req, res) => {
+router.patch('/bots/:id/avatar', requireAdminOrBotCreator, async (req, res) => {
   try {
     const { type, emoji, icon, bgColor, textColor } = req.body;
     const bot = await Bot.findById(req.params.id);
@@ -534,7 +563,7 @@ router.patch('/bots/:id/avatar', requireAdmin, async (req, res) => {
 // ============================================================
 // 📚 KNOWLEDGE BASE — Upload / Delete
 // ============================================================
-router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 10), async (req, res) => {
+router.post('/bots/:id/knowledge', requireAdminOrBotCreator, knowledgeUpload.array('files', 10), async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
@@ -575,7 +604,7 @@ router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 
   }
 });
 
-router.delete('/bots/:id/knowledge/:fileId', requireAdmin, async (req, res) => {
+router.delete('/bots/:id/knowledge/:fileId', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
@@ -597,7 +626,7 @@ router.delete('/bots/:id/knowledge/:fileId', requireAdmin, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, res) => {
+router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
@@ -678,7 +707,7 @@ router.get('/export-chats', requireAdmin, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.post('/bots/:id/test-onedrive', requireAdmin, async (req, res) => {
+router.post('/bots/:id/test-onedrive', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
@@ -693,6 +722,37 @@ router.post('/bots/:id/test-onedrive', requireAdmin, async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// ============================================================
+// 🔑 GENERATE / REGENERATE BOT API KEY
+// ============================================================
+router.post('/bots/:id/regenerate-key', requireAdminOrBotCreator, async (req, res) => {
+  try {
+    const bot = await Bot.findById(req.params.id);
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+
+    // Membuat API Key acak yang aman (Contoh: gys-bot-8f7a6b5c4d3e2f1a...)
+    const newApiKey = 'gys-bot-' + crypto.randomBytes(24).toString('hex');
+
+    bot.botApiKey = newApiKey;
+    await bot.save();
+
+    // Catat ke Audit Trail
+    AuditService.log({
+      req, category: 'bot', action: 'BOT_UPDATE',
+      targetId: bot._id, targetName: bot.name,
+      detail: { note: 'API Key regenerated' },
+    });
+
+    res.json({
+      message: 'API Key berhasil dibuat ulang',
+      botApiKey: newApiKey // Dikirim balik ke Frontend
+    });
+  } catch (error) {
+    console.error('Regenerate Key Error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

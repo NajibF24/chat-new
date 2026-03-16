@@ -27,9 +27,9 @@ const AI_PROVIDERS = {
       { id: 'gpt-4.1',               label: 'GPT-4.1',               tier: 'stable'    },
       { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          tier: 'efficient' },
       { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          tier: 'efficient' },
-      { id: 'o3',                    label: 'o3 (Reasoning)',         tier: 'reasoning' },
-      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',    tier: 'reasoning' },
-      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',    tier: 'reasoning' },
+      { id: 'o3',                    label: 'o3 (Reasoning)',        tier: 'reasoning' },
+      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',   tier: 'reasoning' },
+      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',   tier: 'reasoning' },
       { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo',           tier: 'legacy'    },
       { id: 'gpt-4',                 label: 'GPT-4',                 tier: 'legacy'    },
       { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo',         tier: 'legacy'    },
@@ -77,7 +77,7 @@ const TIER_GROUP_LABEL = {
 };
 
 const ALL_CAPABILITIES = [
-  { id: 'webSearch',       icon: '🌐', label: 'Web Search',       desc: 'Bot can browse the internet for up-to-date information', providers: ['openai'] },
+  { id: 'webSearch',       icon: '🌐', label: 'Web Search',        desc: 'Bot can browse the internet for up-to-date information', providers: ['openai'] },
   { id: 'codeInterpreter', icon: '💻', label: 'Code Interpreter',  desc: 'Bot can write and execute Python code', providers: ['openai'] },
   { id: 'imageGeneration', icon: '🎨', label: 'Image Generation',  desc: 'Bot can create images using DALL-E', providers: ['openai'] },
   { id: 'canvas',          icon: '📝', label: 'Canvas Mode',       desc: 'Interactive document editing and canvas mode', providers: ['openai'] },
@@ -110,11 +110,13 @@ const initialBotState = {
   prompt: '',
   starterQuestions: [],
   knowledgeMode: 'relevant',
+  botApiKey: '', // ✅ Field API Key Bot
   aiProvider: { provider: 'openai', model: 'gpt-4o', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 2000 },
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
   smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '' },
   kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
   azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
+  wahaConfig: { enabled: false, endpoint: '', chatId: '', session: 'default', apiKey: '' }, // ✅ Fitur WhatsApp Forwarding
   onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '' },
   avatar: { type: 'emoji', emoji: '🤖', bgColor: '#6366f1', textColor: '#ffffff' },
 };
@@ -132,34 +134,33 @@ function groupModelsByTier(models) {
 
 const AUDIT_CATEGORY_META = {
   auth:      { icon: '🔐', label: 'Auth',      color: 'bg-blue-50   text-blue-700   border-blue-200'    },
-  bot:       { icon: '🤖', label: 'Bot',        color: 'bg-violet-50 text-violet-700 border-violet-200'  },
-  user:      { icon: '👤', label: 'User',        color: 'bg-amber-50  text-amber-700  border-amber-200'   },
-  knowledge: { icon: '📚', label: 'Knowledge',  color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  export:    { icon: '⬇️', label: 'Export',     color: 'bg-sky-50    text-sky-700    border-sky-200'     },
+  bot:       { icon: '🤖', label: 'Bot',       color: 'bg-violet-50 text-violet-700 border-violet-200'  },
+  user:      { icon: '👤', label: 'User',      color: 'bg-amber-50  text-amber-700  border-amber-200'   },
+  knowledge: { icon: '📚', label: 'Knowledge', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  export:    { icon: '⬇️', label: 'Export',     color: 'bg-sky-50    text-sky-700    border-sky-200'      },
   chat:      { icon: '💬', label: 'AI Chat',    color: 'bg-rose-50   text-rose-700   border-rose-200'    },
   system:    { icon: '⚙️', label: 'System',     color: 'bg-gray-100  text-gray-600   border-gray-200'    },
 };
 
 const ACTION_LABEL = {
   LOGIN_SUCCESS:     { label: 'Login',              color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  LOGIN_FAILED:      { label: 'Login Failed',       color: 'text-red-600     bg-red-50     border-red-200'     },
+  LOGIN_FAILED:      { label: 'Login Failed',       color: 'text-red-600     bg-red-50     border-red-200'      },
   LOGOUT:            { label: 'Logout',             color: 'text-slate-600   bg-slate-100  border-slate-200'   },
   BOT_CREATE:        { label: 'Create Bot',         color: 'text-violet-600  bg-violet-50  border-violet-200'  },
   BOT_UPDATE:        { label: 'Update Bot',         color: 'text-blue-600    bg-blue-50    border-blue-200'    },
-  BOT_DELETE:        { label: 'Delete Bot',         color: 'text-red-600     bg-red-50     border-red-200'     },
+  BOT_DELETE:        { label: 'Delete Bot',         color: 'text-red-600     bg-red-50     border-red-200'      },
   USER_CREATE:       { label: 'Create User',        color: 'text-violet-600  bg-violet-50  border-violet-200'  },
   USER_UPDATE:       { label: 'Update User',        color: 'text-blue-600    bg-blue-50    border-blue-200'    },
-  USER_DELETE:       { label: 'Delete User',        color: 'text-red-600     bg-red-50     border-red-200'     },
+  USER_DELETE:       { label: 'Delete User',        color: 'text-red-600     bg-red-50     border-red-200'      },
   KNOWLEDGE_UPLOAD:  { label: 'Upload File',        color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  KNOWLEDGE_DELETE:  { label: 'Delete File',        color: 'text-red-600     bg-red-50     border-red-200'     },
-  EXPORT_CHATS:      { label: 'Export CSV',         color: 'text-sky-600     bg-sky-50     border-sky-200'     },
+  KNOWLEDGE_DELETE:  { label: 'Delete File',        color: 'text-red-600     bg-red-50     border-red-200'      },
+  EXPORT_CHATS:      { label: 'Export CSV',         color: 'text-sky-600     bg-sky-50     border-sky-200'      },
   AI_RESPONSE:       { label: 'AI Response',        color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
   AI_RESPONSE_EMPTY: { label: '⚠️ Empty Response', color: 'text-orange-600  bg-orange-50  border-orange-200'  },
-  AI_RESPONSE_ERROR: { label: '❌ AI Error',        color: 'text-red-600     bg-red-50     border-red-200'     },
+  AI_RESPONSE_ERROR: { label: '❌ AI Error',        color: 'text-red-600     bg-red-50     border-red-200'      },
   IMAGE_GENERATE:    { label: 'Image Generated',    color: 'text-pink-600    bg-pink-50    border-pink-200'    },
 };
 
-// Token pills component — shown in audit table and expanded row
 function TokenPanel({ detail }) {
   if (!detail?.tokens) return null;
   const t = detail.tokens;
@@ -202,7 +203,6 @@ function TokenPanel({ detail }) {
   );
 }
 
-// Inline detail cell renderer
 function DetailPanel({ detail, action }) {
   if (!detail) return <span className="text-steel italic text-[10px]">—</span>;
 
@@ -237,6 +237,7 @@ function DetailPanel({ detail, action }) {
   if (action === 'USER_UPDATE') {
     const lines = [];
     if (detail.before?.isAdmin !== detail.after?.isAdmin) lines.push({ key:'Admin', before:String(detail.before?.isAdmin), after:String(detail.after?.isAdmin) });
+    if (detail.before?.isBotCreator !== detail.after?.isBotCreator) lines.push({ key:'Bot Creator', before:String(detail.before?.isBotCreator), after:String(detail.after?.isBotCreator) });
     if (detail.before?.assignedBotsCount !== detail.after?.assignedBotsCount) lines.push({ key:'Bots', before:`${detail.before?.assignedBotsCount}`, after:`${detail.after?.assignedBotsCount}` });
     if (detail.passwordChanged) lines.push({ key:'Password', before:'••••••', after:'(changed)' });
     if (!lines.length) return <span className="text-[10px] text-steel">No changes</span>;
@@ -307,39 +308,42 @@ function AdminDashboard({ user, handleLogout }) {
 
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser,   setEditingUser]   = useState(null);
-  const [userForm,      setUserForm]      = useState({ username: '', password: '', isAdmin: false, assignedBots: [] });
+  // ✅ MODIFIKASI: Menambahkan isBotCreator
+  const [userForm,      setUserForm]      = useState({ username: '', password: '', isAdmin: false, isBotCreator: false, assignedBots: [] });
 
   const [avatarPickerBot, setAvatarPickerBot] = useState(null);
   const [botSearch, setBotSearch] = useState('');
   const [embedBot, setEmbedBot] = useState(null);
 
   // ── Audit Trail state ──────────────────────────────────────
-  const [auditLogs,       setAuditLogs]       = useState([]);
-  const [auditPage,       setAuditPage]        = useState(1);
+  const [auditLogs,        setAuditLogs]        = useState([]);
+  const [auditPage,        setAuditPage]        = useState(1);
   const [auditTotalPages, setAuditTotalPages]  = useState(1);
-  const [auditTotal,      setAuditTotal]       = useState(0);
-  const [auditLoading,    setAuditLoading]     = useState(false);
-  const [auditCategory,   setAuditCategory]    = useState('');
-  const [auditSearch,     setAuditSearch]      = useState('');
-  const [auditDateFrom,   setAuditDateFrom]    = useState('');
-  const [auditDateTo,     setAuditDateTo]      = useState('');
-  const [auditExpanded,   setAuditExpanded]    = useState(null);
+  const [auditTotal,       setAuditTotal]       = useState(0);
+  const [auditLoading,     setAuditLoading]     = useState(false);
+  const [auditCategory,    setAuditCategory]    = useState('');
+  const [auditSearch,      setAuditSearch]      = useState('');
+  const [auditDateFrom,    setAuditDateFrom]    = useState('');
+  const [auditDateTo,      setAuditDateTo]      = useState('');
+  const [auditExpanded,    setAuditExpanded]    = useState(null);
   const [auditTokenStats, setAuditTokenStats]  = useState(null);
 
-  useEffect(() => { fetchStats(); fetchUsers(); fetchBots(); }, []);
-  useEffect(() => { if (activeTab === 'chats') fetchChatLogs(); }, [activeTab, logPage]);
-  useEffect(() => { if (activeTab === 'audit') fetchAuditLogs(); }, [activeTab, auditPage, auditCategory]);
+  useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []);
+  useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage]);
+  useEffect(() => { if (activeTab === 'audit' && user?.isAdmin) fetchAuditLogs(); }, [activeTab, auditPage, auditCategory]);
 
   const fetchStats    = async () => { try { const r = await axios.get('/api/admin/stats'); setStats(r.data); } catch {} };
-  const fetchUsers    = async () => { try { const r = await axios.get('/api/admin/users'); setUsers(r.data.users || []); } catch {} };
+  const fetchUsers    = async () => { if (!user?.isAdmin) return; try { const r = await axios.get('/api/admin/users'); setUsers(r.data.users || []); } catch {} };
   const fetchBots     = async () => { try { const r = await axios.get('/api/admin/bots'); setBots(Array.isArray(r.data) ? r.data : r.data.bots || []); } catch {} };
   const fetchChatLogs = async () => {
+    if (!user?.isAdmin) return;
     setLoading(true);
     try { const r = await axios.get(`/api/admin/chat-logs?page=${logPage}&limit=20`); setChatLogs(r.data.chats || []); setLogTotalPages(r.data.totalPages || 1); }
     finally { setLoading(false); }
   };
 
   const fetchAuditLogs = async () => {
+    if (!user?.isAdmin) return;
     setAuditLoading(true);
     try {
       const p = new URLSearchParams({ page: auditPage, limit: 30 });
@@ -352,7 +356,7 @@ function AdminDashboard({ user, handleLogout }) {
       setAuditLogs(logs);
       setAuditTotalPages(r.data.totalPages || 1);
       setAuditTotal(r.data.total || 0);
-      // Compute token summary from chat logs on current page
+
       const chatRows = logs.filter(l => l.category === 'chat' && l.detail?.tokens);
       if (chatRows.length > 0) {
         setAuditTokenStats({
@@ -385,6 +389,7 @@ function AdminDashboard({ user, handleLogout }) {
       persona: bot.persona || '', tone: bot.tone || 'professional',
       systemPrompt: bot.systemPrompt || '',
       prompt: bot.prompt || '',
+      botApiKey: bot.botApiKey || '', // ✅ Set API Key
       starterQuestions: bot.starterQuestions || [],
       knowledgeMode: bot.knowledgeMode || 'relevant',
       aiProvider: {
@@ -406,6 +411,7 @@ function AdminDashboard({ user, handleLogout }) {
       kouventaConfig:    { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
       onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
+      wahaConfig:        { ...initialBotState.wahaConfig, ...(bot.wahaConfig || {}) },
       avatar: bot.avatar || { type: 'emoji', emoji: '🤖', bgColor: '#6366f1' },
     });
     setKnowledgeFiles(bot.knowledgeFiles || []);
@@ -436,7 +442,19 @@ function AdminDashboard({ user, handleLogout }) {
       setTestAIState(res.data);
     } catch (err) { setTestAIState({ ok: false, message: err.response?.data?.message || err.message }); }
   };
-  
+
+  const handleRegenerateApiKey = async (botId) => {
+    if (!window.confirm("Yakin ingin membuat ulang API Key? Key lama tidak akan bisa digunakan lagi dan sistem luar yang menggunakan key ini akan terputus.")) return;
+    try {
+      const res = await axios.post(`/api/admin/bots/${botId}/regenerate-key`);
+      setBotForm({ ...botForm, botApiKey: res.data.botApiKey });
+      fetchBots(); // Refresh state list bots
+    } catch (error) {
+      console.error("Gagal regenerate key", error);
+      alert("Gagal membuang ulang API Key: " + (error.response?.data?.error || error.message));
+    }
+  };
+
   const handleTestOneDrive = async () => {
     setOnedriveTestState('testing');
     try {
@@ -451,6 +469,7 @@ function AdminDashboard({ user, handleLogout }) {
       setOnedriveTestState({ ok: false, message: err.response?.data?.error || err.message });
     }
   };
+
   // ── Knowledge ───────────────────────────────────────────────
   const handleKnowledgeUpload = async (e) => {
     const files = e.target.files;
@@ -488,7 +507,14 @@ function AdminDashboard({ user, handleLogout }) {
   // ── User CRUD ────────────────────────────────────────────────
   const handleEditUser = (u) => {
     setEditingUser(u);
-    setUserForm({ username: u.username, password: '', isAdmin: u.isAdmin, assignedBots: u.assignedBots?.map(b => b._id) || [] });
+    // ✅ MODIFIKASI: Assign isBotCreator
+    setUserForm({
+      username: u.username,
+      password: '',
+      isAdmin: u.isAdmin,
+      isBotCreator: u.isBotCreator || false,
+      assignedBots: u.assignedBots?.map(b => b._id) || []
+    });
     setShowUserModal(true);
   };
   const handleSaveUser = async (e) => {
@@ -556,16 +582,16 @@ function AdminDashboard({ user, handleLogout }) {
             <button onClick={handleLogout} className="px-3 py-1.5 text-xs bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-200 font-bold transition-colors">Logout</button>
           </div>
         </div>
-        {/* Sub-nav tabs */}
+        {/* Sub-nav tabs - Restrict rendering based on isAdmin */}
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-1 overflow-x-auto">
             {[
-              { id: 'dashboard', icon: '📊', label: 'Dashboard' },
-              { id: 'bots',      icon: '🤖', label: 'Bots' },
-              { id: 'users',     icon: '👥', label: 'Users' },
-              { id: 'chats',     icon: '💬', label: 'Chat Logs' },
-              { id: 'audit',     icon: '🕵️', label: 'Audit Trail' },
-            ].map(t => (
+              { id: 'dashboard', icon: '📊', label: 'Dashboard',   show: true },
+              { id: 'bots',      icon: '🤖', label: 'Bots',        show: true },
+              { id: 'users',     icon: '👥', label: 'User Access', show: user?.isAdmin },
+              { id: 'chats',     icon: '💬', label: 'Chat Logs',   show: user?.isAdmin },
+              { id: 'audit',     icon: '🕵️', label: 'Audit Trail', show: user?.isAdmin },
+            ].filter(t => t.show).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
                   activeTab === t.id
@@ -589,10 +615,10 @@ function AdminDashboard({ user, handleLogout }) {
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { title: 'Total Users',   value: stats.totalUsers,   icon: '👥', color: 'text-primary-dark',  bg: 'bg-primary-dark/5',  accent: 'border-l-primary-dark' },
-                { title: 'Active Bots',   value: stats.totalBots,    icon: '🤖', color: 'text-primary',       bg: 'bg-primary/5',        accent: 'border-l-primary' },
-                { title: 'Total Chats',   value: stats.totalChats,   icon: '💬', color: 'text-primary-light', bg: 'bg-primary-light/10', accent: 'border-l-primary-light' },
-                { title: 'Threads',       value: stats.totalThreads, icon: '📂', color: 'text-steel',         bg: 'bg-steel-lightest',   accent: 'border-l-steel' },
+                { title: 'Total Users',  value: stats.totalUsers,  icon: '👥', color: 'text-primary-dark',  bg: 'bg-primary-dark/5',  accent: 'border-l-primary-dark' },
+                { title: 'Active Bots',  value: stats.totalBots,   icon: '🤖', color: 'text-primary',       bg: 'bg-primary/5',       accent: 'border-l-primary' },
+                { title: 'Total Chats',  value: stats.totalChats,  icon: '💬', color: 'text-primary-light', bg: 'bg-primary-light/10', accent: 'border-l-primary-light' },
+                { title: 'Threads',      value: stats.totalThreads, icon: '📂', color: 'text-steel',         bg: 'bg-steel-lightest',  accent: 'border-l-steel' },
               ].map(s => (
                 <div key={s.title} className={`bg-white p-5 rounded-xl border border-steel-light/30 shadow-sm flex items-center justify-between border-l-4 ${s.accent} hover:shadow-md transition-all`}>
                   <div>
@@ -714,14 +740,15 @@ function AdminDashboard({ user, handleLogout }) {
         )}
 
         {/* ── USERS ────────────────────────────────────────────── */}
-        {activeTab === 'users' && (
+        {activeTab === 'users' && user?.isAdmin && (
           <div className="bg-white rounded-xl shadow-sm border border-steel-light/30 overflow-hidden">
             <div className="px-6 py-4 border-b border-steel-light/30 flex justify-between items-center">
               <div>
                 <h2 className="font-bold text-primary-dark">User Management</h2>
                 <p className="text-xs text-steel">{users.length} registered user{users.length !== 1 ? 's' : ''}</p>
               </div>
-              <button onClick={() => { setEditingUser(null); setUserForm({username:'',password:'',isAdmin:false,assignedBots:[]}); setShowUserModal(true); }}
+              {/* ✅ MODIFIKASI: Assign isBotCreator: false saat Create User */}
+              <button onClick={() => { setEditingUser(null); setUserForm({username:'',password:'',isAdmin:false,isBotCreator:false,assignedBots:[]}); setShowUserModal(true); }}
                 className="px-4 py-2 bg-primary-dark text-white text-sm font-bold rounded-lg hover:bg-primary transition-colors">+ Add User</button>
             </div>
             <div className="overflow-x-auto">
@@ -737,7 +764,16 @@ function AdminDashboard({ user, handleLogout }) {
                   {users.map(u => (
                     <tr key={u._id} className="hover:bg-steel-lightest/50 transition-colors">
                       <td className="px-6 py-3"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-full bg-primary-dark/10 flex items-center justify-center text-xs font-bold text-primary-dark">{u.username.substring(0,2).toUpperCase()}</div><span className="font-medium">{u.username}</span></div></td>
-                      <td className="px-6 py-3">{u.isAdmin ? <span className="bg-primary-dark text-white px-2 py-0.5 rounded text-[10px] font-black">ADMIN</span> : <span className="text-steel text-xs">User</span>}</td>
+                      {/* ✅ MODIFIKASI: Render role BOT CREATOR */}
+                      <td className="px-6 py-3">
+                        {u.isAdmin ? (
+                          <span className="bg-primary-dark text-white px-2 py-0.5 rounded text-[10px] font-black">ADMIN</span>
+                        ) : u.isBotCreator ? (
+                          <span className="bg-violet-600 text-white px-2 py-0.5 rounded text-[10px] font-black">BOT CREATOR</span>
+                        ) : (
+                          <span className="text-steel text-xs">User</span>
+                        )}
+                      </td>
                       <td className="px-6 py-3"><span className={`text-[10px] font-bold px-2 py-0.5 rounded ${u.authMethod === 'ldap' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{u.authMethod === 'ldap' ? 'LDAP/AD' : 'Local'}</span></td>
                       <td className="px-6 py-3 text-steel text-xs">{u.assignedBots?.length || 0} bot(s)</td>
                       <td className="px-6 py-3 text-right"><button onClick={() => handleEditUser(u)} className="text-primary hover:text-primary-dark font-bold text-xs">Edit →</button></td>
@@ -750,7 +786,7 @@ function AdminDashboard({ user, handleLogout }) {
         )}
 
         {/* ── CHAT LOGS ────────────────────────────────────────── */}
-        {activeTab === 'chats' && (
+        {activeTab === 'chats' && user?.isAdmin && (
           <div className="bg-white rounded-xl shadow-sm border border-steel-light/30 overflow-hidden flex flex-col h-[700px]">
             <div className="px-6 py-4 border-b border-steel-light/30 flex justify-between items-center">
               <div><h2 className="font-bold text-primary-dark">Chat Logs</h2><p className="text-xs text-steel">Monitor all conversations</p></div>
@@ -794,7 +830,7 @@ function AdminDashboard({ user, handleLogout }) {
         {/* ══════════════════════════════════════════════════════
             🕵️ AUDIT TRAIL TAB
         ══════════════════════════════════════════════════════ */}
-        {activeTab === 'audit' && (
+        {activeTab === 'audit' && user?.isAdmin && (
           <div className="space-y-4">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1250,6 +1286,75 @@ function AdminDashboard({ user, handleLogout }) {
 
               {botModalTab === 'integrations' && (
                 <div className="space-y-4">
+
+                  {/* ── API KEY BOT (EXTERNAL ACCESS) ── */}
+                  <div className="border-2 border-steel-light/30 bg-steel-lightest/30 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">🔑</span>
+                      <span className="font-bold text-sm text-gray-800">Bot API Key (External Access)</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={botForm.botApiKey || 'Akan di-generate otomatis saat disave'}
+                        className="flex-1 bg-white border border-steel-light/50 rounded-lg p-2 text-xs font-mono text-steel outline-none"
+                      />
+                      {editingBot && (
+                         <button
+                           type="button"
+                           onClick={() => handleRegenerateApiKey(editingBot._id)}
+                           className="px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 font-bold text-xs transition"
+                         >
+                           Regenerate
+                         </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-steel mt-2">Gunakan API Key ini pada header <code className="bg-white px-1 py-0.5 rounded border">x-api-key</code> saat memanggil endpoint API chat dari luar.</p>
+                  </div>
+
+                  {/* ── WAHA WHATSAPP INTEGRATION ── */}
+                  {(() => {
+                    const config = botForm.wahaConfig || {};
+                    return (
+                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-[#25D366]/50 bg-[#25D366]/5' : 'border-steel-light/30 bg-white'}`}>
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">💬</span>
+                            <span className="font-bold text-sm text-gray-800">WhatsApp Forwarder (WAHA)</span>
+                          </div>
+                          <button type="button" onClick={() => setBotForm(f => ({ ...f, wahaConfig: { ...f.wahaConfig, enabled: !config.enabled } }))}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+                        {config.enabled && (
+                          <div className="space-y-3 mt-4 pt-4 border-t border-[#25D366]/20">
+                            <div>
+                               <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">API Endpoint URL (WAHA /sendText)</label>
+                               <input type="text" value={config.endpoint || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, endpoint: e.target.value}}))} placeholder="http://ip_server_anda:3000/api/sendText" className="w-full bg-white border border-[#25D366]/30 rounded-lg p-2 text-xs outline-none focus:border-[#25D366]" />
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                              <div>
+                                 <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">Chat / Group ID</label>
+                                 <input type="text" value={config.chatId || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, chatId: e.target.value}}))} placeholder="120363xxxxxx@g.us" className="w-full bg-white border border-[#25D366]/30 rounded-lg p-2 text-xs outline-none focus:border-[#25D366]" />
+                                 <p className="text-[9px] text-gray-500 mt-1">@g.us (Group) / @c.us (PM)</p>
+                              </div>
+                              <div>
+                                 <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">Session Name</label>
+                                 <input type="text" value={config.session || 'default'} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, session: e.target.value}}))} placeholder="default" className="w-full bg-white border border-[#25D366]/30 rounded-lg p-2 text-xs outline-none focus:border-[#25D366]" />
+                              </div>
+                              <div>
+                                 <label className="text-[10px] font-bold text-steel uppercase tracking-wide block mb-1">WAHA API Key</label>
+                                 <input type="password" value={botForm.wahaConfig?.apiKey || ''}  onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, apiKey: e.target.value}}))}  placeholder="Secret API Key" className="w-full bg-white border border-[#25D366]/30 rounded-lg p-2 text-xs outline-none focus:border-[#25D366]" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Smartsheet */}
                   {[
                     { key: 'smartsheet',   label: 'Smartsheet Integration', icon: '📊', fields: [{ key: 'sheetId', label: 'Sheet ID', type: 'text' }, { key: 'apiKey', label: 'API Key (override .env)', type: 'password' }] },
@@ -1382,12 +1487,12 @@ function AdminDashboard({ user, handleLogout }) {
                                   )}
                                 </div>
                               )}
-
-                              {/* Info jika bot belum disimpan */}
-                              {!editingBot && (
-                                <p className="text-[10px] text-amber-600 font-bold mt-2">⚠️ Simpan bot terlebih dahulu untuk mengaktifkan Test Koneksi</p>
-                              )}
                             </div>
+
+                            {/* Info jika bot belum disimpan */}
+                            {!editingBot && (
+                              <p className="text-[10px] text-amber-600 font-bold mt-2">⚠️ Simpan bot terlebih dahulu untuk mengaktifkan Test Koneksi</p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1419,7 +1524,21 @@ function AdminDashboard({ user, handleLogout }) {
             <div className="space-y-3">
               <input autoComplete="off" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" placeholder="Username" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
               <input autoComplete="new-password" className="w-full bg-steel-lightest/50 border border-steel-light/50 rounded-xl p-3 text-sm focus:border-primary-dark outline-none" type="password" placeholder="Password (leave blank to keep unchanged)" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
-              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer"><input type="checkbox" checked={userForm.isAdmin} onChange={e => setUserForm({...userForm, isAdmin: e.target.checked})} className="accent-primary-dark" /><span>Administrator</span></label>
+
+              {/* ✅ MODIFIKASI: Menambahkan Checkbox Bot Creator (Hanya jika bukan Admin) */}
+              <div className="flex gap-6 mb-2">
+                <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                  <input type="checkbox" checked={userForm.isAdmin} onChange={e => setUserForm({...userForm, isAdmin: e.target.checked})} className="accent-primary-dark" />
+                  <span>Administrator</span>
+                </label>
+                {!userForm.isAdmin && (
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer text-violet-700">
+                    <input type="checkbox" checked={userForm.isBotCreator} onChange={e => setUserForm({...userForm, isBotCreator: e.target.checked})} className="accent-violet-600" />
+                    <span>Bot Creator</span>
+                  </label>
+                )}
+              </div>
+
               <div className="border border-steel-light/50 p-3 rounded-xl max-h-36 overflow-y-auto bg-steel-lightest/40">
                 <p className="text-[10px] font-bold text-steel mb-2 uppercase tracking-wide">Bot Access</p>
                 {bots.map(b => (

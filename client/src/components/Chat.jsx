@@ -445,7 +445,7 @@ const Chat = ({ user, handleLogout }) => {
 
         {/* Sidebar footer */}
         <div className="px-3 xl:px-4 py-3 xl:py-4 border-t border-steel-light/30 bg-white space-y-2 xl:space-y-3">
-          {user?.isAdmin && (
+          {(user?.isAdmin || user?.isBotCreator) && (
             <button onClick={() => navigate('/admin')}
               className="w-full flex items-center justify-center gap-2 py-2 xl:py-2.5 bg-white hover:bg-primary-dark hover:text-white text-primary-dark text-xs xl:text-sm font-bold rounded-lg border border-steel-light/50 transition-all shadow-sm">
               <svg className="w-3.5 h-3.5 xl:w-4 xl:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

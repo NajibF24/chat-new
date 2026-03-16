@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isBotCreator: {
+    type: Boolean,
+    default: false
+  },
   assignedBots: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Bot'
