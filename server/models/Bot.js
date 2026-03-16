@@ -24,11 +24,11 @@ const aiProviderSchema = new mongoose.Schema({
 
 // ── Bot Capabilities Sub-Schema ───────────────────────────────
 const capabilitiesSchema = new mongoose.Schema({
-  webSearch:       { type: Boolean, default: false },  // Browse internet
-  codeInterpreter: { type: Boolean, default: false },  // Run Python code
-  imageGeneration: { type: Boolean, default: false },  // DALL-E image gen
-  canvas:          { type: Boolean, default: false },  // Canvas / document editing mode
-  fileSearch:      { type: Boolean, default: false },  // Vector search over files
+  webSearch:       { type: Boolean, default: false },
+  codeInterpreter: { type: Boolean, default: false },
+  imageGeneration: { type: Boolean, default: false },
+  canvas:          { type: Boolean, default: false },
+  fileSearch:      { type: Boolean, default: false },
 }, { _id: false });
 
 // ── Main Bot Schema ───────────────────────────────────────────
@@ -36,8 +36,15 @@ const botSchema = new mongoose.Schema({
   name:        { type: String, required: true, unique: true },
   description: { type: String, default: '' },
 
+  // ✅ BARU: Siapa yang membuat bot ini
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+
   // Personality / tone / instructions
-  persona:      { type: String, default: '' },   // Short persona tag line e.g. "Helpful HR expert"
+  persona:      { type: String, default: '' },
   tone:         { type: String, enum: ['professional', 'friendly', 'formal', 'concise', 'detailed', 'custom'], default: 'professional' },
 
   prompt:       { type: String, default: '' },
@@ -45,10 +52,13 @@ const botSchema = new mongoose.Schema({
 
   starterQuestions: { type: [String], default: [] },
 
+  // ✅ API KEY — default kosong, tidak auto-generate
+  botApiKey: { type: String, default: '' },
+
   // ── AI Provider ──────────────────────────────────────────
   aiProvider: { type: aiProviderSchema, default: () => ({}) },
 
-  // ── Capabilities (ChatGPT-style toggles) ─────────────────
+  // ── Capabilities ─────────────────────────────────────────
   capabilities: { type: capabilitiesSchema, default: () => ({}) },
 
   // ── Knowledge Base (RAG) ─────────────────────────────────
@@ -70,6 +80,18 @@ const botSchema = new mongoose.Schema({
   },
 
   // ── Integrations ─────────────────────────────────────────
+  wahaConfig: {
+    enabled:  { type: Boolean, default: false },
+    endpoint: { type: String, default: '' },
+    chatId:   { type: String, default: '' },
+    session:  { type: String, default: 'default' },
+    apiKey:   { type: String, default: '' },
+    dailySchedule: {
+      enabled: { type: Boolean, default: false },
+      time:    { type: String, default: '08:00' },
+      prompt:  { type: String, default: 'Sapa user dengan selamat pagi dan berikan satu pertanyaan acak tentang kabar mereka hari ini.' },
+    },
+  },
   smartsheetConfig: {
     enabled:        { type: Boolean, default: false },
     apiKey:         { type: String, default: '' },
@@ -82,11 +104,10 @@ const botSchema = new mongoose.Schema({
     endpoint: { type: String, default: '' },
   },
   azureSearchConfig: {
-    enabled: { type: Boolean, default: false },
-    apiKey: { type: String, default: '' },
+    enabled:  { type: Boolean, default: false },
+    apiKey:   { type: String, default: '' },
     endpoint: { type: String, default: '' },
   },
-
   onedriveConfig: {
     enabled:      { type: Boolean, default: false },
     folderUrl:    { type: String, default: '' },

@@ -1,4 +1,3 @@
-// server/routes/auth.js - FIXED: prevent null email collision + Audit Trail
 import express  from 'express';
 import bcrypt   from 'bcryptjs';
 import User     from '../models/User.js';
