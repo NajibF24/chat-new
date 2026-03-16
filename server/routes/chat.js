@@ -259,4 +259,49 @@ router.post('/message', requireAuth, async (req, res) => {
   }
 });
 
+// ============================================================
+// 🌐 EXTERNAL API CHAT (Akses menggunakan API Key)
+// ============================================================
+router.post('/external', async (req, res) => {
+  try {
+    // 1. Ambil API Key dari Header
+    const apiKey = req.header('x-api-key');
+    if (!apiKey) {
+      return res.status(401).json({ error: 'Akses ditolak: x-api-key tidak ditemukan di header' });
+    }
+
+    // 2. Cari Bot yang memiliki API Key tersebut di Database
+    const bot = await Bot.findOne({ botApiKey: apiKey });
+    if (!bot) {
+      return res.status(403).json({ error: 'Akses ditolak: API Key tidak valid atau Bot tidak ditemukan' });
+    }
+
+    // 3. Ambil data dari request body
+    const { message, userId } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: 'Pesan (message) wajib diisi' });
+    }
+
+    console.log(`Pesan external masuk untuk Bot [${bot.name}]: ${message}`);
+
+    // --- TEMPAT UNTUK MEMANGGIL AI ---
+    // Sementara kita buat balasan otomatis (dummy) untuk membuktikan koneksi berhasil.
+    // Nanti Anda bisa menggantinya dengan memanggil fungsi AI (misal: AIProviderService)
+    
+    const replyText = `Halo eksternal! Ini adalah balasan otomatis dari bot [${bot.name}] untuk pesan Anda: "${message}"`;
+    // ---------------------------------
+
+    // 4. Kirim balasan ke aplikasi eksternal (Postman/WhatsApp)
+    res.json({
+      success: true,
+      botName: bot.name,
+      response: replyText
+    });
+
+  } catch (error) {
+    console.error('External Chat Error:', error);
+    res.status(500).json({ error: 'Terjadi kesalahan pada server' });
+  }
+});
+
 export default router;
