@@ -73,12 +73,10 @@ const Chat = ({ user, handleLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
 
-  // Delete state
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [showAllThreads, setShowAllThreads] = useState(false);
 
-  // Artifact panel
   const [artifact, setArtifact] = useState(null);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
   const isDragging = useRef(false);
@@ -92,7 +90,6 @@ const Chat = ({ user, handleLogout }) => {
   useEffect(() => { fetchBots(); fetchThreads(); }, []);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // Drag resize
   useEffect(() => {
     const onMove = (e) => {
       if (!isDragging.current) return;
@@ -135,7 +132,6 @@ const Chat = ({ user, handleLogout }) => {
     if (best) openArtifact(best.lang, best.code);
   }, [openArtifact]);
 
-  // ── API ──────────────────────────────────────────────────────
   const fetchBots = async () => {
     try {
       const res = await axios.get('/api/chat/bots');
@@ -191,10 +187,6 @@ const Chat = ({ user, handleLogout }) => {
     closeArtifact();
   };
 
-  // ── Delete Thread ─────────────────────────────────────────────
-  // NOTE: This ONLY deletes the Thread document and Chat messages from the user's view.
-  // The Chat messages are already logged and remain accessible via Admin Dashboard chat logs.
-  // Admin sees all messages via /api/admin/chat-logs which queries Chat collection directly.
   const handleDeleteThread = async (threadId, e) => {
     e.stopPropagation();
     if (confirmDeleteId === threadId) {
@@ -294,61 +286,60 @@ const Chat = ({ user, handleLogout }) => {
 
   const visibleThreads = showAllThreads ? threads : threads.slice(0, MAX_THREADS_SHOWN);
 
-  // ─────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-screen bg-steel-lightest text-gray-800 font-sans overflow-hidden">
+    <div className="flex h-screen bg-[#F7F8FA] text-gray-800 font-sans overflow-hidden">
 
-      {/* ════════════════════════════
-          SIDEBAR
-      ════════════════════════════ */}
+      {/* ════════════════ SIDEBAR ════════════════ */}
       <aside className={`
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 fixed lg:relative z-30
-        w-72 xl:w-80 2xl:w-88 h-full
-        bg-white border-r border-steel-light/30
-        flex flex-col transition-transform duration-300 shadow-xl lg:shadow-none
+        ${isSidebarOpen ? 'translate-x-0 w-72 xl:w-80' : '-translate-x-full w-0'}
+        fixed lg:relative z-30 h-full
+        bg-white border-r border-gray-100
+        flex flex-col flex-shrink-0
+        transition-all duration-300 ease-in-out
+        shadow-2xl lg:shadow-none
+        overflow-hidden
       `}>
         {/* Header */}
-        <div className="px-4 xl:px-5 py-3 xl:py-4 border-b border-steel-light/30 flex items-center justify-between bg-white">
-          <div className="flex items-center gap-2.5 xl:gap-3">
+        <div className="px-4 xl:px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
             <img src="/assets/gys-logo.webp" alt="GYS Logo"
-              className="h-7 xl:h-9 w-auto object-contain"
-              onError={e => { e.target.style.display = 'none'; document.getElementById('sidebar-logo-fallback').style.display = 'flex'; }} />
-            <div id="sidebar-logo-fallback"
-              className="hidden w-8 h-8 bg-primary rounded items-center justify-center font-bold text-white text-base shadow-sm">G</div>
+              className="h-8 w-auto object-contain"
+              onError={e => { e.target.style.display = 'none'; }} />
             <div>
-              <h1 className="font-bold text-sm xl:text-base 2xl:text-lg text-primary-dark tracking-wide leading-tight">PORTAL AI</h1>
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-primary-light animate-pulse"></div>
-                <span className="text-[10px] xl:text-[11px] text-primary-light font-bold">System Online</span>
+              <h1 className="font-bold text-sm text-primary-dark tracking-wide">PORTAL AI</h1>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+                <span className="text-[10px] text-emerald-600 font-semibold">Online</span>
               </div>
             </div>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden text-steel-light hover:text-primary-dark p-1 rounded">✕</button>
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            title="Collapse sidebar"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            </svg>
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 xl:px-4 py-3 xl:py-4 space-y-4 xl:space-y-5 scrollbar-thin scrollbar-thumb-steel-light">
-          {/* Bots section */}
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5 scrollbar-thin scrollbar-thumb-gray-200">
+          {/* Assistants */}
           <div>
-            <h3 className="text-[10px] xl:text-xs font-bold text-steel uppercase tracking-widest mb-2 xl:mb-3 px-1">
-              Assistant
-            </h3>
-            <div className="space-y-1">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Assistants</p>
+            <div className="space-y-0.5">
               {bots.map(bot => (
                 <button key={bot._id} onClick={() => handleBotSelect(bot)}
-                  className={`w-full text-left px-2.5 xl:px-3 py-2 xl:py-2.5 rounded-lg flex items-center gap-2.5 xl:gap-3 transition-all duration-200 border ${
+                  className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2.5 transition-all duration-150 ${
                     selectedBot?._id === bot._id
-                      ? 'bg-primary-dark text-white border-primary-dark shadow-md'
-                      : 'bg-white border-transparent hover:bg-steel-lightest text-gray-800'
+                      ? 'bg-primary-dark text-white shadow-sm'
+                      : 'text-gray-700 hover:bg-gray-50'
                   }`}>
-                  <BotAvatar bot={bot} size="sm"
-                    className={selectedBot?._id === bot._id ? 'ring-2 ring-white ring-offset-1 ring-offset-primary-dark' : ''} />
-                  <div className="flex-1 truncate">
-                    <div className="font-semibold text-xs xl:text-sm truncate">{bot.name}</div>
-                    <div className={`text-[10px] xl:text-[11px] truncate ${selectedBot?._id === bot._id ? 'text-white/70' : 'text-steel-light'}`}>
+                  <BotAvatar bot={bot} size="sm" />
+                  <div className="flex-1 truncate min-w-0">
+                    <div className="font-semibold text-xs truncate">{bot.name}</div>
+                    <div className={`text-[10px] truncate ${selectedBot?._id === bot._id ? 'text-white/60' : 'text-gray-400'}`}>
                       {bot.description || 'AI Assistant'}
                     </div>
                   </div>
@@ -357,112 +348,93 @@ const Chat = ({ user, handleLogout }) => {
             </div>
           </div>
 
-          {/* History section */}
+          {/* Conversations */}
           <div>
-            <div className="flex items-center justify-between px-1 mb-2 xl:mb-3">
-              <h3 className="text-[10px] xl:text-xs font-bold text-steel uppercase tracking-widest">
-                History
-              </h3>
-              <span className="text-[10px] xl:text-xs text-steel-light">
-                {threads.length > MAX_THREADS_SHOWN
-                  ? `${MAX_THREADS_SHOWN}/${threads.length}`
-                  : `${threads.length}`}
+            <div className="flex items-center justify-between px-1 mb-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">History</p>
+              <span className="text-[10px] text-gray-400 tabular-nums">
+                {threads.length > MAX_THREADS_SHOWN ? `${MAX_THREADS_SHOWN}/${threads.length}` : threads.length}
               </span>
             </div>
 
-            {/* New chat button */}
             <button onClick={handleNewChat}
-              className="w-full text-left px-2.5 xl:px-3 py-2 xl:py-2.5 rounded-lg flex items-center gap-2 xl:gap-3 text-primary hover:bg-primary/5 transition-colors border border-dashed border-primary/40 mb-2 font-medium bg-white">
-              <span className="text-lg font-light leading-none">+</span>
-              <span className="text-xs xl:text-sm">New Conversation</span>
+              className="w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2 text-primary-dark hover:bg-primary/5 transition-colors border border-dashed border-primary/25 mb-2 group">
+              <span className="w-5 h-5 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">+</span>
+              <span className="text-xs font-semibold">New Conversation</span>
             </button>
 
-            {/* Thread list */}
             <div className="space-y-0.5">
               {visibleThreads.length === 0 && (
-                <p className="text-xs text-steel-light px-2 italic py-2">No history found.</p>
+                <div className="text-center py-5">
+                  <div className="text-2xl mb-1.5">💬</div>
+                  <p className="text-xs text-gray-400 font-medium">No conversations yet</p>
+                  <p className="text-[10px] text-gray-300 mt-0.5">Start chatting to see history</p>
+                </div>
               )}
               {visibleThreads.map(t => (
                 <div key={t._id}
-                  className={`group relative flex items-center rounded-lg transition-colors cursor-pointer ${
-                    currentThreadId === t._id
-                      ? 'bg-steel-lightest border-l-4 border-primary'
-                      : 'hover:bg-steel-lightest/70'
+                  className={`group flex items-center rounded-xl transition-all cursor-pointer ${
+                    currentThreadId === t._id ? 'bg-primary/8 border border-primary/15' : 'hover:bg-gray-50 border border-transparent'
                   }`}
                 >
-                  {/* Thread title */}
-                  <button
-                    onClick={() => loadThread(t._id)}
-                    className="flex-1 min-w-0 text-left px-2.5 xl:px-3 py-1.5 xl:py-2"
-                  >
-                    <span className={`block text-xs xl:text-sm truncate font-medium ${currentThreadId === t._id ? 'text-primary-dark' : 'text-steel'} group-hover:text-gray-800`}>
+                  <button onClick={() => loadThread(t._id)} className="flex-1 min-w-0 text-left px-3 py-2">
+                    <span className={`block text-xs truncate font-medium ${currentThreadId === t._id ? 'text-primary-dark' : 'text-gray-600'}`}>
                       {t.title || 'Untitled Chat'}
                     </span>
-                    <span className="text-[9px] xl:text-[10px] text-steel-light/70 mt-0.5 block">
-                      {new Date(t.lastMessageAt).toLocaleDateString('en-US', { day:'2-digit', month:'short' })}
+                    <span className="text-[9px] text-gray-400 block mt-0.5 tabular-nums">
+                      {new Date(t.lastMessageAt).toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}
                     </span>
                   </button>
-
-                  {/* Delete button */}
                   <button
                     onClick={(e) => handleDeleteThread(t._id, e)}
                     disabled={deletingThreadId === t._id}
-                    title={confirmDeleteId === t._id ? 'Click again to confirm' : 'Delete this conversation'}
+                    title={confirmDeleteId === t._id ? 'Click again to confirm' : 'Delete conversation'}
                     className={`
-                      flex-shrink-0 mr-1.5 w-6 h-6 xl:w-7 xl:h-7 rounded-md flex items-center justify-center text-xs
-                      transition-all duration-150 select-none
-                      opacity-0 group-hover:opacity-100
-                      ${confirmDeleteId === t._id
-                        ? 'bg-red-500 text-white opacity-100 scale-110 shadow-sm'
-                        : 'text-steel-light hover:text-red-500 hover:bg-red-50'
-                      }
+                      flex-shrink-0 mr-1.5 w-6 h-6 rounded-lg flex items-center justify-center
+                      transition-all duration-150 opacity-0 group-hover:opacity-100
+                      ${confirmDeleteId === t._id ? 'bg-red-500 text-white opacity-100' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}
                       ${deletingThreadId === t._id ? 'opacity-40 cursor-not-allowed' : ''}
                     `}
                   >
                     {deletingThreadId === t._id
                       ? <span className="text-[8px] animate-spin">⟳</span>
                       : confirmDeleteId === t._id
-                      ? <span className="text-[9px] font-black">✓</span>
-                      : <span className="text-[11px]">🗑</span>
+                      ? <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                      : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     }
                   </button>
                 </div>
               ))}
-
               {threads.length > MAX_THREADS_SHOWN && (
-                <button
-                  onClick={() => setShowAllThreads(!showAllThreads)}
-                  className="w-full text-center px-3 py-2.5 mt-2 rounded-lg text-xs font-semibold text-primary hover:bg-primary/10 transition-colors border border-dashed border-transparent hover:border-primary/30"
-                >
-                  {showAllThreads
-                    ? 'Show Less'
-                    : `View All Conversations (${threads.length})`}
+                <button onClick={() => setShowAllThreads(!showAllThreads)}
+                  className="w-full text-center py-2 mt-1 text-[11px] font-semibold text-primary hover:bg-primary/5 rounded-xl transition-colors">
+                  {showAllThreads ? '↑ Show Less' : `View all ${threads.length} conversations`}
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Sidebar footer */}
-        <div className="px-3 xl:px-4 py-3 xl:py-4 border-t border-steel-light/30 bg-white space-y-2 xl:space-y-3">
+        {/* Footer */}
+        <div className="px-3 py-3 border-t border-gray-100 space-y-2 flex-shrink-0">
           {(user?.isAdmin || user?.isBotCreator) && (
             <button onClick={() => navigate('/admin')}
-              className="w-full flex items-center justify-center gap-2 py-2 xl:py-2.5 bg-white hover:bg-primary-dark hover:text-white text-primary-dark text-xs xl:text-sm font-bold rounded-lg border border-steel-light/50 transition-all shadow-sm">
-              <svg className="w-3.5 h-3.5 xl:w-4 xl:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              className="w-full flex items-center justify-center gap-2 py-2 bg-gray-50 hover:bg-primary-dark hover:text-white text-gray-600 text-xs font-bold rounded-xl border border-gray-200 transition-all">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               Admin Dashboard
             </button>
           )}
-          <div className="flex items-center gap-2.5 xl:gap-3">
-            <div className="w-8 h-8 xl:w-9 xl:h-9 rounded-full bg-primary-dark flex items-center justify-center text-white font-bold text-xs xl:text-sm shadow-sm border border-steel-light/30">
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="w-8 h-8 rounded-xl bg-primary-dark flex items-center justify-center text-white font-bold text-xs shadow-sm flex-shrink-0">
               {user?.username?.substring(0, 2).toUpperCase() || 'US'}
             </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="text-xs xl:text-sm font-bold text-gray-800 truncate">{user?.username || 'User'}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-gray-800 truncate">{user?.username || 'User'}</p>
               <button onClick={handleLogout}
-                className="text-[10px] xl:text-xs text-red-500 hover:text-red-700 flex items-center gap-1 mt-0.5 font-medium transition-colors">
+                className="text-[10px] text-red-400 hover:text-red-600 flex items-center gap-1 mt-0.5 font-medium transition-colors">
                 Sign Out
               </button>
             </div>
@@ -470,82 +442,123 @@ const Chat = ({ user, handleLogout }) => {
         </div>
       </aside>
 
-      {/* ════════════════════════════
-          MAIN CHAT + ARTIFACT
-      ════════════════════════════ */}
+      {/* Sidebar re-open tab */}
+      {!isSidebarOpen && (
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 w-5 h-14 bg-white border-r-0 border border-gray-200 rounded-r-xl items-center justify-center text-gray-400 hover:text-primary-dark hover:bg-primary/5 transition-all shadow-md"
+          title="Open sidebar"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+
+      {/* ════════════════ MAIN AREA ════════════════ */}
       <div className="flex-1 flex min-w-0 overflow-hidden">
+        <main className="flex-1 flex flex-col h-full min-w-0 bg-[#F7F8FA]">
 
-        {/* Chat column */}
-        <main className="flex-1 flex flex-col h-full relative bg-steel-lightest/40 min-w-0">
-
-          {/* Mobile topbar */}
-          <div className="lg:hidden h-12 border-b border-steel-light/30 flex items-center justify-between px-4 bg-white shadow-sm flex-shrink-0">
-            <span className="font-bold text-sm text-primary-dark">Portal AI</span>
-            <div className="flex items-center gap-2">
+          {/* Top bar */}
+          <div className="h-14 border-b border-gray-100 bg-white/90 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 flex-shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 transition-colors flex-shrink-0"
+              >
+                <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              {selectedBot ? (
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <BotAvatar bot={selectedBot} size="sm" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-gray-800 truncate leading-tight">{selectedBot.name}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{selectedBot.description || 'AI Assistant'}</p>
+                  </div>
+                </div>
+              ) : (
+                <span className="font-bold text-sm text-gray-500">Portal AI</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
               {artifact && (
                 <button onClick={closeArtifact}
-                  className="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold rounded-lg">
-                  ⊞ Panel
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold rounded-xl hover:bg-blue-100 transition-colors">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  <span className="hidden sm:inline">Close Panel</span>
                 </button>
               )}
-              <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-primary text-lg">☰</button>
+              <button onClick={handleNewChat}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-xl transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                <span className="hidden sm:inline">New Chat</span>
+              </button>
             </div>
           </div>
 
-          {/* Desktop: artifact toggle */}
-          {artifact && (
-            <div className="hidden lg:flex items-center justify-end px-4 xl:px-6 py-2 bg-white border-b border-steel-light/20 flex-shrink-0">
-              <button onClick={closeArtifact}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-600 text-xs xl:text-sm font-bold rounded-xl hover:bg-blue-100 transition-colors">
-                <span>⊞</span> Close Panel
-              </button>
-            </div>
-          )}
-
-          {/* Messages area */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-8 lg:py-6 xl:px-12 xl:py-8 space-y-4 xl:space-y-6 scrollbar-thin scrollbar-thumb-steel-light">
+          {/* Messages */}
+          <div className={`flex-1 overflow-y-auto py-6 scrollbar-thin scrollbar-thumb-gray-200 transition-all duration-300
+            ${isSidebarOpen
+              ? 'px-4 lg:px-8 xl:px-20'
+              : 'px-6 lg:px-16 xl:px-32 2xl:px-48'
+            }`}>
             {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center pb-16 xl:pb-24">
-                <div className="mb-5 xl:mb-7">
+              <div className="h-full flex flex-col items-center justify-center text-center pb-16">
+                <div className="mb-6">
                   <BotAvatar bot={selectedBot} size="xl" />
                 </div>
-                <h2 className="text-xl xl:text-3xl 2xl:text-4xl font-bold text-gray-800 mb-2 xl:mb-3">
-                  {selectedBot ? `Hello, I'm ${selectedBot.name}` : 'Select an Agent'}
+                <h2 className="text-2xl xl:text-3xl font-bold text-gray-800 mb-2">
+                  {selectedBot ? `Hello, I'm ${selectedBot.name}` : 'Select an Assistant'}
                 </h2>
-                <p className="text-sm xl:text-base 2xl:text-lg text-steel max-w-md xl:max-w-lg mx-auto mb-6 xl:mb-10 leading-relaxed">
+                <p className="text-sm text-gray-500 max-w-md mx-auto mb-8 leading-relaxed">
                   {selectedBot?.description || 'Ready to assist you with operations, data, and analysis.'}
                 </p>
                 {selectedBot && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 xl:gap-3 w-full max-w-lg xl:max-w-2xl">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full max-w-lg">
                     {(selectedBot.starterQuestions?.length > 0 ? selectedBot.starterQuestions : ['What is the project status?', 'Search data', 'Generate a report']).map((txt, i) => (
                       <button key={i}
                         onClick={() => { setInput(txt); setTimeout(() => handleSubmit({ preventDefault: () => {} }), 0); }}
-                        className="p-3 xl:p-4 bg-white hover:bg-steel-lightest border border-steel-light/30 rounded-xl text-sm xl:text-base text-gray-700 hover:text-primary-dark transition-all shadow-sm text-left font-medium hover:border-primary/30 hover:shadow-md">
-                        <span className="block">{txt}</span>
+                        className="p-3.5 bg-white hover:bg-gray-50 border border-gray-200 hover:border-primary/30 rounded-xl text-sm text-gray-700 hover:text-primary-dark transition-all shadow-sm text-left font-medium hover:shadow-md group">
+                        <span className="flex items-start gap-2">
+                          <span className="text-primary/40 text-base leading-none group-hover:text-primary transition-colors flex-shrink-0">›</span>
+                          <span>{txt}</span>
+                        </span>
                       </button>
                     ))}
                   </div>
                 )}
               </div>
             ) : (
-              messages.map((msg, index) => (
-                <ChatMessage
-                  key={msg._id || index}
-                  message={msg}
-                  bot={selectedBot}
-                  onOpenArtifact={openArtifact}
-                />
-              ))
+              <div className="space-y-1 max-w-4xl mx-auto">
+                {messages.map((msg, index) => (
+                  <ChatMessage
+                    key={msg._id || index}
+                    message={msg}
+                    bot={selectedBot}
+                    onOpenArtifact={openArtifact}
+                  />
+                ))}
+              </div>
             )}
 
+            {/* Thinking indicator */}
             {loading && (
-              <div className="flex justify-start">
-                <div className="flex items-center gap-3 ml-2">
+              <div className="flex justify-start py-3 max-w-4xl mx-auto">
+                <div className="flex items-end gap-2.5">
                   <BotAvatar bot={selectedBot} size="sm" />
-                  <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2 border border-steel-light/30 shadow-sm">
-                    <div className="w-2 h-2 bg-steel-light rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-steel-light rounded-full animate-bounce" style={{animationDelay:'0.1s'}}></div>
-                    <div className="w-2 h-2 bg-steel-light rounded-full animate-bounce" style={{animationDelay:'0.2s'}}></div>
+                  <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      {[0, 200, 400].map((delay) => (
+                        <span
+                          key={delay}
+                          className="w-2 h-2 bg-primary/50 rounded-full animate-bounce"
+                          style={{ animationDuration: '1.2s', animationDelay: `${delay}ms` }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-gray-400 font-medium animate-pulse select-none">Thinking…</span>
                   </div>
                 </div>
               </div>
@@ -553,33 +566,28 @@ const Chat = ({ user, handleLogout }) => {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* ── Input Area ── */}
-          <div className="px-3 py-3 xl:px-6 xl:py-4 bg-white border-t border-steel-light/30 z-20 flex-shrink-0">
-            <div className="max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto">
-
-              {/* Selected file chip — inside the input wrapper */}
+          {/* Input */}
+          <div className={`py-3 bg-white border-t border-gray-100 flex-shrink-0 transition-all duration-300
+            ${isSidebarOpen
+              ? 'px-4 lg:px-8 xl:px-20'
+              : 'px-6 lg:px-16 xl:px-32 2xl:px-48'
+            }`}>
+            <div className={`mx-auto transition-all duration-300 ${isSidebarOpen ? 'max-w-4xl' : 'max-w-5xl'}`}>
               {selectedFile && (
-                <div className="flex items-center gap-2 mb-2 bg-steel-lightest border border-steel-light rounded-lg px-3 py-1.5 w-fit text-xs text-primary-dark">
-                  <span>📎 {selectedFile.name}</span>
-                  <button onClick={() => setSelectedFile(null)} className="hover:text-red-500 font-bold ml-1">✕</button>
+                <div className="flex items-center gap-2 mb-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2 w-fit text-xs text-primary-dark font-medium">
+                  <svg className="w-3.5 h-3.5 flex-shrink-0 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                  <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+                  <button onClick={() => setSelectedFile(null)} className="ml-0.5 text-gray-400 hover:text-red-500 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
                 </div>
               )}
-
-              {/* Input row — all items vertically centered */}
-              <div className="flex items-center gap-2 xl:gap-3 bg-steel-lightest/50 border border-steel-light/30 rounded-xl shadow-inner focus-within:ring-1 focus-within:ring-primary focus-within:border-primary focus-within:bg-white transition-all px-2 xl:px-3 py-2">
-
-                {/* Attachment button */}
+              <div className="flex items-end gap-2 bg-white border border-gray-200 rounded-2xl shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 focus-within:shadow-md transition-all px-3 py-2.5">
                 <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Attach File"
-                  className="flex-shrink-0 w-8 h-8 xl:w-9 xl:h-9 flex items-center justify-center rounded-lg text-steel hover:text-primary-dark hover:bg-steel-light/30 transition-colors text-base xl:text-lg"
-                >
-                  📎
+                <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach file"
+                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-primary-dark hover:bg-gray-100 transition-colors mb-0.5">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                 </button>
-
-                {/* Textarea */}
                 <textarea
                   ref={textareaRef}
                   value={input}
@@ -589,24 +597,20 @@ const Chat = ({ user, handleLogout }) => {
                     e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder={selectedBot ? `Message ${selectedBot.name}...` : 'Select a bot first...'}
+                  placeholder={selectedBot ? `Message ${selectedBot.name}…` : 'Select an assistant first…'}
                   disabled={!selectedBot || loading}
                   rows={1}
-                  className="flex-1 bg-transparent text-gray-800 text-sm xl:text-base py-1.5 resize-none overflow-hidden focus:outline-none placeholder-steel"
+                  className="flex-1 bg-transparent text-gray-800 text-sm py-1 resize-none overflow-hidden focus:outline-none placeholder-gray-400"
                 />
-
-                {/* Send button */}
-                <button
-                  onClick={handleSubmit}
+                <button onClick={handleSubmit}
                   disabled={(!input.trim() && !selectedFile) || !selectedBot || loading}
-                  className="flex-shrink-0 w-8 h-8 xl:w-9 xl:h-9 flex items-center justify-center bg-primary hover:bg-primary-dark text-white rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95 text-sm xl:text-base"
-                >
-                  ➤
+                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-primary-dark hover:bg-primary text-white rounded-xl shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95 mb-0.5">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
                 </button>
               </div>
-
-              {/* AI Disclaimer */}
-              <p className="text-center text-[10px] text-steel-light mt-1.5 select-none">
+              <p className="text-center text-[10px] text-gray-400 mt-2 select-none">
                 AI responses may contain inaccuracies. Verify important information before using it for business decisions.
               </p>
             </div>
@@ -616,11 +620,8 @@ const Chat = ({ user, handleLogout }) => {
         {/* Artifact Panel */}
         {artifact && (
           <>
-            <div
-              onMouseDown={startDrag}
-              onTouchStart={startDrag}
-              className="w-1 flex-shrink-0 bg-gray-200 hover:bg-primary/40 cursor-col-resize transition-colors"
-            />
+            <div onMouseDown={startDrag} onTouchStart={startDrag}
+              className="w-1 flex-shrink-0 bg-gray-200 hover:bg-primary/50 cursor-col-resize transition-colors" />
             <div style={{ width: panelWidth, minWidth: PANEL_MIN_WIDTH }} className="flex-shrink-0 overflow-hidden">
               <ArtifactPanel artifact={artifact} onClose={closeArtifact} />
             </div>
@@ -630,7 +631,7 @@ const Chat = ({ user, handleLogout }) => {
 
       {/* Mobile overlay */}
       {isSidebarOpen && (
-        <div className="lg:hidden fixed inset-0 bg-black/30 z-20" onClick={() => setIsSidebarOpen(false)} />
+        <div className="lg:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-20" onClick={() => setIsSidebarOpen(false)} />
       )}
     </div>
   );
