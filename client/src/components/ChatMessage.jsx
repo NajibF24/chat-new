@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import BotAvatar from './BotAvatar';
@@ -12,20 +12,51 @@ const getFileUrl = (path) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// Typewriter hook — streams text character by character
+// ─────────────────────────────────────────────────────────────
+function useTypewriter(text, speed = 8) {
+  const [displayed, setDisplayed] = useState('');
+  const [done, setDone] = useState(false);
+  const prevTextRef = useRef('');
+
+  useEffect(() => {
+    if (text === prevTextRef.current) return;
+    prevTextRef.current = text;
+    setDone(false);
+
+    let i = 0;
+    setDisplayed('');
+    const interval = setInterval(() => {
+      i += Math.floor(Math.random() * 4) + 2; // stream 2-5 chars at a time
+      if (i >= text.length) {
+        setDisplayed(text);
+        setDone(true);
+        clearInterval(interval);
+      } else {
+        setDisplayed(text.slice(0, i));
+      }
+    }, speed);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  return { displayed, done };
+}
+
+// ─────────────────────────────────────────────────────────────
 // CodeBlock
 // ─────────────────────────────────────────────────────────────
 const ARTIFACT_LANGS = ['html', 'htm', 'react', 'jsx', 'tsx', 'svg', 'python', 'py', 'javascript', 'js', 'ts', 'typescript', 'css', 'sql'];
 const MIN_LINES_ARTIFACT = 5;
 
 const LANG_BADGE_COLOR = {
-  html: 'bg-orange-600', htm: 'bg-orange-600',
-  react: 'bg-blue-600', jsx: 'bg-blue-600', tsx: 'bg-blue-600',
-  svg: 'bg-pink-600',
-  python: 'bg-yellow-600', py: 'bg-yellow-600',
-  javascript: 'bg-yellow-500', js: 'bg-yellow-500',
-  typescript: 'bg-blue-500', ts: 'bg-blue-500',
-  css: 'bg-purple-600',
-  sql: 'bg-sky-600',
+  html: 'bg-orange-500', htm: 'bg-orange-500',
+  react: 'bg-blue-500', jsx: 'bg-blue-500', tsx: 'bg-blue-500',
+  svg: 'bg-pink-500',
+  python: 'bg-yellow-500', py: 'bg-yellow-500',
+  javascript: 'bg-yellow-400', js: 'bg-yellow-400',
+  typescript: 'bg-blue-400', ts: 'bg-blue-400',
+  css: 'bg-purple-500',
+  sql: 'bg-sky-500',
 };
 
 function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
@@ -33,43 +64,54 @@ function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
   const lines = code.split('\n').length;
   const langKey = (lang || '').toLowerCase();
   const isArtifactable = ARTIFACT_LANGS.includes(langKey) && lines >= MIN_LINES_ARTIFACT;
-  const badgeColor = LANG_BADGE_COLOR[langKey] || 'bg-gray-600';
+  const badgeColor = LANG_BADGE_COLOR[langKey] || 'bg-gray-500';
 
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
   };
 
   return (
-    <div className="my-3 rounded-xl overflow-hidden border border-gray-200 shadow-sm">
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-800">
-        <div className="flex items-center gap-2">
+    <div className="my-3 rounded-xl overflow-hidden border border-gray-700/50 shadow-lg">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-900">
+        <div className="flex items-center gap-2.5">
+          {/* Traffic lights */}
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-500/70" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
+            <div className="w-3 h-3 rounded-full bg-green-500/70" />
+          </div>
           {lang && (
-            <span className={`${badgeColor} text-white text-[10px] font-bold px-2 py-0.5 rounded`}>
+            <span className={`${badgeColor} text-white text-[10px] font-bold px-2 py-0.5 rounded-md`}>
               {lang}
             </span>
           )}
-          <span className="text-gray-400 text-[10px]">{lines} lines</span>
+          <span className="text-gray-500 text-[10px] tabular-nums">{lines} lines</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {isArtifactable && onOpenArtifact && (
             <button
               onClick={() => onOpenArtifact(langKey, code)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-primary-dark hover:bg-primary text-white text-[10px] font-bold rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1 bg-primary/80 hover:bg-primary text-white text-[10px] font-bold rounded-lg transition-colors"
             >
-              <span>⊞</span><span>Open</span>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              Preview
             </button>
           )}
           <button
             onClick={handleCopy}
-            className={`px-3 py-1 text-[10px] font-bold rounded-lg transition-colors ${
-              copied ? 'bg-green-600/30 text-green-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+            className={`flex items-center gap-1 px-3 py-1 text-[10px] font-bold rounded-lg transition-colors ${
+              copied ? 'bg-green-600/30 text-green-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-400'
             }`}
           >
-            {copied ? '✓ Copied' : '⎘ Copy'}
+            {copied ? (
+              <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>
+            ) : (
+              <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Copy</>
+            )}
           </button>
         </div>
       </div>
-      <div className="overflow-auto max-h-[480px] bg-gray-900">
+      <div className="overflow-auto max-h-[480px] bg-[#1a1b26]">
         <pre className="p-4 text-xs text-gray-100 font-mono leading-relaxed whitespace-pre">
           <code>{code}</code>
         </pre>
@@ -81,41 +123,45 @@ function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
 // ─────────────────────────────────────────────────────────────
 // ChatMessage
 // ─────────────────────────────────────────────────────────────
-const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
+const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
   const isUser = message.role === 'user';
+  const [visible, setVisible] = useState(false);
+
+  // Fade-in on mount
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 10);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
-    <div className={`flex w-full mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex ${
-        isUser
-          ? 'max-w-[65%] flex-row-reverse'
-          : 'max-w-[96%] flex-row'
-      }`}>
+    <div
+      className={`flex w-full mb-1 transition-all duration-300 ${
+        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+      } ${isUser ? 'justify-end' : 'justify-start'}`}
+    >
+      <div className={`flex max-w-[88%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
 
         {/* Avatar */}
         {isUser ? (
-          <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center shadow-md font-bold text-xs bg-primary-dark text-white ml-2.5 mt-0.5">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs bg-primary-dark text-white ml-2.5 mt-1 shadow-sm">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
         ) : (
-          <div className="flex-shrink-0 mr-2.5 mt-0.5">
+          <div className="flex-shrink-0 mr-2.5 mt-1">
             <BotAvatar bot={bot} size="sm" />
           </div>
         )}
 
         {/* Bubble */}
-        <div className={`px-4 py-3 shadow-sm relative transition-all ${
+        <div className={`px-4 py-3 shadow-sm transition-all ${
           isUser
-            ? 'bg-primary-dark text-white rounded-2xl rounded-tr-sm'
-            : 'bg-white text-gray-800 border border-steel-light/30 rounded-2xl rounded-tl-sm w-full min-w-0'
+            ? 'bg-primary-dark text-white rounded-2xl rounded-tr-sm max-w-[85%]'
+            : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-sm w-full min-w-0 shadow-sm'
         }`}>
 
-          <div
-            className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800'}`}
-            style={{ '--tw-prose-body': isUser ? '#fff' : '#1e293b' }}
-          >
+          <div className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800'}`}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -131,7 +177,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
                   }
                   return (
                     <code
-                      className={`${isUser ? 'bg-white/20 text-white' : 'bg-steel-lightest text-primary-dark'} px-1.5 py-0.5 rounded text-xs font-mono`}
+                      className={`${isUser ? 'bg-white/20 text-white' : 'bg-gray-100 text-primary-dark'} px-1.5 py-0.5 rounded text-xs font-mono`}
                       {...props}>
                       {children}
                     </code>
@@ -143,7 +189,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
                   if (typeof content === 'string' && content.startsWith('[[VIDEO:')) {
                     const videoUrl = getFileUrl(content.replace('[[VIDEO:', '').replace(']]', ''));
                     return (
-                      <div className={`my-4 rounded-xl overflow-hidden border shadow-lg bg-black aspect-video ${isUser ? 'border-white/20' : 'border-steel-light/30'}`}>
+                      <div className={`my-4 rounded-xl overflow-hidden border shadow-lg bg-black aspect-video ${isUser ? 'border-white/20' : 'border-gray-200'}`}>
                         <video controls className="w-full h-full" preload="metadata">
                           <source src={videoUrl} type="video/mp4" />
                         </video>
@@ -155,17 +201,17 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
 
                 img({ node, ...props }) {
                   return (
-                    <div className="relative my-4 bg-gray-100/50 rounded-xl overflow-hidden" style={{ minHeight: '120px' }}>
+                    <div className="relative my-4 rounded-xl overflow-hidden bg-gray-50">
                       <img
                         {...props}
                         src={getFileUrl(props.src)}
                         alt={props.alt || 'Attachment'}
-                        className="max-w-full h-auto max-h-[450px] rounded-lg shadow-sm border border-steel-light/30 bg-white p-1 cursor-pointer hover:opacity-90 transition-opacity"
+                        className="max-w-full h-auto max-h-[450px] rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:opacity-90 transition-opacity"
                         loading="lazy"
                         onClick={e => window.open(e.target.src, '_blank')}
                         onError={e => {
                           e.target.style.display = 'none';
-                          e.target.parentNode.innerHTML = `<div style="padding:10px;color:#ef4444;font-size:11px;text-align:center;">⚠️ Failed to load image</div>`;
+                          e.target.parentNode.innerHTML = `<div style="padding:12px;color:#ef4444;font-size:11px;text-align:center;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;">⚠️ Failed to load image</div>`;
                         }}
                       />
                     </div>
@@ -174,26 +220,25 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
 
                 ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-sm" {...props} />,
                 ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-sm" {...props} />,
-                li: ({ node, ...props }) => <li className="text-sm" {...props} />,
-                h1: ({ node, ...props }) => <h1 className={`text-lg font-bold mt-4 mb-2 border-b pb-1 ${isUser ? 'border-white/20' : 'border-steel-light/30'}`} {...props} />,
+                li: ({ node, ...props }) => <li className="text-sm leading-relaxed" {...props} />,
+                h1: ({ node, ...props }) => <h1 className={`text-lg font-bold mt-4 mb-2 pb-1 border-b ${isUser ? 'border-white/20' : 'border-gray-100'}`} {...props} />,
                 h2: ({ node, ...props }) => <h2 className="text-base font-bold mt-3 mb-1.5" {...props} />,
                 h3: ({ node, ...props }) => <h3 className="text-sm font-bold mt-2 mb-1" {...props} />,
-                strong: ({ node, ...props }) => <strong className="font-bold" {...props} />,
+                strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
                 blockquote: ({ node, ...props }) => (
-                  <blockquote className={`border-l-4 pl-4 my-3 italic text-sm ${isUser ? 'border-white/40 text-white/80' : 'border-primary/40 text-steel'}`} {...props} />
+                  <blockquote className={`border-l-4 pl-4 my-3 italic text-sm ${isUser ? 'border-white/40 text-white/80' : 'border-primary/30 text-gray-500'}`} {...props} />
                 ),
 
-                // Table — full width, horizontally scrollable
                 table: ({ node, ...props }) => (
-                  <div className={`overflow-x-auto my-4 rounded-lg border shadow-sm w-full ${isUser ? 'border-white/20' : 'border-steel-light/30'}`}>
-                    <table className={`w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-steel-light/30'}`} {...props} />
+                  <div className={`overflow-x-auto my-4 rounded-xl border shadow-sm w-full ${isUser ? 'border-white/20' : 'border-gray-100'}`}>
+                    <table className={`w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-gray-100'}`} {...props} />
                   </div>
                 ),
-                thead: ({ node, ...props }) => <thead className={`${isUser ? 'bg-white/10' : 'bg-steel-lightest'} font-bold`} {...props} />,
-                th: ({ node, ...props }) => <th className="px-4 py-2 text-left text-xs uppercase tracking-wider border-b whitespace-nowrap" {...props} />,
-                tr: ({ node, ...props }) => <tr className="hover:bg-black/5" {...props} />,
-                td: ({ node, ...props }) => <td className="px-4 py-2 border-r last:border-r-0 text-sm" {...props} />,
-                a: ({ node, ...props }) => <a className="underline font-semibold hover:opacity-80 text-sm" target="_blank" rel="noreferrer" {...props} />,
+                thead: ({ node, ...props }) => <thead className={`${isUser ? 'bg-white/10' : 'bg-gray-50'} font-semibold`} {...props} />,
+                th: ({ node, ...props }) => <th className="px-4 py-2.5 text-left text-xs font-bold uppercase tracking-wider whitespace-nowrap" {...props} />,
+                tr: ({ node, ...props }) => <tr className={`transition-colors ${isUser ? 'hover:bg-white/5' : 'hover:bg-gray-50/80'}`} {...props} />,
+                td: ({ node, ...props }) => <td className="px-4 py-2.5 border-r last:border-r-0 text-sm" {...props} />,
+                a: ({ node, ...props }) => <a className={`underline font-medium hover:opacity-80 text-sm ${isUser ? 'text-white' : 'text-primary'}`} target="_blank" rel="noreferrer" {...props} />,
               }}
             >
               {message.content || ''}
@@ -202,36 +247,39 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
 
           {/* Attachments */}
           {message.attachedFiles && message.attachedFiles.length > 0 && (
-            <div className={`mt-4 pt-3 border-t ${isUser ? 'border-white/20' : 'border-steel-light/30'}`}>
-              <div className="grid grid-cols-1 gap-3">
+            <div className={`mt-3 pt-3 border-t ${isUser ? 'border-white/20' : 'border-gray-100'}`}>
+              <div className="grid grid-cols-1 gap-2.5">
                 {message.attachedFiles.map((file, idx) => {
                   const fileName = file.name?.toLowerCase() || '';
                   const isImage  = file.type === 'image' || /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
                   const fullPath = getFileUrl(file.path);
                   return (
-                    <div key={idx} className={`rounded-lg border overflow-hidden shadow-sm ${isUser ? 'bg-white/10 border-white/20' : 'bg-steel-lightest border-steel-light/30'}`}>
+                    <div key={idx} className={`rounded-xl border overflow-hidden ${isUser ? 'bg-white/10 border-white/20' : 'bg-gray-50 border-gray-100'}`}>
                       {isImage ? (
                         <div className="cursor-pointer group" onClick={() => window.open(fullPath, '_blank')}>
-                          <div style={{ minHeight: '120px' }} className="bg-black/5 flex items-center justify-center">
+                          <div style={{ minHeight: '120px' }} className="flex items-center justify-center overflow-hidden">
                             <img src={fullPath} alt={file.name}
                               className="w-full h-auto max-h-[400px] object-contain transition-transform group-hover:scale-[1.01]"
                               onError={e => { e.target.src = 'https://placehold.co/400x300?text=File+Not+Found'; }}
                             />
                           </div>
-                          <div className="p-2 flex justify-between items-center text-xs bg-white/5">
+                          <div className="p-2 flex justify-between items-center text-xs">
                             <span className="truncate font-medium">{file.name}</span>
-                            <span className="opacity-60">Open ↗</span>
+                            <span className="opacity-50 flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                              Open
+                            </span>
                           </div>
                         </div>
                       ) : (
                         <a href={fullPath} target="_blank" rel="noreferrer"
                           className="flex items-center p-3 hover:bg-black/5 transition-colors">
-                          <div className="mr-2.5 text-2xl">📄</div>
+                          <div className="mr-2.5 text-xl opacity-70">📄</div>
                           <div className="flex-1 overflow-hidden">
-                            <div className="font-bold text-sm truncate">{file.name}</div>
-                            <div className="text-xs opacity-60">Document</div>
+                            <div className="font-semibold text-xs truncate">{file.name}</div>
+                            <div className="text-[10px] opacity-50 mt-0.5">Document</div>
                           </div>
-                          <div className="ml-2 text-xs opacity-40">⬇</div>
+                          <svg className="w-3.5 h-3.5 opacity-40 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                         </a>
                       )}
                     </div>
@@ -242,7 +290,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact }) => {
           )}
 
           {/* Timestamp */}
-          <div className={`text-[10px] mt-2 text-right font-medium tracking-tight ${isUser ? 'text-white/50' : 'text-steel-light'}`}>
+          <div className={`text-[10px] mt-2 text-right tabular-nums ${isUser ? 'text-white/40' : 'text-gray-400'}`}>
             {new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>

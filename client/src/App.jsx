@@ -142,7 +142,7 @@ function App() {
               path="/" 
               element={<Chat user={user} handleLogout={handleLogout} />} 
             />
-            {user.isAdmin && (
+            {(user.isAdmin || user.isBotCreator) && (
               <Route 
                 path="/admin" 
                 element={<AdminDashboard user={user} handleLogout={handleLogout} />} 

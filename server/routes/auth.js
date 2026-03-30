@@ -1,4 +1,3 @@
-// server/routes/auth.js - FIXED: prevent null email collision + Audit Trail
 import express  from 'express';
 import bcrypt   from 'bcryptjs';
 import User     from '../models/User.js';
@@ -68,7 +67,6 @@ router.post('/login', async (req, res) => {
             }
           }
 
-          // ── Safe user lookup (see comment in original file) ──
           let user = await User.findOne({ username: finalUsername });
 
           if (!user && ldapResult.user.email) {
@@ -88,6 +86,7 @@ router.post('/login', async (req, res) => {
               username:    finalUsername,
               password:    await bcrypt.hash(Math.random().toString(36), 10),
               isAdmin:     isAdminAccess,
+              isBotCreator: false, // Default false untuk user baru LDAP
               assignedBots: defaultBots.map(b => b._id),
               email:       ldapResult.user.email || null,
               displayName: ldapResult.user.displayName,
@@ -116,9 +115,11 @@ router.post('/login', async (req, res) => {
           await user.save();
           await user.populate('assignedBots');
 
-          req.session.userId    = user._id;
-          req.session.username  = user.username;
-          req.session.isAdmin   = user.isAdmin;
+          // ✅ Menyimpan ke sesi LDAP
+          req.session.userId     = user._id;
+          req.session.username   = user.username;
+          req.session.isAdmin    = user.isAdmin;
+          req.session.isBotCreator = user.isBotCreator;
           req.session.authMethod = 'ldap';
 
           console.log(`✅ Session set for: ${user.username} (${user._id})`);
@@ -135,6 +136,7 @@ router.post('/login', async (req, res) => {
             detail: {
               authMethod:  'ldap',
               isAdmin:     user.isAdmin,
+              isBotCreator: user.isBotCreator,
               isNewUser,
               groups:      userGroups,
             },
@@ -146,6 +148,7 @@ router.post('/login', async (req, res) => {
               username:    user.username,
               displayName: user.displayName,
               isAdmin:     user.isAdmin,
+              isBotCreator: user.isBotCreator,
               assignedBots: user.assignedBots,
               authMethod:  'ldap',
             },
@@ -153,7 +156,7 @@ router.post('/login', async (req, res) => {
         }
       } catch (ldapError) {
         console.error('❌ LDAP Error:', ldapError.message);
-        // Don't audit LDAP errors as LOGIN_FAILED — fall through to local auth
+        // Fall through to local auth
       }
     }
 
@@ -165,7 +168,6 @@ router.post('/login', async (req, res) => {
     ).populate('assignedBots');
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      // Audit failed login
       AuditService.log({
         req,
         category:   'auth',
@@ -178,9 +180,11 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    req.session.userId    = user._id;
-    req.session.username  = user.username;
-    req.session.isAdmin   = user.isAdmin;
+    // ✅ Menyimpan isBotCreator ke dalam sesi Local DB
+    req.session.userId     = user._id;
+    req.session.username   = user.username;
+    req.session.isAdmin    = user.isAdmin;
+    req.session.isBotCreator = user.isBotCreator; 
     req.session.authMethod = 'local';
 
     user.lastLogin = new Date();
@@ -195,7 +199,7 @@ router.post('/login', async (req, res) => {
       targetName: user.username,
       username:   user.username,
       userId:     user._id,
-      detail: { authMethod: 'local', isAdmin: user.isAdmin },
+      detail: { authMethod: 'local', isAdmin: user.isAdmin, isBotCreator: user.isBotCreator },
     });
 
     res.json({
@@ -204,6 +208,7 @@ router.post('/login', async (req, res) => {
         username:    user.username,
         displayName: user.displayName,
         isAdmin:     user.isAdmin,
+        isBotCreator: user.isBotCreator, // ✅ Mengirim isBotCreator ke Frontend React
         assignedBots: user.assignedBots,
         authMethod:  'local',
       },
@@ -222,7 +227,6 @@ router.post('/logout', (req, res) => {
   const uid  = req.session?.userId;
   const uname = req.session?.username;
 
-  // Audit before destroy
   AuditService.log({
     req,
     category:   'auth',
@@ -243,6 +247,13 @@ router.post('/logout', (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   const user = await User.findById(req.session.userId)
     .populate('assignedBots').select('-password');
+  
+  // Memastikan data sesi juga diupdate jika ada GET /me
+  if (user) {
+    req.session.isAdmin = user.isAdmin;
+    req.session.isBotCreator = user.isBotCreator;
+  }
+  
   res.json({ user });
 });
 

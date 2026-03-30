@@ -9,7 +9,8 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    tzdata
 
 # 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \

@@ -14,6 +14,7 @@ import chatRoutes from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes from './routes/embed.js';
 import pptxRoutes from './routes/pptx.js';  // ← TAMBAHAN BARU (1 baris)
+import { startWahaScheduler } from './services/wahaScheduler.js';
 
 dotenv.config();
 
@@ -117,6 +118,8 @@ app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err);
   res.status(500).json({ error: 'Internal Server Error' });
 });
+// ✅ JALANKAN MESIN SCHEDULER WA DI SINI
+startWahaScheduler();
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);

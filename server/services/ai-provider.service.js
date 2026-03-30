@@ -167,25 +167,27 @@ class AIProviderService {
   /**
    * Build OpenAI tools array based on bot capabilities config
    */
-  buildTools(providerConfig, capabilities = {}) {
-    if (providerConfig?.provider !== 'openai') return undefined;
+  //buildTools(providerConfig, capabilities = {}) {
+ //   if (providerConfig?.provider !== 'openai') return undefined;
 
-    const tools = [];
-    const model = providerConfig?.model || '';
+ //   const tools = [];
+ //   const model = providerConfig?.model || '';
 
     // Web Search — supported on gpt-4o, gpt-4.1+, gpt-5+, o-series
-    const supportsWebSearch = capabilities.webSearch &&
-      (model.includes('4.1') || model.startsWith('gpt-5') || /^o\d/.test(model) || model.includes('4o'));
-    if (supportsWebSearch) {
-      tools.push({ type: 'web_search_preview' });
-    }
+//    const supportsWebSearch = capabilities.webSearch &&
+  //    (model.includes('4.1') || model.startsWith('gpt-5') || /^o\d/.test(model) || model.includes('4o'));
+   // if (supportsWebSearch) {
+    //  tools.push({ type: 'web_search_preview' });
+   // }
 
     // Code Interpreter
-    if (capabilities.codeInterpreter) {
-      tools.push({ type: 'code_interpreter', container: { type: 'auto' } });
-    }
-
-    return tools.length > 0 ? tools : undefined;
+ //   if (capabilities.codeInterpreter) {
+ //     tools.push({ type: 'code_interpreter', container: { type: 'auto' } });
+ //   }
+  buildTools(providerConfig, capabilities = {}) {
+    // Kita kembalikan undefined (kosong) karena provider Anda 
+    // hanya mendukung type 'function', bukan native tools OpenAI.
+    return undefined;
   }
 
   /**

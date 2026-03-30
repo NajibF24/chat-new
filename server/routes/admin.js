@@ -1,4 +1,6 @@
-// server/routes/admin.js — Enhanced: capabilities, PPT support, new model catalog + Audit Trail
+// server/routes/admin.js
+// ✅ FIX: Bot Creator hanya lihat bot miliknya / assigned / bot lama (createdBy null)
+// ✅ FIX: API Key tidak auto-generate, tidak tampil otomatis, ada endpoint reveal terpisah
 
 import express    from 'express';
 import bcrypt     from 'bcryptjs';
@@ -10,11 +12,12 @@ import Bot        from '../models/Bot.js';
 import Chat       from '../models/Chat.js';
 import Thread     from '../models/Thread.js';
 import AuditLog   from '../models/AuditLog.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, requireAdminOrBotCreator } from '../middleware/auth.js';
 import AIProviderService, { AI_PROVIDERS } from '../services/ai-provider.service.js';
 import KnowledgeBaseService from '../services/knowledge-base.service.js';
 import AuditService from '../services/audit.service.js';
 import OneDriveService from '../services/onedrive.service.js';
+import crypto     from 'crypto';
 
 const router = express.Router();
 
@@ -39,7 +42,7 @@ const avatarUpload = multer({
   },
 });
 
-// ── Multer: Knowledge Files (+ PPTX/PPT support) ─────────────
+// ── Multer: Knowledge Files ───────────────────────────────────
 const knowledgeStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = `uploads/knowledge/${req.params.id}`;
@@ -76,7 +79,7 @@ const knowledgeUpload = multer({
   },
 });
 
-// ── Helper: sanitize capabilities object ─────────────────────
+// ── Helper: sanitize capabilities ────────────────────────────
 const sanitizeCapabilities = (caps = {}) => ({
   webSearch:       Boolean(caps.webSearch),
   codeInterpreter: Boolean(caps.codeInterpreter),
@@ -85,7 +88,7 @@ const sanitizeCapabilities = (caps = {}) => ({
   fileSearch:      Boolean(caps.fileSearch),
 });
 
-// ── Helper: build diff between two plain objects ─────────────
+// ── Helper: build diff ────────────────────────────────────────
 function buildDiff(before, after, keys) {
   const b = {}, a = {};
   keys.forEach(k => {
@@ -96,10 +99,35 @@ function buildDiff(before, after, keys) {
   return Object.keys(b).length ? { before: b, after: a } : null;
 }
 
+// ── Helper: cek akses bot ─────────────────────────────────────
+// Aturan akses:
+//   Admin         → selalu boleh semua bot
+//   Bot Creator   → boleh jika:
+//     1. bot.createdBy === user._id        (dia yang buat)
+//     2. bot._id ada di user.assignedBots  (di-assign oleh admin)
+//     3. bot.createdBy === null/undefined  (bot lama sebelum fitur ini — visible ke semua Bot Creator)
+async function canAccessBot(user, botOrId) {
+  if (user.isAdmin) return true;
+
+  const botId = typeof botOrId === 'object' ? String(botOrId._id ?? botOrId) : String(botOrId);
+  const bot   = typeof botOrId === 'object' ? botOrId : await Bot.findById(botId).select('createdBy').lean();
+
+  // ✅ Bot lama tanpa createdBy → accessible oleh semua Bot Creator
+  if (bot && (bot.createdBy === null || bot.createdBy === undefined)) return true;
+
+  // Cek apakah dia yang buat
+  if (bot && String(bot.createdBy) === String(user._id)) return true;
+
+  // Cek apakah di-assign ke dia
+  const dbUser = await User.findById(user._id).select('assignedBots').lean();
+  const assigned = (dbUser?.assignedBots || []).map(String);
+  return assigned.includes(botId);
+}
+
 // ============================================================
 // 📊 STATS
 // ============================================================
-router.get('/stats', requireAdmin, async (req, res) => {
+router.get('/stats', requireAdminOrBotCreator, async (req, res) => {
   try {
     const [totalUsers, totalBots, totalChats, totalThreads] = await Promise.all([
       User.countDocuments(), Bot.countDocuments(), Chat.countDocuments(), Thread.countDocuments(),
@@ -134,21 +162,23 @@ router.get('/stats', requireAdmin, async (req, res) => {
 // ============================================================
 // 📋 AI PROVIDERS CATALOG
 // ============================================================
-router.get('/ai-providers', requireAdmin, (req, res) => { res.json(AI_PROVIDERS); });
+router.get('/ai-providers', requireAdminOrBotCreator, (req, res) => { res.json(AI_PROVIDERS); });
 
 // ============================================================
 // 🧪 TEST AI CONNECTION
 // ============================================================
-router.post('/bots/:id/test-ai', requireAdmin, async (req, res) => {
+router.post('/bots/:id/test-ai', requireAdminOrBotCreator, async (req, res) => {
   try {
-    const bot = await Bot.findById(req.params.id);
+    const bot = await Bot.findById(req.params.id).lean();
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot)))
+      return res.status(403).json({ error: 'Forbidden: Anda tidak memiliki akses ke bot ini' });
     const result = await AIProviderService.testConnection(bot.aiProvider || {});
     res.json(result);
   } catch (err) { res.status(500).json({ ok: false, message: err.message }); }
 });
 
-router.post('/test-ai-config', requireAdmin, async (req, res) => {
+router.post('/test-ai-config', requireAdminOrBotCreator, async (req, res) => {
   try {
     const result = await AIProviderService.testConnection(req.body);
     res.json(result);
@@ -220,14 +250,16 @@ router.get('/users', requireAdmin, async (req, res) => {
 
 router.post('/users', requireAdmin, async (req, res) => {
   try {
-    const { username, password, isAdmin, assignedBots } = req.body;
+    const { username, password, isAdmin, isBotCreator, assignedBots } = req.body;
     const existing = await User.findOne({ username });
     if (existing) return res.status(400).json({ error: 'Username already exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new User({
       username, password: hashedPassword,
-      isAdmin: isAdmin || false, assignedBots: assignedBots || [],
+      isAdmin: isAdmin || false,
+      isBotCreator: isBotCreator || false,
+      assignedBots: assignedBots || [],
     });
     await user.save();
     await user.populate('assignedBots');
@@ -244,12 +276,11 @@ router.post('/users', requireAdmin, async (req, res) => {
 
 router.put('/users/:id', requireAdmin, async (req, res) => {
   try {
-    const { username, password, isAdmin, assignedBots } = req.body;
-
+    const { username, password, isAdmin, isBotCreator, assignedBots } = req.body;
     const existing = await User.findById(req.params.id).select('-password');
     if (!existing) return res.status(404).json({ error: 'User not found' });
 
-    const updateData = { username, isAdmin, assignedBots };
+    const updateData = { username, isAdmin, isBotCreator, assignedBots };
     const passwordChanged = Boolean(password?.trim());
     if (passwordChanged) updateData.password = await bcrypt.hash(password, 10);
 
@@ -273,7 +304,6 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
 router.delete('/users/:id', requireAdmin, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('username');
-
     await User.findByIdAndDelete(req.params.id);
     await Chat.deleteMany({ userId: req.params.id });
     await Thread.deleteMany({ userId: req.params.id });
@@ -290,13 +320,40 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
 // ============================================================
 // 🤖 BOT MANAGEMENT
 // ============================================================
-router.get('/bots', async (req, res) => {
+
+// ── GET /bots — List bot sesuai role ─────────────────────────
+router.get('/bots', requireAdminOrBotCreator, async (req, res) => {
   try {
-    const bots = await Bot.find({}).lean();
+    let query = {};
+
+    if (!req.user.isAdmin) {
+      // Bot Creator dapat melihat:
+      //   1. Bot yang dia buat (createdBy === user._id)
+      //   2. Bot yang di-assign admin ke dia
+      //   3. Bot lama tanpa createdBy (null) — data sebelum fitur ini ada
+      const dbUser = await User.findById(req.user._id).select('assignedBots').lean();
+      const assignedIds = dbUser?.assignedBots || [];
+      query = {
+        $or: [
+          { createdBy: req.user._id },
+          { _id: { $in: assignedIds } },
+          { createdBy: null },          // ✅ bot lama tidak punya createdBy
+        ],
+      };
+    }
+    // Admin: query = {} → semua bot
+
+    const bots = await Bot.find(query).lean();
+
     const sanitized = bots.map(b => ({
       ...b,
+      // ✅ API Key SELALU disembunyikan — pakai GET /bots/:id/api-key untuk reveal
+      botApiKey: b.botApiKey ? '***' : '',
       aiProvider: b.aiProvider
         ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' }
+        : {},
+      wahaConfig: b.wahaConfig
+        ? { ...b.wahaConfig, apiKey: b.wahaConfig.apiKey ? '***' : '' }
         : {},
       smartsheetConfig: b.smartsheetConfig
         ? { ...b.smartsheetConfig, apiKey: b.smartsheetConfig.apiKey ? '***' : '' }
@@ -306,16 +363,18 @@ router.get('/bots', async (req, res) => {
         mimetype: f.mimetype, size: f.size, uploadedAt: f.uploadedAt, summary: f.summary,
       })),
     }));
+
     res.json(sanitized);
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.post('/bots', requireAdmin, async (req, res) => {
+// ── POST /bots — Buat bot baru ───────────────────────────────
+router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
   try {
     const {
       name, description, persona, tone,
       systemPrompt, prompt, starterQuestions,
-      smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
+      wahaConfig, smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
 
@@ -326,6 +385,8 @@ router.post('/bots', requireAdmin, async (req, res) => {
       prompt: prompt || '',
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
+      createdBy: req.user._id,   // ✅ Simpan siapa yang buat
+      botApiKey: '',             // ✅ Tidak auto-generate
       aiProvider: {
         provider:    aiProvider?.provider    || 'openai',
         model:       aiProvider?.model       || 'gpt-4.1',
@@ -335,6 +396,13 @@ router.post('/bots', requireAdmin, async (req, res) => {
         maxTokens:   aiProvider?.maxTokens   ?? 2000,
       },
       capabilities: sanitizeCapabilities(capabilities),
+      wahaConfig: {
+        enabled:  wahaConfig?.enabled  || false,
+        endpoint: wahaConfig?.endpoint || '',
+        chatId:   wahaConfig?.chatId   || '',
+        session:  wahaConfig?.session  || 'default',
+        apiKey:   wahaConfig?.apiKey   || '',
+      },
       smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
       kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
@@ -359,27 +427,33 @@ router.post('/bots', requireAdmin, async (req, res) => {
         provider: newBot.aiProvider?.provider,
         capabilities: Object.entries(sanitizeCapabilities(capabilities))
           .filter(([, v]) => v).map(([k]) => k),
+        createdBy: req.user._id,
       },
     });
 
-    res.json(newBot);
+    const result = newBot.toObject();
+    result.botApiKey = '';
+    res.json(result);
   } catch (error) {
     console.error('Create Bot Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-router.put('/bots/:id', requireAdmin, async (req, res) => {
+// ── PUT /bots/:id — Update bot ───────────────────────────────
+router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
   try {
+    const existing = await Bot.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, existing.toObject())))
+      return res.status(403).json({ error: 'Forbidden: Anda tidak memiliki akses ke bot ini' });
+
     const {
       name, description, persona, tone,
       systemPrompt, prompt, starterQuestions,
-      smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
+      wahaConfig, smartsheetConfig, kouventaConfig, onedriveConfig, azureSearchConfig,
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
-
-    const existing = await Bot.findById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Bot not found' });
 
     const updateData = {
       name, description, persona: persona || '',
@@ -388,16 +462,26 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
       capabilities: sanitizeCapabilities(capabilities),
+      // ✅ botApiKey tidak bisa diubah lewat sini — pakai POST /regenerate-key
+      wahaConfig: {
+        enabled:  wahaConfig?.enabled  || false,
+        endpoint: wahaConfig?.endpoint || '',
+        chatId:   wahaConfig?.chatId   || '',
+        session:  wahaConfig?.session  || 'default',
+        apiKey: wahaConfig?.apiKey === '***'
+          ? existing.wahaConfig?.apiKey
+          : (wahaConfig?.apiKey || ''),
+      },
       smartsheetConfig: {
         enabled: smartsheetConfig?.enabled || false,
         sheetId: smartsheetConfig?.sheetId || '',
-        apiKey:  smartsheetConfig?.apiKey === '***'
+        apiKey: smartsheetConfig?.apiKey === '***'
           ? existing.smartsheetConfig?.apiKey
           : (smartsheetConfig?.apiKey || ''),
       },
       kouventaConfig: {
         enabled:  kouventaConfig?.enabled  || false,
-        apiKey:   kouventaConfig?.apiKey   === '***'
+        apiKey: kouventaConfig?.apiKey === '***'
           ? existing.kouventaConfig?.apiKey
           : (kouventaConfig?.apiKey || ''),
         endpoint: kouventaConfig?.endpoint || '',
@@ -405,7 +489,6 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       azureSearchConfig: {
         enabled:  azureSearchConfig?.enabled  || false,
         endpoint: azureSearchConfig?.endpoint || '',
-        // Jika apiKey === '***' berarti user tidak mengganti, pakai yang lama
         apiKey: azureSearchConfig?.apiKey === '***'
           ? existing.azureSearchConfig?.apiKey
           : (azureSearchConfig?.apiKey || ''),
@@ -426,7 +509,7 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       updateData.aiProvider = {
         provider:    aiProvider.provider    || 'openai',
         model:       aiProvider.model       || 'gpt-4.1',
-        apiKey:      aiProvider.apiKey === '***'
+        apiKey: aiProvider.apiKey === '***'
           ? existing.aiProvider?.apiKey
           : (aiProvider.apiKey || ''),
         endpoint:    aiProvider.endpoint    || '',
@@ -446,7 +529,6 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       };
     }
 
-    // Build before/after diff for audit
     const diff = buildDiff(
       { name: existing.name, model: existing.aiProvider?.model, provider: existing.aiProvider?.provider, tone: existing.tone, knowledgeMode: existing.knowledgeMode },
       { name: updateData.name, model: updateData.aiProvider?.model, provider: updateData.aiProvider?.provider, tone: updateData.tone, knowledgeMode: updateData.knowledgeMode },
@@ -461,19 +543,25 @@ router.put('/bots/:id', requireAdmin, async (req, res) => {
       detail: diff ?? { note: 'no field changes' },
     });
 
-    res.json(updated);
+    const result = updated.toObject();
+    result.botApiKey = result.botApiKey ? '***' : '';
+    res.json(result);
   } catch (error) {
     console.error('Update Bot Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-router.delete('/bots/:id', requireAdmin, async (req, res) => {
+// ── DELETE /bots/:id ─────────────────────────────────────────
+router.delete('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
-    const botName = bot?.name ?? req.params.id;
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden: Anda tidak memiliki akses ke bot ini' });
 
-    if (bot?.avatar?.type === 'image' && bot?.avatar?.imageUrl) {
+    const botName = bot.name;
+    if (bot.avatar?.type === 'image' && bot.avatar?.imageUrl) {
       const imgPath = `uploads/avatars/${path.basename(bot.avatar.imageUrl)}`;
       if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
     }
@@ -492,32 +580,93 @@ router.delete('/bots/:id', requireAdmin, async (req, res) => {
 });
 
 // ============================================================
+// 🔑 BOT API KEY — Generate & Reveal (Terpisah, Eksplisit)
+// ============================================================
+
+// ── GET /bots/:id/api-key — Reveal key (hanya saat user klik "Lihat") ──
+router.get('/bots/:id/api-key', requireAdminOrBotCreator, async (req, res) => {
+  try {
+    const bot = await Bot.findById(req.params.id).select('botApiKey createdBy name').lean();
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot)))
+      return res.status(403).json({ error: 'Forbidden: Anda tidak memiliki akses ke bot ini' });
+
+    if (!bot.botApiKey) {
+      return res.json({ botApiKey: null, message: 'API Key belum di-generate.' });
+    }
+
+    AuditService.log({
+      req, category: 'bot', action: 'BOT_APIKEY_VIEWED',
+      targetId: bot._id, targetName: bot.name,
+      detail: { note: 'API Key explicitly revealed by user' },
+    });
+
+    res.json({ botApiKey: bot.botApiKey });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /bots/:id/regenerate-key — Generate / Regenerate ────
+router.post('/bots/:id/regenerate-key', requireAdminOrBotCreator, async (req, res) => {
+  try {
+    const bot = await Bot.findById(req.params.id);
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden: Anda tidak memiliki akses ke bot ini' });
+
+    const newApiKey = 'gys-bot-' + crypto.randomBytes(24).toString('hex');
+    const isFirstGenerate = !bot.botApiKey;
+
+    bot.botApiKey = newApiKey;
+    await bot.save();
+
+    AuditService.log({
+      req, category: 'bot', action: 'BOT_UPDATE',
+      targetId: bot._id, targetName: bot.name,
+      detail: { note: isFirstGenerate ? 'API Key generated for the first time' : 'API Key regenerated' },
+    });
+
+    // ✅ Key dikirim SEKALI saat generate — frontend tampilkan lalu sembunyikan
+    res.json({
+      message: isFirstGenerate ? 'API Key berhasil dibuat' : 'API Key berhasil dibuat ulang',
+      botApiKey: newApiKey,
+    });
+  } catch (error) {
+    console.error('Regenerate Key Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
 // 🖼️ BOT AVATAR
 // ============================================================
-router.post('/bots/:id/avatar', requireAdmin, avatarUpload.single('avatar'), async (req, res) => {
+router.post('/bots/:id/avatar', requireAdminOrBotCreator, avatarUpload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden' });
+
     if (bot.avatar?.type === 'image' && bot.avatar?.imageUrl) {
       const oldPath = `uploads/avatars/${path.basename(bot.avatar.imageUrl)}`;
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
-    bot.avatar = {
-      ...bot.avatar.toObject?.() || bot.avatar,
-      type: 'image',
-      imageUrl: `/api/avatars/${req.file.filename}`,
-    };
+    bot.avatar = { ...bot.avatar.toObject?.() || bot.avatar, type: 'image', imageUrl: `/api/avatars/${req.file.filename}` };
     await bot.save();
     res.json({ message: 'Avatar berhasil di-upload', bot });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.patch('/bots/:id/avatar', requireAdmin, async (req, res) => {
+router.patch('/bots/:id/avatar', requireAdminOrBotCreator, async (req, res) => {
   try {
     const { type, emoji, icon, bgColor, textColor } = req.body;
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden' });
+
     bot.avatar = {
       ...bot.avatar?.toObject?.() || bot.avatar || {},
       type: type || 'emoji',
@@ -532,21 +681,20 @@ router.patch('/bots/:id/avatar', requireAdmin, async (req, res) => {
 });
 
 // ============================================================
-// 📚 KNOWLEDGE BASE — Upload / Delete
+// 📚 KNOWLEDGE BASE
 // ============================================================
-router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 10), async (req, res) => {
+router.post('/bots/:id/knowledge', requireAdminOrBotCreator, knowledgeUpload.array('files', 10), async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden' });
     if (!req.files || req.files.length === 0)
       return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
 
     const results = [];
     for (const file of req.files) {
-      console.log(`📚 Processing knowledge file: ${file.originalname} (${file.mimetype})`);
-      const { content, summary } = await KnowledgeBaseService.extractContent(
-        file.path, file.originalname, file.mimetype,
-      );
+      const { content, summary } = await KnowledgeBaseService.extractContent(file.path, file.originalname, file.mimetype);
       bot.knowledgeFiles.push({
         filename: file.filename, originalName: file.originalname,
         mimetype: file.mimetype, size: file.size, path: file.path,
@@ -556,7 +704,6 @@ router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 
     }
 
     await bot.save();
-    console.log(`✅ Knowledge files saved for bot "${bot.name}": ${results.length} files`);
 
     AuditService.log({
       req, category: 'knowledge', action: 'KNOWLEDGE_UPLOAD',
@@ -564,21 +711,20 @@ router.post('/bots/:id/knowledge', requireAdmin, knowledgeUpload.array('files', 
       detail: { files: results.map(f => ({ name: f.name, size: f.size })) },
     });
 
-    res.json({
-      message: `${results.length} file berhasil diproses`,
-      files: results,
-      totalFiles: bot.knowledgeFiles.length,
-    });
+    res.json({ message: `${results.length} file berhasil diproses`, files: results, totalFiles: bot.knowledgeFiles.length });
   } catch (error) {
     console.error('Knowledge upload error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-router.delete('/bots/:id/knowledge/:fileId', requireAdmin, async (req, res) => {
+router.delete('/bots/:id/knowledge/:fileId', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden' });
+
     const idx = bot.knowledgeFiles.findIndex(f => f._id.toString() === req.params.fileId);
     if (idx === -1) return res.status(404).json({ error: 'File not found' });
 
@@ -597,17 +743,19 @@ router.delete('/bots/:id/knowledge/:fileId', requireAdmin, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, res) => {
+router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden' });
+
     const kFile = bot.knowledgeFiles.id(req.params.fileId);
     if (!kFile) return res.status(404).json({ error: 'File not found' });
     if (!fs.existsSync(kFile.path))
       return res.status(400).json({ error: 'Physical file not found, please re-upload' });
-    const { content, summary } = await KnowledgeBaseService.extractContent(
-      kFile.path, kFile.originalName, kFile.mimetype,
-    );
+
+    const { content, summary } = await KnowledgeBaseService.extractContent(kFile.path, kFile.originalName, kFile.mimetype);
     kFile.content = content; kFile.summary = summary;
     await bot.save();
     res.json({ message: 'File berhasil diproses ulang', summary });
@@ -615,7 +763,7 @@ router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdmin, async (req, r
 });
 
 // ============================================================
-// 👁️ CHAT LOGS & EXPORT
+// 💬 CHAT LOGS & EXPORT
 // ============================================================
 router.get('/chat-logs', requireAdmin, async (req, res) => {
   try {
@@ -624,10 +772,8 @@ router.get('/chat-logs', requireAdmin, async (req, res) => {
     const skip  = (page - 1) * limit;
     const total = await Chat.countDocuments({});
     const chats = await Chat.find({})
-      .populate('userId', 'username')
-      .populate('botId', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip).limit(limit);
+      .populate('userId', 'username').populate('botId', 'name')
+      .sort({ createdAt: -1 }).skip(skip).limit(limit);
     res.json({ chats, totalPages: Math.ceil(total / limit), currentPage: page, totalLogs: total });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -639,54 +785,35 @@ router.get('/export-chats', requireAdmin, async (req, res) => {
     let fileName = `chat-logs-all-${new Date().toISOString().slice(0, 10)}.csv`;
     if (month && year) {
       const m = parseInt(month), y = parseInt(year);
-      query.createdAt = {
-        $gte: new Date(y, m - 1, 1),
-        $lte: new Date(y, m, 0, 23, 59, 59, 999),
-      };
+      query.createdAt = { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) };
       fileName = `chat-logs-${y}-${m.toString().padStart(2, '0')}.csv`;
     }
-
-    const chats = await Chat.find(query)
-      .populate('userId', 'username')
-      .populate('botId', 'name')
-      .sort({ createdAt: -1 });
-
+    const chats = await Chat.find(query).populate('userId', 'username').populate('botId', 'name').sort({ createdAt: -1 });
     let csv = 'Timestamp,User,Bot,Role,Message\n';
     chats.forEach(c => {
       const msg = (c.content || '').replace(/"/g, '""').replace(/(\r\n|\n|\r)/g, ' ');
-      csv += [
-        `"${new Date(c.createdAt).toLocaleString()}"`,
-        `"${c.userId?.username || ''}"`,
-        `"${c.botId?.name || ''}"`,
-        `"${c.role}"`,
-        `"${msg}"`,
-      ].join(',') + '\n';
+      csv += [`"${new Date(c.createdAt).toLocaleString()}"`, `"${c.userId?.username || ''}"`, `"${c.botId?.name || ''}"`, `"${c.role}"`, `"${msg}"`].join(',') + '\n';
     });
-
-    AuditService.log({
-      req, category: 'export', action: 'EXPORT_CHATS',
-      detail: {
-        filter: (month && year) ? `${year}-${month}` : 'all',
-        totalRows: chats.length,
-        fileName,
-      },
-    });
-
+    AuditService.log({ req, category: 'export', action: 'EXPORT_CHATS', detail: { filter: (month && year) ? `${year}-${month}` : 'all', totalRows: chats.length, fileName } });
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
     res.send(csv);
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.post('/bots/:id/test-onedrive', requireAdmin, async (req, res) => {
+// ============================================================
+// 🔗 TEST ONEDRIVE
+// ============================================================
+router.post('/bots/:id/test-onedrive', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    if (!(await canAccessBot(req.user, bot.toObject())))
+      return res.status(403).json({ error: 'Forbidden' });
 
     const cfg = bot.onedriveConfig;
-    if (!cfg?.enabled || !cfg?.tenantId || !cfg?.clientId || !cfg?.clientSecret) {
+    if (!cfg?.enabled || !cfg?.tenantId || !cfg?.clientId || !cfg?.clientSecret)
       return res.status(400).json({ error: 'OneDrive belum dikonfigurasi lengkap' });
-    }
 
     const svc    = new OneDriveService(cfg.tenantId, cfg.clientId, cfg.clientSecret);
     const result = await svc.testConnection(cfg.folderUrl);
