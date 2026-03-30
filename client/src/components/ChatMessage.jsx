@@ -1,3 +1,4 @@
+// client/src/components/ChatMessage.jsx
 import React, { memo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,34 +13,303 @@ const getFileUrl = (path) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Typewriter hook — streams text character by character
+// SOURCE CITATION PARSER
+// Parses the "📚 Sumber:" section from AI response into
+// structured citation objects for rich rendering.
 // ─────────────────────────────────────────────────────────────
-function useTypewriter(text, speed = 8) {
-  const [displayed, setDisplayed] = useState('');
-  const [done, setDone] = useState(false);
-  const prevTextRef = useRef('');
 
-  useEffect(() => {
-    if (text === prevTextRef.current) return;
-    prevTextRef.current = text;
-    setDone(false);
+function parseCitations(content = '') {
+  // Match the citation block at the end of response
+  // Supports: "---\n**📚 Sumber:**" or "**📚 Sumber:**" or "📚 **Sumber:**"
+  const citationBlockRegex = /(?:^|\n)---\s*\n\*\*[📚📂📊🔍⚠️]\s*Sumber[:\*]*\*\*\s*\n([\s\S]*?)(?:\n---|\n\n(?!\s*[-*])|\s*$)/im;
+  const altCitationRegex = /(?:^|\n)\*\*[📚📂📊🔍⚠️]\s*Sumber[:\*]*\*\*\s*\n([\s\S]*?)(?:\n---|\n\n(?!\s*[-*])|\s*$)/im;
 
-    let i = 0;
-    setDisplayed('');
-    const interval = setInterval(() => {
-      i += Math.floor(Math.random() * 4) + 2; // stream 2-5 chars at a time
-      if (i >= text.length) {
-        setDisplayed(text);
-        setDone(true);
-        clearInterval(interval);
-      } else {
-        setDisplayed(text.slice(0, i));
+  let match = citationBlockRegex.exec(content) || altCitationRegex.exec(content);
+  if (!match) return null;
+
+  const citationBlock = match[1];
+  const lines = citationBlock.split('\n').map(l => l.trim()).filter(Boolean);
+
+  const citations = [];
+
+  for (const line of lines) {
+    // Skip the header line if it slipped in
+    if (/^[📚📂📊🔍⚠️].*Sumber/.test(line)) continue;
+
+    // Pattern: - [Title](URL) — description
+    const linkPattern = /^[-•*]\s*\[([^\]]+)\]\(([^)]+)\)(?:\s*[—–-]\s*(.+))?$/;
+    const linkMatch = linkPattern.exec(line);
+
+    if (linkMatch) {
+      const title = linkMatch[1].trim();
+      const url = linkMatch[2].trim();
+      const description = linkMatch[3]?.trim() || '';
+
+      // Detect source type from emoji or URL
+      let type = 'web';
+      if (title.startsWith('📂') || line.includes('Dokumen internal')) type = 'internal';
+      else if (title.startsWith('📊') || line.includes('Smartsheet')) type = 'smartsheet';
+      else if (title.startsWith('🔍') || line.includes('Azure')) type = 'azure';
+      else if (title.startsWith('⚠️')) type = 'warning';
+      else if (url.includes('wikipedia')) type = 'wikipedia';
+      else if (url.includes('github')) type = 'github';
+
+      citations.push({ title, url, description, type, isClickable: url.startsWith('http') });
+      continue;
+    }
+
+    // Pattern: - 📂 **Sumber:** Dokumen internal — filename.pdf
+    const internalPattern = /^[-•*]\s*([📂📊🔍⚠️])\s*(?:\*\*[^*]+\*\*)?\s*(.+?)(?:\s*[—–-]\s*(.+))?$/;
+    const internalMatch = internalPattern.exec(line);
+
+    if (internalMatch) {
+      const emoji = internalMatch[1];
+      const rawTitle = internalMatch[2]?.trim() || '';
+      const description = internalMatch[3]?.trim() || '';
+
+      let type = 'internal';
+      if (emoji === '📊') type = 'smartsheet';
+      else if (emoji === '🔍') type = 'azure';
+      else if (emoji === '⚠️') type = 'warning';
+
+      citations.push({
+        title: rawTitle || description,
+        url: null,
+        description,
+        type,
+        isClickable: false,
+      });
+      continue;
+    }
+
+    // Plain text line (fallback)
+    if (line.startsWith('-') || line.startsWith('•') || line.startsWith('*')) {
+      const text = line.replace(/^[-•*]\s*/, '').trim();
+      if (text) {
+        // Check if it has a URL embedded
+        const urlMatch = text.match(/https?:\/\/[^\s)]+/);
+        citations.push({
+          title: text,
+          url: urlMatch ? urlMatch[0] : null,
+          description: '',
+          type: urlMatch ? 'web' : 'general',
+          isClickable: !!urlMatch,
+        });
       }
-    }, speed);
-    return () => clearInterval(interval);
-  }, [text]);
+    }
+  }
 
-  return { displayed, done };
+  return citations.length > 0 ? citations : null;
+}
+
+// Remove the citation block from content for clean rendering
+function stripCitationBlock(content = '') {
+  // Remove "---\n**📚 Sumber:**..." block
+  return content
+    .replace(/\n---\s*\n\*\*[📚📂📊🔍⚠️][^*]*\*\*[\s\S]*$/im, '')
+    .replace(/\n\*\*[📚📂📊🔍⚠️][^*]*\*\*\n[\s\S]*$/im, '')
+    .trim();
+}
+
+// ─────────────────────────────────────────────────────────────
+// SOURCE TYPE CONFIG
+// ─────────────────────────────────────────────────────────────
+const SOURCE_CONFIG = {
+  web: {
+    icon: '🌐',
+    bg: 'bg-blue-50 hover:bg-blue-100',
+    border: 'border-blue-200',
+    text: 'text-blue-700',
+    badge: 'Web',
+    badgeBg: 'bg-blue-100 text-blue-600',
+  },
+  wikipedia: {
+    icon: '📖',
+    bg: 'bg-gray-50 hover:bg-gray-100',
+    border: 'border-gray-200',
+    text: 'text-gray-700',
+    badge: 'Wikipedia',
+    badgeBg: 'bg-gray-100 text-gray-600',
+  },
+  github: {
+    icon: '💻',
+    bg: 'bg-slate-50 hover:bg-slate-100',
+    border: 'border-slate-200',
+    text: 'text-slate-700',
+    badge: 'GitHub',
+    badgeBg: 'bg-slate-100 text-slate-600',
+  },
+  internal: {
+    icon: '📂',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    text: 'text-amber-700',
+    badge: 'Internal',
+    badgeBg: 'bg-amber-100 text-amber-600',
+  },
+  smartsheet: {
+    icon: '📊',
+    bg: 'bg-green-50',
+    border: 'border-green-200',
+    text: 'text-green-700',
+    badge: 'Smartsheet',
+    badgeBg: 'bg-green-100 text-green-600',
+  },
+  azure: {
+    icon: '🔍',
+    bg: 'bg-sky-50',
+    border: 'border-sky-200',
+    text: 'text-sky-700',
+    badge: 'Azure Search',
+    badgeBg: 'bg-sky-100 text-sky-600',
+  },
+  warning: {
+    icon: '⚠️',
+    bg: 'bg-orange-50',
+    border: 'border-orange-200',
+    text: 'text-orange-700',
+    badge: 'AI Generated',
+    badgeBg: 'bg-orange-100 text-orange-600',
+  },
+  general: {
+    icon: '📌',
+    bg: 'bg-purple-50',
+    border: 'border-purple-200',
+    text: 'text-purple-700',
+    badge: 'Sumber',
+    badgeBg: 'bg-purple-100 text-purple-600',
+  },
+};
+
+// ─────────────────────────────────────────────────────────────
+// CITATION PANEL COMPONENT
+// ─────────────────────────────────────────────────────────────
+function CitationPanel({ citations }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState(null);
+
+  if (!citations || citations.length === 0) return null;
+
+  const handleCopy = (url, idx) => {
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 2000);
+    });
+  };
+
+  const visibleCitations = expanded ? citations : citations.slice(0, 3);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs">📚</span>
+          <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">
+            Sumber ({citations.length})
+          </span>
+        </div>
+        {citations.length > 3 && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-[10px] font-semibold text-primary hover:text-primary-dark transition-colors"
+          >
+            {expanded ? '↑ Sembunyikan' : `+ ${citations.length - 3} lainnya`}
+          </button>
+        )}
+      </div>
+
+      {/* Citation cards */}
+      <div className="space-y-1.5">
+        {visibleCitations.map((citation, idx) => {
+          const cfg = SOURCE_CONFIG[citation.type] || SOURCE_CONFIG.general;
+
+          return (
+            <div
+              key={idx}
+              className={`flex items-start gap-2 p-2 rounded-xl border transition-all ${cfg.bg} ${cfg.border} ${citation.isClickable ? 'cursor-pointer' : ''}`}
+              onClick={() => citation.isClickable && citation.url && window.open(citation.url, '_blank', 'noopener,noreferrer')}
+            >
+              {/* Icon */}
+              <span className="text-sm flex-shrink-0 mt-0.5">{cfg.icon}</span>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Source type badge */}
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${cfg.badgeBg}`}>
+                    {cfg.badge}
+                  </span>
+
+                  {/* Title */}
+                  <span className={`text-[11px] font-semibold truncate ${cfg.text} ${citation.isClickable ? 'underline underline-offset-2 decoration-dotted' : ''}`}>
+                    {citation.title.replace(/^[📂📊🔍⚠️📖💻]\s*/, '')}
+                  </span>
+
+                  {/* External link icon */}
+                  {citation.isClickable && (
+                    <svg className={`w-2.5 h-2.5 flex-shrink-0 ${cfg.text} opacity-60`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Description */}
+                {citation.description && (
+                  <p className={`text-[10px] mt-0.5 leading-relaxed opacity-75 ${cfg.text}`}>
+                    {citation.description}
+                  </p>
+                )}
+
+                {/* URL preview */}
+                {citation.url && (
+                  <p className={`text-[9px] mt-0.5 font-mono opacity-50 truncate ${cfg.text}`}>
+                    {citation.url}
+                  </p>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex-shrink-0 flex items-center gap-1">
+                {citation.isClickable && citation.url && (
+                  <>
+                    {/* Copy URL button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleCopy(citation.url, idx); }}
+                      title="Salin URL"
+                      className={`p-1 rounded-lg transition-all ${copiedIdx === idx ? 'bg-green-100 text-green-600' : `bg-white/60 ${cfg.text} hover:bg-white`}`}
+                    >
+                      {copiedIdx === idx ? (
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+
+                    {/* Open button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); window.open(citation.url, '_blank', 'noopener,noreferrer'); }}
+                      title="Buka di tab baru"
+                      className={`p-1 rounded-lg bg-white/60 ${cfg.text} hover:bg-white transition-all`}
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -133,6 +403,10 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
     return () => clearTimeout(t);
   }, []);
 
+  // Parse citations only for assistant messages
+  const citations = !isUser ? parseCitations(message.content || '') : null;
+  const cleanContent = citations ? stripCitationBlock(message.content || '') : (message.content || '');
+
   return (
     <div
       className={`flex w-full mb-1 transition-all duration-300 ${
@@ -181,6 +455,27 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
                       {...props}>
                       {children}
                     </code>
+                  );
+                },
+
+                // ── Override anchor tags to open in new tab ──────
+                a({ node, children, href, ...props }) {
+                  const isExternal = href && (href.startsWith('http://') || href.startsWith('https://'));
+                  return (
+                    <a
+                      href={href}
+                      target={isExternal ? '_blank' : undefined}
+                      rel={isExternal ? 'noopener noreferrer' : undefined}
+                      className={`underline font-medium hover:opacity-80 text-sm ${isUser ? 'text-white' : 'text-primary'}`}
+                      {...props}
+                    >
+                      {children}
+                      {isExternal && (
+                        <svg className="inline w-3 h-3 ml-0.5 mb-0.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      )}
+                    </a>
                   );
                 },
 
@@ -238,12 +533,16 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
                 th: ({ node, ...props }) => <th className="px-4 py-2.5 text-left text-xs font-bold uppercase tracking-wider whitespace-nowrap" {...props} />,
                 tr: ({ node, ...props }) => <tr className={`transition-colors ${isUser ? 'hover:bg-white/5' : 'hover:bg-gray-50/80'}`} {...props} />,
                 td: ({ node, ...props }) => <td className="px-4 py-2.5 border-r last:border-r-0 text-sm" {...props} />,
-                a: ({ node, ...props }) => <a className={`underline font-medium hover:opacity-80 text-sm ${isUser ? 'text-white' : 'text-primary'}`} target="_blank" rel="noreferrer" {...props} />,
               }}
             >
-              {message.content || ''}
+              {cleanContent}
             </ReactMarkdown>
           </div>
+
+          {/* ── Citation Panel (only for assistant messages) ── */}
+          {!isUser && citations && citations.length > 0 && (
+            <CitationPanel citations={citations} />
+          )}
 
           {/* Attachments */}
           {message.attachedFiles && message.attachedFiles.length > 0 && (

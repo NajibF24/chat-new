@@ -1,3 +1,4 @@
+// server/services/knowledge-base.service.js
 import fs      from 'fs';
 import path    from 'path';
 import pdf     from 'pdf-parse';
@@ -151,6 +152,7 @@ class KnowledgeBaseService {
   /**
    * Build the knowledge context string to inject into system prompt.
    * Respects knowledgeMode: 'always' | 'relevant' | 'disabled'
+   * Now includes citation hints for each file.
    */
   buildKnowledgeContext(knowledgeFiles = [], userMessage = '', knowledgeMode = 'relevant') {
     if (knowledgeMode === 'disabled' || !knowledgeFiles.length) return '';
@@ -171,10 +173,12 @@ class KnowledgeBaseService {
     if (!filesToInclude.length) return '';
 
     let context = `\n\n=== 📚 KNOWLEDGE BASE ===\n`;
-    context    += `Gunakan informasi berikut sebagai referensi untuk menjawab pertanyaan user:\n\n`;
+    context    += `Gunakan informasi berikut sebagai referensi untuk menjawab pertanyaan user.\n`;
+    context    += `PENTING: Untuk setiap informasi yang kamu ambil dari file-file di bawah, WAJIB sebutkan nama filenya sebagai sumber di akhir jawaban dengan format: "📂 **Sumber:** Dokumen internal — [nama file]"\n\n`;
 
     for (const f of filesToInclude) {
       context += `--- File: ${f.originalName} ---\n`;
+      context += `[CITATION_TAG: internal_doc:${f.originalName}]\n`;
       context += (f.content || '(kosong)').substring(0, 15000);
       context += `\n\n`;
     }

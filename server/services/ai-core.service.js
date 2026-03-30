@@ -19,6 +19,36 @@ import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
 
 // ─────────────────────────────────────────────────────────────
+// CITATION SYSTEM PROMPT
+// ─────────────────────────────────────────────────────────────
+
+const CITATION_INSTRUCTION = `
+INSTRUKSI WAJIB — SUMBER DAN REFERENSI:
+Setiap kali kamu menjawab pertanyaan, WAJIB sertakan sumber di akhir jawaban menggunakan format berikut:
+
+---
+**📚 Sumber:**
+- [Nama Sumber](URL) — deskripsi singkat mengapa sumber ini relevan
+
+ATURAN SITASI:
+1. Jika informasi berasal dari dokumen knowledge base internal → tulis: "📂 **Sumber:** Dokumen internal — [nama file]"
+2. Jika informasi berasal dari data Smartsheet → tulis: "📊 **Sumber:** Data Smartsheet real-time — [nama sheet]"
+3. Jika informasi berasal dari pengetahuan umum (training data AI) → cantumkan sumber terpercaya yang relevan seperti:
+   - Wikipedia, dokumentasi resmi, jurnal ilmiah, situs berita terpercaya, situs pemerintah, dll
+   - Format: [Judul Halaman](https://url-lengkap.com)
+4. JANGAN mengarang atau memalsukan URL. Jika tidak yakin URL-nya, tulis nama sumber saja tanpa link.
+5. Jika tidak bisa memastikan sumber spesifik → tulis: "⚠️ Berdasarkan pengetahuan umum AI — disarankan verifikasi mandiri"
+6. Maksimal 3-5 sumber per jawaban, pilih yang paling relevan.
+7. Jika pertanyaan adalah percakapan ringan (salam, terima kasih, dll) → tidak perlu sertakan sumber.
+
+CONTOH FORMAT YANG BENAR:
+---
+**📚 Sumber:**
+- [Wikipedia — Kecerdasan Buatan](https://id.wikipedia.org/wiki/Kecerdasan_buatan) — Penjelasan umum tentang AI
+- [Google AI Blog](https://ai.googleblog.com) — Perkembangan terbaru AI dari Google
+`;
+
+// ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
 // ─────────────────────────────────────────────────────────────
 
@@ -266,6 +296,21 @@ function isPptCommand(message = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
+// DETECT CASUAL MESSAGES (no citation needed)
+// ─────────────────────────────────────────────────────────────
+function isCasualMessage(message = '') {
+  const t = (message || '').trim().toLowerCase();
+  const casualPatterns = [
+    /^(halo|hai|hi|hello|hey|selamat|salam)/i,
+    /^(terima kasih|makasih|thanks|thank you)/i,
+    /^(ok|oke|iya|ya|tidak|no|yes)/i,
+    /^(bagus|baik|mantap|keren|hebat|luar biasa)/i,
+    /^\s*[😀😊🙏👍❤️]+\s*$/,
+  ];
+  return casualPatterns.some(p => p.test(t)) || t.length < 15;
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN SERVICE CLASS
 // ─────────────────────────────────────────────────────────────
 
@@ -328,12 +373,15 @@ class AICoreService {
     }
 
     let contextData = '';
+    // Track context sources for citation hints
+    let contextSources = [];
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
         const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
         const reply    = await kouventa.generateResponse(message || '');
         contextData   += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
+        contextSources.push('internal_document');
       } catch (error) { console.error('Kouventa Error:', error.message); }
     }
 
@@ -348,6 +396,7 @@ class AICoreService {
           contextData += `\n\n=== REFERENSI AZURE AI SEARCH ===\n${context}\n`;
           const augmentedSystemPrompt = (bot.systemPrompt || bot.prompt || '') + '\n\n' + context;
           bot = { ...bot.toObject(), systemPrompt: augmentedSystemPrompt };
+          contextSources.push('azure_search');
         }
       } catch (err) {
         console.error('Azure Search error:', err.message);
@@ -364,6 +413,7 @@ class AICoreService {
           const flatRows   = smartsheet.processToFlatRows(sheet);
           if (flatRows.length > 0) {
             contextData += `\n\n${smartsheet.buildAIContext(flatRows, message, sheet.name)}\n`;
+            contextSources.push(`smartsheet:${sheet.name}`);
           }
         }
       } catch (e) {
@@ -376,7 +426,17 @@ class AICoreService {
       const knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
         bot.knowledgeFiles, message, bot.knowledgeMode || 'relevant'
       );
-      if (knowledgeCtx) contextData += knowledgeCtx;
+      if (knowledgeCtx) {
+        contextData += knowledgeCtx;
+        // Collect knowledge file names for citation hints
+        const relevantFiles = bot.knowledgeFiles
+          .filter(f => f.content && f.content.length > 0)
+          .map(f => f.originalName)
+          .slice(0, 3);
+        if (relevantFiles.length > 0) {
+          contextSources.push(`knowledge:${relevantFiles.join(',')}`);
+        }
+      }
     }
 
     const userContent = [];
@@ -399,12 +459,42 @@ class AICoreService {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
+    // ── Build citation hint based on available context sources ──
+    let citationHint = CITATION_INSTRUCTION;
+    if (contextSources.length > 0) {
+      const sourceHints = contextSources.map(src => {
+        if (src.startsWith('smartsheet:')) {
+          const sheetName = src.replace('smartsheet:', '');
+          return `- Data ini berasal dari Smartsheet "${sheetName}" → gunakan format: "📊 Sumber: Data Smartsheet real-time — ${sheetName}"`;
+        }
+        if (src.startsWith('knowledge:')) {
+          const files = src.replace('knowledge:', '');
+          return `- Data ini berasal dari dokumen internal: ${files} → gunakan format: "📂 Sumber: Dokumen internal — [nama file]"`;
+        }
+        if (src === 'internal_document') {
+          return `- Data ini berasal dari dokumen internal via Kouventa → gunakan format: "📂 Sumber: Dokumen internal"`;
+        }
+        if (src === 'azure_search') {
+          return `- Data ini berasal dari Azure AI Search → gunakan format: "🔍 Sumber: Azure AI Search"`;
+        }
+        return '';
+      }).filter(Boolean).join('\n');
+
+      if (sourceHints) {
+        citationHint += `\n\nKONTEKS SUMBER YANG TERSEDIA:\n${sourceHints}\n`;
+      }
+    }
+
+    // Skip citation for casual messages
+    const skipCitation = isCasualMessage(message || '');
+
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
+      skipCitation ? '' : citationHint,
       contextData,
       contextData
-        ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
+        ? 'Gunakan data dan pengetahuan di atas untuk menjawab dengan akurat. Jangan mengarang fakta. Selalu cantumkan sumber.'
         : '',
     ].filter(Boolean).join('\n\n');
 
@@ -415,6 +505,7 @@ class AICoreService {
       userContent: userContent.length === 1 && userContent[0].type === 'text'
         ? userContent[0].text
         : userContent,
+      capabilities: bot.capabilities || {},
     });
 
     const aiResponse = result.text;
@@ -437,9 +528,9 @@ class AICoreService {
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }
 
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // PPT COMMAND HANDLER
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
     try {
       // ── STEP 0: Load DB history ──────────────────────────────
@@ -535,7 +626,6 @@ class AICoreService {
       });
 
       // ── STEP 5: BUILD RESPONSE ───────────────────────────────
-      // Smart Language Detection
       const reqLower = userRequest.toLowerCase();
       const reqIndo = reqLower.includes('bahasa indonesia') || reqLower.includes('indo');
       const reqEng = reqLower.includes('english') || reqLower.includes('inggris');
@@ -548,7 +638,6 @@ class AICoreService {
       } else {
         const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
         const indWords = reqLower.match(/\b(buat|buatkan|bikin|bikinkan|tolong|presentasi)\b/g) || [];
-        // Default to English if there are more English action words, otherwise Indonesian
         isEnglish = engWords.length > indWords.length;
       }
 
