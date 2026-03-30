@@ -19,8 +19,9 @@ const getFileUrl = (path) => {
 // ─────────────────────────────────────────────────────────────
 
 function parseCitations(content = '') {
-  // Match the ---\n📚 **Sumber:** or ---\n📚 **Sources:** block
-  const blockRegex = /\n---\s*\n[📚]\s*\*\*(?:Sumber|Sources)[:\*]*\*\*\s*\n([\s\S]*)$/im;
+  // v4 regex: tolerates \n\n--- or \n--- before the header line
+  // Avoids emoji character class (broken in JS regex) — uses loose .{0,5} instead
+  const blockRegex = /---\s*\n.{0,10}(?:Sumber|Sources).{0,10}\n([\s\S]*)$/im;
   const match = blockRegex.exec(content);
   if (!match) return null;
 
@@ -31,29 +32,33 @@ function parseCitations(content = '') {
   for (const line of lines) {
     if (!line.startsWith('-')) continue;
 
-    // Pattern: - ICON [Title](URL) — snippet
-    const linkMatch = /^-\s*([📂📊🔍📖💻🏛️📰🎓🌐📌])\s*\[([^\]]+)\]\(([^)]+)\)(?:\s*[—–-]\s*(.+))?$/.exec(line);
+    // ── With URL: - ICON [Title](URL) — snippet ──────────────
+    // Use .{1,3} for emoji (multi-byte, avoids character class issues)
+    const linkMatch = /^-\s*.{1,3}\s*\[([^\]]+)\]\(([^)]+)\)(?:\s*[—–-]\s*(.+))?$/.exec(line);
     if (linkMatch) {
+      const rawIcon = line.match(/^-\s*(.{1,3})\s*\[/)?.[1]?.trim() || '🌐';
+      const url     = linkMatch[2].trim();
       citations.push({
-        icon:        linkMatch[1],
-        title:       linkMatch[2].trim(),
-        url:         linkMatch[3].trim(),
-        snippet:     linkMatch[4]?.trim() || '',
-        type:        detectTypeFromIcon(linkMatch[1], linkMatch[3]),
+        icon:        rawIcon,
+        title:       linkMatch[1].trim(),
+        url,
+        snippet:     linkMatch[3]?.trim() || '',
+        type:        detectTypeFromIcon(rawIcon, url),
         isClickable: true,
       });
       continue;
     }
 
-    // Pattern: - ICON **Internal:** Title — snippet  (no URL)
-    const internalMatch = /^-\s*([📂📊🔍📌⚠️])\s*(?:\*\*[^*]+\*\*:?\s*)?(.+?)(?:\s*[—–-]\s*(.+))?$/.exec(line);
+    // ── Without URL: - ICON **Label:** text — snippet ─────────
+    const internalMatch = /^-\s*(.{1,3})\s*(?:\*\*[^*]+\*\*:?\s*)?(.+?)(?:\s*[—–-]\s*(.+))?$/.exec(line);
     if (internalMatch) {
+      const rawIcon = internalMatch[1].trim();
       citations.push({
-        icon:        internalMatch[1],
+        icon:        rawIcon,
         title:       internalMatch[2].trim(),
         url:         null,
         snippet:     internalMatch[3]?.trim() || '',
-        type:        detectTypeFromIcon(internalMatch[1], ''),
+        type:        detectTypeFromIcon(rawIcon, ''),
         isClickable: false,
       });
     }
@@ -81,7 +86,7 @@ function detectTypeFromIcon(icon, url = '') {
 
 function stripCitationBlock(content = '') {
   return content
-    .replace(/\n---\s*\n[📚]\s*\*\*(?:Sumber|Sources)[:\*]*\*\*[\s\S]*$/im, '')
+    .replace(/\n+---\s*\n.{0,10}(?:Sumber|Sources).{0,10}\n[\s\S]*$/im, '')
     .trim();
 }
 
