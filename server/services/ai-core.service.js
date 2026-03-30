@@ -5,6 +5,8 @@ import mammoth  from 'mammoth';
 import XLSX     from 'xlsx';
 import fs       from 'fs';
 import path     from 'path';
+import https    from 'https';
+import http     from 'http';
 
 import Chat     from '../models/Chat.js';
 import Thread   from '../models/Thread.js';
@@ -19,34 +21,298 @@ import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
 
 // ─────────────────────────────────────────────────────────────
-// CITATION SYSTEM PROMPT
+// URL VALIDATOR — HEAD request to verify URL is reachable
 // ─────────────────────────────────────────────────────────────
 
-const CITATION_INSTRUCTION = `
-INSTRUKSI WAJIB — SUMBER DAN REFERENSI:
-Setiap kali kamu menjawab pertanyaan, WAJIB sertakan sumber di akhir jawaban menggunakan format berikut:
+async function validateUrl(url, timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    try {
+      const parsed   = new URL(url);
+      const lib      = parsed.protocol === 'https:' ? https : http;
+      const req      = lib.request(
+        { method: 'HEAD', hostname: parsed.hostname, path: parsed.pathname + parsed.search, timeout: timeoutMs,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GYSBot/1.0)' } },
+        (res) => {
+          // 200-399 = valid; 403 = exists but blocked (still valid domain)
+          resolve(res.statusCode < 400 || res.statusCode === 403);
+        }
+      );
+      req.on('error',   () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+      req.end();
+    } catch {
+      resolve(false);
+    }
+  });
+}
 
----
-**📚 Sumber:**
-- [Nama Sumber](URL) — deskripsi singkat mengapa sumber ini relevan
+// ─────────────────────────────────────────────────────────────
+// WEB SEARCH — Bing Search API (or SerpAPI as fallback)
+// Set BING_SEARCH_API_KEY or SERPAPI_KEY in environment
+// ─────────────────────────────────────────────────────────────
 
-ATURAN SITASI:
-1. Jika informasi berasal dari dokumen knowledge base internal → tulis: "📂 **Sumber:** Dokumen internal — [nama file]"
-2. Jika informasi berasal dari data Smartsheet → tulis: "📊 **Sumber:** Data Smartsheet real-time — [nama sheet]"
-3. Jika informasi berasal dari pengetahuan umum (training data AI) → cantumkan sumber terpercaya yang relevan seperti:
-   - Wikipedia, dokumentasi resmi, jurnal ilmiah, situs berita terpercaya, situs pemerintah, dll
-   - Format: [Judul Halaman](https://url-lengkap.com)
-4. JANGAN mengarang atau memalsukan URL. Jika tidak yakin URL-nya, tulis nama sumber saja tanpa link.
-5. Jika tidak bisa memastikan sumber spesifik → tulis: "⚠️ Berdasarkan pengetahuan umum AI — disarankan verifikasi mandiri"
-6. Maksimal 3-5 sumber per jawaban, pilih yang paling relevan.
-7. Jika pertanyaan adalah percakapan ringan (salam, terima kasih, dll) → tidak perlu sertakan sumber.
+async function searchWeb(query, maxResults = 5) {
+  // ── Strategy 1: Bing Search API ──────────────────────────
+  if (process.env.BING_SEARCH_API_KEY) {
+    try {
+      const encodedQuery = encodeURIComponent(query);
+      const options = {
+        method: 'GET',
+        hostname: 'api.bing.microsoft.com',
+        path: `/v7.0/search?q=${encodedQuery}&count=${maxResults}&mkt=id-ID`,
+        headers: { 'Ocp-Apim-Subscription-Key': process.env.BING_SEARCH_API_KEY },
+        timeout: 5000,
+      };
+      const data = await new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+          let body = '';
+          res.on('data', chunk => body += chunk);
+          res.on('end', () => {
+            try { resolve(JSON.parse(body)); } catch { reject(new Error('Parse error')); }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        req.end();
+      });
 
-CONTOH FORMAT YANG BENAR:
----
-**📚 Sumber:**
-- [Wikipedia — Kecerdasan Buatan](https://id.wikipedia.org/wiki/Kecerdasan_buatan) — Penjelasan umum tentang AI
-- [Google AI Blog](https://ai.googleblog.com) — Perkembangan terbaru AI dari Google
+      if (data?.webPages?.value?.length > 0) {
+        return data.webPages.value.map(r => ({
+          title:   r.name,
+          url:     r.url,
+          snippet: r.snippet || '',
+        }));
+      }
+    } catch (e) {
+      console.warn('[WebSearch] Bing failed:', e.message);
+    }
+  }
+
+  // ── Strategy 2: SerpAPI ───────────────────────────────────
+  if (process.env.SERPAPI_KEY) {
+    try {
+      const encodedQuery = encodeURIComponent(query);
+      const options = {
+        method: 'GET',
+        hostname: 'serpapi.com',
+        path: `/search.json?q=${encodedQuery}&num=${maxResults}&api_key=${process.env.SERPAPI_KEY}&hl=id`,
+        timeout: 5000,
+      };
+      const data = await new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+          let body = '';
+          res.on('data', chunk => body += chunk);
+          res.on('end', () => {
+            try { resolve(JSON.parse(body)); } catch { reject(new Error('Parse error')); }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        req.end();
+      });
+
+      if (data?.organic_results?.length > 0) {
+        return data.organic_results.map(r => ({
+          title:   r.title,
+          url:     r.link,
+          snippet: r.snippet || '',
+        }));
+      }
+    } catch (e) {
+      console.warn('[WebSearch] SerpAPI failed:', e.message);
+    }
+  }
+
+  return [];
+}
+
+// ─────────────────────────────────────────────────────────────
+// BUILD VERIFIED CITATIONS
+// Combines AI-generated sources with real web search results,
+// validates URLs, returns only reachable sources.
+// ─────────────────────────────────────────────────────────────
+
+async function buildVerifiedCitations({ message, aiResponse, contextSources, language = 'id' }) {
+  const citations = [];
+
+  // ── 1. Internal sources (no URL needed — always valid) ────
+  for (const src of contextSources) {
+    if (src.startsWith('smartsheet:')) {
+      const sheetName = src.replace('smartsheet:', '');
+      citations.push({
+        type:        'smartsheet',
+        title:       sheetName,
+        url:         null,
+        snippet:     language === 'en'
+          ? `Real-time data from Smartsheet: ${sheetName}`
+          : `Data real-time dari Smartsheet: ${sheetName}`,
+        verified:    true,
+        isInternal:  true,
+      });
+    } else if (src.startsWith('knowledge:')) {
+      const files = src.replace('knowledge:', '').split(',');
+      for (const f of files) {
+        citations.push({
+          type:       'internal',
+          title:      f.trim(),
+          url:        null,
+          snippet:    language === 'en'
+            ? `Internal document: ${f.trim()}`
+            : `Dokumen internal: ${f.trim()}`,
+          verified:   true,
+          isInternal: true,
+        });
+      }
+    } else if (src === 'internal_document') {
+      citations.push({
+        type: 'internal', title: language === 'en' ? 'Internal Document' : 'Dokumen Internal',
+        url: null, snippet: language === 'en' ? 'From internal knowledge base' : 'Dari knowledge base internal',
+        verified: true, isInternal: true,
+      });
+    } else if (src === 'azure_search') {
+      citations.push({
+        type: 'azure', title: 'Azure AI Search',
+        url: null, snippet: language === 'en' ? 'From Azure AI Search index' : 'Dari indeks Azure AI Search',
+        verified: true, isInternal: true,
+      });
+    }
+  }
+
+  // ── 2. Web search for real, validated external sources ────
+  // Build a focused search query from the message topic
+  const searchQuery = message.length > 120
+    ? message.substring(0, 120)
+    : message;
+
+  const webResults = await searchWeb(searchQuery, 8);
+
+  // Validate URLs in parallel (max 8 concurrent checks)
+  const validationResults = await Promise.allSettled(
+    webResults.map(r => validateUrl(r.url))
+  );
+
+  for (let i = 0; i < webResults.length; i++) {
+    const isValid = validationResults[i].status === 'fulfilled' && validationResults[i].value;
+    if (isValid) {
+      citations.push({
+        type:       detectSourceType(webResults[i].url, webResults[i].title),
+        title:      webResults[i].title,
+        url:        webResults[i].url,
+        snippet:    webResults[i].snippet,
+        verified:   true,
+        isInternal: false,
+      });
+    }
+  }
+
+  // ── 3. Deduplicate by hostname ─────────────────────────────
+  const seen    = new Set();
+  const deduped = [];
+  for (const c of citations) {
+    const key = c.url ? new URL(c.url).hostname : c.title;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(c);
+    }
+  }
+
+  // ── 4. Cap at reasonable number (context-aware) ────────────
+  // More citations for complex analytical topics, fewer for simple ones
+  const wordCount = message.split(/\s+/).length;
+  const maxCitations = wordCount > 30 ? 6 : wordCount > 15 ? 4 : 3;
+
+  // Prioritize: internal first, then web
+  const sorted = [
+    ...deduped.filter(c => c.isInternal),
+    ...deduped.filter(c => !c.isInternal),
+  ];
+
+  return sorted.slice(0, maxCitations);
+}
+
+function detectSourceType(url = '', title = '') {
+  const u = url.toLowerCase();
+  const t = title.toLowerCase();
+  if (u.includes('wikipedia'))           return 'wikipedia';
+  if (u.includes('github.com'))          return 'github';
+  if (u.includes('bi.go.id') || u.includes('bps.go.id') || u.includes('.go.id')) return 'government';
+  if (u.includes('reuters') || u.includes('bloomberg') || u.includes('cnbc') ||
+      u.includes('bisnis.com') || u.includes('kontan.co.id') || u.includes('tempo.co')) return 'news';
+  if (u.includes('arxiv') || u.includes('scholar') || u.includes('researchgate')) return 'academic';
+  return 'web';
+}
+
+// ─────────────────────────────────────────────────────────────
+// FORMAT CITATIONS INTO MARKDOWN BLOCK
+// (for embedding in AI response)
+// ─────────────────────────────────────────────────────────────
+
+function formatCitationsBlock(citations, language = 'id') {
+  if (!citations || citations.length === 0) return '';
+
+  const header = language === 'en' ? '📚 **Sources:**' : '📚 **Sumber:**';
+  const lines  = citations.map(c => {
+    const icon = {
+      smartsheet: '📊', internal: '📂', azure: '🔍',
+      wikipedia: '📖', github: '💻', government: '🏛️',
+      news: '📰', academic: '🎓', web: '🌐',
+    }[c.type] || '📌';
+
+    if (c.url) {
+      return `- ${icon} [${c.title}](${c.url})${c.snippet ? ` — ${c.snippet.substring(0, 120)}` : ''}`;
+    } else {
+      const prefix = language === 'en' ? 'Internal' : 'Internal';
+      return `- ${icon} **${prefix}:** ${c.title}${c.snippet ? ` — ${c.snippet}` : ''}`;
+    }
+  });
+
+  return `\n\n---\n${header}\n${lines.join('\n')}`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// DETECT LANGUAGE OF MESSAGE
+// ─────────────────────────────────────────────────────────────
+
+function detectLanguage(message = '') {
+  const indoWords = /\b(apa|bagaimana|mengapa|berapa|siapa|kapan|dimana|tolong|mohon|saya|kamu|ini|itu|adalah|dengan|untuk|dari|yang|dan|atau|tidak|bisa|akan|sudah|belum|lagi|juga|karena|kalau|jika|tapi|tetapi|namun|pada|dalam|oleh|ke|di|ya|iya|ok|oke|halo|hai)\b/i;
+  return indoWords.test(message) ? 'id' : 'en';
+}
+
+// ─────────────────────────────────────────────────────────────
+// CITATION SYSTEM PROMPT (dynamic, language-aware)
+// ─────────────────────────────────────────────────────────────
+
+function buildCitationInstruction(language = 'id') {
+  if (language === 'en') {
+    return `
+MANDATORY CITATION RULES:
+After your answer, citations will be automatically appended from verified web sources.
+You do NOT need to add a sources section — the system will inject real, validated URLs automatically.
+
+However, if you used internal documents or Smartsheet data in your answer, mention it inline like:
+  "According to [filename]..." or "Based on Smartsheet data..."
+
+IMPORTANT:
+- Do NOT fabricate URLs or source links
+- Do NOT add a "Sources:" section yourself
+- The citation system will handle external sources with real, validated links
 `;
+  }
+
+  return `
+INSTRUKSI SITASI WAJIB:
+Setelah jawaban kamu, sistem akan otomatis menambahkan sumber-sumber terverifikasi dari web.
+Kamu TIDAK perlu menambahkan bagian sumber sendiri — sistem akan inject URL yang sudah divalidasi secara real-time.
+
+Namun, jika kamu menggunakan dokumen internal atau data Smartsheet dalam jawaban kamu, sebutkan secara inline seperti:
+  "Berdasarkan [nama file]..." atau "Menurut data Smartsheet..."
+
+PENTING:
+- JANGAN mengarang URL atau link sumber
+- JANGAN tambahkan bagian "Sumber:" sendiri
+- Sistem citation akan menangani sumber eksternal dengan link nyata dan tervalidasi
+`;
+}
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
@@ -372,8 +638,10 @@ class AICoreService {
       return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
     }
 
+    // Detect language early — used for citation block language
+    const language = detectLanguage(message || '');
+
     let contextData = '';
-    // Track context sources for citation hints
     let contextSources = [];
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
@@ -428,7 +696,6 @@ class AICoreService {
       );
       if (knowledgeCtx) {
         contextData += knowledgeCtx;
-        // Collect knowledge file names for citation hints
         const relevantFiles = bot.knowledgeFiles
           .filter(f => f.content && f.content.length > 0)
           .map(f => f.originalName)
@@ -459,42 +726,17 @@ class AICoreService {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
-    // ── Build citation hint based on available context sources ──
-    let citationHint = CITATION_INSTRUCTION;
-    if (contextSources.length > 0) {
-      const sourceHints = contextSources.map(src => {
-        if (src.startsWith('smartsheet:')) {
-          const sheetName = src.replace('smartsheet:', '');
-          return `- Data ini berasal dari Smartsheet "${sheetName}" → gunakan format: "📊 Sumber: Data Smartsheet real-time — ${sheetName}"`;
-        }
-        if (src.startsWith('knowledge:')) {
-          const files = src.replace('knowledge:', '');
-          return `- Data ini berasal dari dokumen internal: ${files} → gunakan format: "📂 Sumber: Dokumen internal — [nama file]"`;
-        }
-        if (src === 'internal_document') {
-          return `- Data ini berasal dari dokumen internal via Kouventa → gunakan format: "📂 Sumber: Dokumen internal"`;
-        }
-        if (src === 'azure_search') {
-          return `- Data ini berasal dari Azure AI Search → gunakan format: "🔍 Sumber: Azure AI Search"`;
-        }
-        return '';
-      }).filter(Boolean).join('\n');
-
-      if (sourceHints) {
-        citationHint += `\n\nKONTEKS SUMBER YANG TERSEDIA:\n${sourceHints}\n`;
-      }
-    }
-
-    // Skip citation for casual messages
     const skipCitation = isCasualMessage(message || '');
 
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
-      skipCitation ? '' : citationHint,
+      skipCitation ? '' : buildCitationInstruction(language),
       contextData,
       contextData
-        ? 'Gunakan data dan pengetahuan di atas untuk menjawab dengan akurat. Jangan mengarang fakta. Selalu cantumkan sumber.'
+        ? (language === 'en'
+            ? 'Use the data and knowledge above to answer accurately. Do not fabricate facts.'
+            : 'Gunakan data dan pengetahuan di atas untuk menjawab dengan akurat. Jangan mengarang fakta.')
         : '',
     ].filter(Boolean).join('\n\n');
 
@@ -508,7 +750,33 @@ class AICoreService {
       capabilities: bot.capabilities || {},
     });
 
-    const aiResponse = result.text;
+    let aiResponse = result.text;
+
+    // ── Build verified citations (web search + validation) ──
+    if (!skipCitation) {
+      try {
+        const citations = await buildVerifiedCitations({
+          message:        message || '',
+          aiResponse,
+          contextSources,
+          language,
+        });
+
+        if (citations.length > 0) {
+          // Strip any AI-generated source block first (prevent duplication)
+          aiResponse = aiResponse
+            .replace(/\n---\s*\n\*\*[📚📂📊🔍⚠️][^*]*\*\*[\s\S]*$/im, '')
+            .replace(/\n\*\*[📚📂📊🔍⚠️][^*]*\*\*\n[\s\S]*$/im, '')
+            .trim();
+
+          // Append verified citation block
+          aiResponse += formatCitationsBlock(citations, language);
+        }
+      } catch (citErr) {
+        console.warn('[Citations] Failed to build citations:', citErr.message);
+        // Don't fail the whole request — just skip citations
+      }
+    }
 
     let savedAttachments = [];
     if (attachedFile) {
@@ -533,7 +801,6 @@ class AICoreService {
   // ─────────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
     try {
-      // ── STEP 0: Load DB history ──────────────────────────────
       let dbHistory = [];
       try {
         if (threadId) {
@@ -546,7 +813,6 @@ class AICoreService {
         });
       } catch (e) { console.warn('[PPT] DB history error:', e.message); }
 
-      // ── STEP 1: Build user request context ──────────────────
       const userRequest = message || '';
       const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
 
@@ -560,7 +826,6 @@ class AICoreService {
           .substring(0, 8000);
       }
 
-      // ── STEP 2: CONTENT GENERATION ──────────────────────────
       console.log('[PPT] Step 1 — generating smart content with auto layout detection...');
 
       const contentUserMsg = historicalContent
@@ -582,7 +847,6 @@ class AICoreService {
 
       console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
 
-      // ── STEP 3: JSON CONVERSION ──────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
 
       const jsonResult = await AIProviderService.generateCompletion({
@@ -608,7 +872,6 @@ class AICoreService {
         pptData = JSON.parse(rawJson);
       } catch (parseErr) {
         console.error('[PPT] JSON parse failed:', parseErr.message);
-        console.error('[PPT] Raw (first 400):', rawJson.substring(0, 400));
         throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
       }
 
@@ -619,17 +882,15 @@ class AICoreService {
       const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — Layouts: [${layoutLog}]`);
 
-      // ── STEP 4: RENDER PPTX ──────────────────────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generate({
         pptData, slideContent, title, outputDir, styleDesc: 'GYS Gamma Edition',
       });
 
-      // ── STEP 5: BUILD RESPONSE ───────────────────────────────
       const reqLower = userRequest.toLowerCase();
       const reqIndo = reqLower.includes('bahasa indonesia') || reqLower.includes('indo');
       const reqEng = reqLower.includes('english') || reqLower.includes('inggris');
-      
+
       let isEnglish = false;
       if (reqEng) {
         isEnglish = true;
