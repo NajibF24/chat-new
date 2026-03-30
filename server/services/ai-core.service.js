@@ -563,17 +563,87 @@ function isPptCommand(message = '') {
 
 // ─────────────────────────────────────────────────────────────
 // DETECT CASUAL MESSAGES (no citation needed)
+// Only skip citation for TRUE greetings / one-word acks.
+// Short continuation prompts ("next insight", "lanjut", "continue",
+// "give me what you got") are NOT casual — the AI will reply
+// with substantive content that needs sources.
 // ─────────────────────────────────────────────────────────────
 function isCasualMessage(message = '') {
   const t = (message || '').trim().toLowerCase();
+
+  // Pure greetings / thanks / emoji reactions
   const casualPatterns = [
-    /^(halo|hai|hi|hello|hey|selamat|salam)/i,
-    /^(terima kasih|makasih|thanks|thank you)/i,
-    /^(ok|oke|iya|ya|tidak|no|yes)/i,
-    /^(bagus|baik|mantap|keren|hebat|luar biasa)/i,
-    /^\s*[😀😊🙏👍❤️]+\s*$/,
+    /^(halo|hai|hi+|hello|hey|selamat pagi|selamat siang|selamat malam|salam)\s*[!.]*$/i,
+    /^(terima kasih|makasih|thanks+|thank you|thx)\s*[!.]*$/i,
+    /^(ok|oke|iya|ya|yep|yup|nope|tidak|no|yes)\s*[!.]*$/i,
+    /^(bagus|baik|mantap|keren|hebat|luar biasa|great|good|nice|cool|wow|amazing)\s*[!.]*$/i,
+    /^\s*[😀😊🙏👍❤️🔥👋]+\s*$/,
   ];
-  return casualPatterns.some(p => p.test(t)) || t.length < 15;
+
+  // These look short but are CONTINUATION prompts — always need citation
+  const continuationPatterns = [
+    /\b(next|lanjut|continue|more|berikut|selanjutnya|insight|terus|go on|tell me|give me|show me|what else)\b/i,
+  ];
+
+  // If it matches a continuation pattern, never skip citation
+  if (continuationPatterns.some(p => p.test(t))) return false;
+
+  // Match explicit casual patterns
+  if (casualPatterns.some(p => p.test(t))) return true;
+
+  // Very short messages that are pure filler (≤ 6 chars, no alpha-meaningful content)
+  // Use 6 not 15 — "lanjut" is 6 chars but caught above by continuationPatterns
+  if (t.replace(/[^a-z]/gi, '').length <= 4) return true;
+
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────
+// SKIP CITATION — final decision after AI response is known
+// Input message alone is not enough: a short user prompt can
+// still produce a long, substantive AI response that needs sources.
+// ─────────────────────────────────────────────────────────────
+function shouldSkipCitation(message = '', aiResponse = '') {
+  // Always skip for casual input
+  if (isCasualMessage(message)) return true;
+
+  // If AI response is short (< 120 words) it's likely a simple reply
+  const wordCount = aiResponse.trim().split(/\s+/).length;
+  if (wordCount < 120) return true;
+
+  // Never skip for substantive responses
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXTRACT SEARCH TOPIC
+// For short continuation prompts ("next insight", "lanjut", etc.)
+// the search query should be built from history, not the message.
+// ─────────────────────────────────────────────────────────────
+function extractSearchTopic(message = '', history = []) {
+  const t = message.trim();
+
+  // If user message is substantive (> 8 words), use it directly
+  if (t.split(/\s+/).length > 8) {
+    return t.length > 180 ? t.substring(0, 180) : t;
+  }
+
+  // Otherwise, look for the last substantive assistant message in history
+  // (which is the topic the user is asking for "more" of)
+  const recentHistory = [...history].reverse();
+  for (const h of recentHistory) {
+    const content = h.content || h.text || '';
+    if (content.length > 80) {
+      // Strip citation block, grab first 180 chars as topic
+      const clean = content
+        .replace(/\n+---\s*\n.{0,10}(?:Sumber|Sources).{0,10}\n[\s\S]*$/im, '')
+        .trim();
+      return clean.substring(0, 180);
+    }
+  }
+
+  // Final fallback: use the message as-is
+  return t;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -726,12 +796,13 @@ class AICoreService {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
-    const skipCitation = isCasualMessage(message || '');
+    // Pre-check: casual input → skip citation instruction in system prompt too
+    const likelyCasual = isCasualMessage(message || '');
 
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
-      skipCitation ? '' : buildCitationInstruction(language),
+      likelyCasual ? '' : buildCitationInstruction(language),
       contextData,
       contextData
         ? (language === 'en'
@@ -753,10 +824,17 @@ class AICoreService {
     let aiResponse = result.text;
 
     // ── Build verified citations (web search + validation) ──
+    // Decision is made AFTER we have the AI response so we can
+    // check its length (short continuations → may produce long responses)
+    const skipCitation = shouldSkipCitation(message || '', aiResponse);
+
     if (!skipCitation) {
       try {
+        // For short continuation prompts, derive topic from chat history
+        const searchTopic = extractSearchTopic(message || '', history.slice(-6));
+
         const citations = await buildVerifiedCitations({
-          message:        message || '',
+          message:        searchTopic,
           aiResponse,
           contextSources,
           language,
@@ -765,8 +843,7 @@ class AICoreService {
         if (citations.length > 0) {
           // Strip any AI-generated source block first (prevent duplication)
           aiResponse = aiResponse
-            .replace(/\n---\s*\n\*\*[📚📂📊🔍⚠️][^*]*\*\*[\s\S]*$/im, '')
-            .replace(/\n\*\*[📚📂📊🔍⚠️][^*]*\*\*\n[\s\S]*$/im, '')
+            .replace(/\n+---\s*\n.{0,10}(?:Sumber|Sources).{0,10}\n[\s\S]*$/im, '')
             .trim();
 
           // Append verified citation block
