@@ -1,15 +1,14 @@
 // WahaConfigSection.jsx
-// Drop this component into the AdminDashboard integrations tab
-// to replace the old single-target WAHA block.
+// Drop this component into the AdminDashboard integrations tab.
 // Props: botForm, setBotForm
 
 import React, { useState } from 'react';
 
 // ── Schedule type options ──────────────────────────────────────
 const SCHEDULE_TYPES = [
-  { id: 'daily',    label: '📅 Harian',        desc: 'Kirim pada waktu tertentu setiap hari' },
-  { id: 'interval', label: '🔄 Per Interval',   desc: 'Kirim setiap N menit (minimal 15 menit)' },
-  { id: 'times',    label: '🕐 Beberapa Waktu', desc: 'Kirim di beberapa waktu dalam sehari' },
+  { id: 'daily',    label: '📅 Daily',        desc: 'Send at a specific time every day' },
+  { id: 'interval', label: '🔄 Interval',     desc: 'Send every N minutes (minimum 15 min)' },
+  { id: 'times',    label: '🕐 Multiple Times', desc: 'Send at several specific times per day' },
 ];
 
 // ── Default empty schedule ────────────────────────────────────
@@ -34,7 +33,7 @@ const defaultTarget = () => ({
 });
 
 // ── Single schedule row editor ────────────────────────────────
-function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) {
+function ScheduleRow({ schedule, onChange, onRemove }) {
   const [timesInput, setTimesInput] = useState((schedule.times || []).join(', '));
 
   const update = (key, val) => onChange({ ...schedule, [key]: val });
@@ -55,7 +54,7 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
           type="text"
           value={schedule.label || ''}
           onChange={e => update('label', e.target.value)}
-          placeholder="Label (contoh: Morning Briefing)"
+          placeholder="Label (e.g. Morning Briefing)"
           className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-[#25D366]/50"
         />
         <button type="button" onClick={onRemove}
@@ -64,7 +63,7 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
 
       {/* Schedule type selector */}
       <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Tipe Jadwal</label>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Schedule Type</label>
         <div className="flex gap-1.5 flex-wrap">
           {SCHEDULE_TYPES.map(t => (
             <button
@@ -86,10 +85,10 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
         </p>
       </div>
 
-      {/* Schedule-type specific inputs */}
+      {/* Daily: single time */}
       {schedule.scheduleType === 'daily' && (
         <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Waktu (format 24 jam)</label>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Time (24-hour format)</label>
           <input
             type="time"
             value={schedule.time || '08:00'}
@@ -99,10 +98,11 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
         </div>
       )}
 
+      {/* Interval */}
       {schedule.scheduleType === 'interval' && (
         <div>
           <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
-            Interval (menit) — minimal 15 menit
+            Interval (minutes) — minimum 15 min
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -115,9 +115,9 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
               className="w-24 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-[#25D366]/50"
             />
             <span className="text-xs text-gray-500">
-              = Setiap {schedule.intervalMin >= 60
-                ? `${Math.floor(schedule.intervalMin / 60)} jam${schedule.intervalMin % 60 > 0 ? ` ${schedule.intervalMin % 60} menit` : ''}`
-                : `${schedule.intervalMin} menit`}
+              = Every {schedule.intervalMin >= 60
+                ? `${Math.floor(schedule.intervalMin / 60)}h${schedule.intervalMin % 60 > 0 ? ` ${schedule.intervalMin % 60}m` : ''}`
+                : `${schedule.intervalMin}m`}
             </span>
           </div>
           {/* Quick presets */}
@@ -133,24 +133,24 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
                     : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
                 }`}
               >
-                {n >= 60 ? `${n / 60}j` : `${n}m`}
+                {n >= 60 ? `${n / 60}h` : `${n}m`}
               </button>
             ))}
           </div>
         </div>
       )}
 
+      {/* Multiple times */}
       {schedule.scheduleType === 'times' && (
         <div>
           <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
-            Waktu-waktu (pisahkan dengan koma, format HH:MM)
+            Times (comma-separated, HH:MM format)
           </label>
           <input
             type="text"
             value={timesInput}
             onChange={e => {
               setTimesInput(e.target.value);
-              // Parse and update times array
               const parsed = e.target.value
                 .split(',')
                 .map(t => t.trim())
@@ -162,16 +162,16 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
           />
           {(schedule.times || []).length > 0 && (
             <p className="text-[10px] text-gray-400 mt-1">
-              {(schedule.times || []).length} waktu: {(schedule.times || []).join(' • ')}
+              {(schedule.times || []).length} time(s): {(schedule.times || []).join(' • ')}
             </p>
           )}
           {/* Quick day presets */}
           <div className="flex gap-1 mt-1.5 flex-wrap">
             {[
-              { label: '2x sehari', times: '08:00, 17:00' },
-              { label: '3x sehari', times: '08:00, 12:00, 17:00' },
-              { label: '4x sehari', times: '07:00, 10:00, 14:00, 19:00' },
-              { label: 'Jam kerja', times: '08:00, 09:00, 10:00, 11:00, 13:00, 14:00, 15:00, 16:00' },
+              { label: '2× daily',    times: '08:00, 17:00' },
+              { label: '3× daily',    times: '08:00, 12:00, 17:00' },
+              { label: '4× daily',    times: '07:00, 10:00, 14:00, 19:00' },
+              { label: 'Work hours',  times: '08:00, 09:00, 10:00, 11:00, 13:00, 14:00, 15:00, 16:00' },
             ].map(preset => (
               <button
                 key={preset.label}
@@ -190,15 +190,15 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
         </div>
       )}
 
-      {/* Message/Prompt input */}
+      {/* Message/Prompt */}
       <div>
         <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
-          Pesan / Trigger Prompt
+          Message / Trigger Prompt
         </label>
         <textarea
           value={schedule.prompt || ''}
           onChange={e => update('prompt', e.target.value)}
-          placeholder="Contoh: Buatkan ringkasan update harian untuk tim"
+          placeholder="e.g. Generate a daily summary update for the team"
           rows={2}
           className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#25D366]/50 resize-none"
         />
@@ -209,13 +209,13 @@ function ScheduleRow({ schedule, onChange, onRemove, accentColor = '#25D366' }) 
 
 // ── Single target (chat/group) editor ─────────────────────────
 function TargetEditor({ target, onChange, onRemove, globalSchedules }) {
-  const updateTarget  = (key, val) => onChange({ ...target, [key]: val });
+  const updateTarget = (key, val) => onChange({ ...target, [key]: val });
   const useOwnSchedules = (target.schedules || []).length > 0;
 
-  const addSchedule = () => updateTarget('schedules', [...(target.schedules || []), defaultSchedule()]);
+  const addSchedule    = () => updateTarget('schedules', [...(target.schedules || []), defaultSchedule()]);
   const updateSchedule = (idx, val) => {
     const arr = [...(target.schedules || [])];
-    arr[idx] = val;
+    arr[idx]  = val;
     updateTarget('schedules', arr);
   };
   const removeSchedule = (idx) => {
@@ -239,11 +239,11 @@ function TargetEditor({ target, onChange, onRemove, globalSchedules }) {
           type="text"
           value={target.label || ''}
           onChange={e => updateTarget('label', e.target.value)}
-          placeholder="Label target (contoh: Tim Manajemen)"
+          placeholder="Target label (e.g. Management Team)"
           className="flex-1 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-[#25D366]/50"
         />
         <button type="button" onClick={onRemove}
-          className="text-red-400 hover:text-red-600 text-xs px-2 py-1 transition-colors flex-shrink-0">🗑 Hapus</button>
+          className="text-red-400 hover:text-red-600 text-xs px-2 py-1 transition-colors flex-shrink-0">🗑 Remove</button>
       </div>
 
       {/* Chat ID */}
@@ -255,22 +255,22 @@ function TargetEditor({ target, onChange, onRemove, globalSchedules }) {
           type="text"
           value={target.chatId || ''}
           onChange={e => updateTarget('chatId', e.target.value)}
-          placeholder="120363xxxxxx@g.us (Group) atau 628xxxxxxx@c.us (Personal)"
+          placeholder="120363xxxxxx@g.us (Group) or 628xxxxxxx@c.us (Personal)"
           className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:border-[#25D366]/50"
         />
-        <p className="text-[9px] text-gray-400 mt-0.5">@g.us = Grup · @c.us = Personal Chat</p>
+        <p className="text-[9px] text-gray-400 mt-0.5">@g.us = Group · @c.us = Personal Chat</p>
       </div>
 
-      {/* Schedules section */}
+      {/* Schedules */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <div>
             <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
-              Jadwal Khusus untuk Target Ini
+              Custom Schedules for This Target
             </label>
             {!useOwnSchedules && globalSchedules > 0 && (
               <p className="text-[10px] text-amber-600 mt-0.5">
-                ⚠️ Menggunakan {globalSchedules} jadwal global. Tambahkan jadwal khusus untuk override.
+                ⚠️ Using {globalSchedules} global schedule(s). Add a custom schedule here to override.
               </p>
             )}
           </div>
@@ -279,13 +279,13 @@ function TargetEditor({ target, onChange, onRemove, globalSchedules }) {
             onClick={addSchedule}
             className="text-[10px] font-semibold text-[#25D366] hover:text-green-700 transition-colors"
           >
-            + Tambah Jadwal
+            + Add Schedule
           </button>
         </div>
 
         {(target.schedules || []).length === 0 ? (
           <div className="text-[10px] text-gray-400 italic py-2 text-center border border-dashed border-gray-200 rounded-lg">
-            Tidak ada jadwal khusus — menggunakan jadwal global
+            No custom schedules — using global schedule(s)
           </div>
         ) : (
           <div className="space-y-2">
@@ -313,33 +313,21 @@ export default function WahaConfigSection({ botForm, setBotForm }) {
     wahaConfig: { ...f.wahaConfig, [key]: val }
   }));
 
-  const addTarget = () => {
-    updateConfig('targets', [...(config.targets || []), defaultTarget()]);
-  };
-
+  const addTarget    = () => updateConfig('targets', [...(config.targets || []), defaultTarget()]);
   const updateTarget = (idx, val) => {
     const arr = [...(config.targets || [])];
-    arr[idx] = val;
+    arr[idx]  = val;
     updateConfig('targets', arr);
   };
+  const removeTarget = (idx) => updateConfig('targets', (config.targets || []).filter((_, i) => i !== idx));
 
-  const removeTarget = (idx) => {
-    updateConfig('targets', (config.targets || []).filter((_, i) => i !== idx));
-  };
-
-  const addGlobalSchedule = () => {
-    updateConfig('schedules', [...(config.schedules || []), defaultSchedule()]);
-  };
-
+  const addGlobalSchedule    = () => updateConfig('schedules', [...(config.schedules || []), defaultSchedule()]);
   const updateGlobalSchedule = (idx, val) => {
     const arr = [...(config.schedules || [])];
-    arr[idx] = val;
+    arr[idx]  = val;
     updateConfig('schedules', arr);
   };
-
-  const removeGlobalSchedule = (idx) => {
-    updateConfig('schedules', (config.schedules || []).filter((_, i) => i !== idx));
-  };
+  const removeGlobalSchedule = (idx) => updateConfig('schedules', (config.schedules || []).filter((_, i) => i !== idx));
 
   const enabledTargetsCount = (config.targets || []).filter(t => t.enabled && t.chatId).length;
   const globalScheduleCount = (config.schedules || []).filter(s => s.enabled).length;
@@ -356,12 +344,12 @@ export default function WahaConfigSection({ botForm, setBotForm }) {
               <div className="flex gap-1.5 mt-0.5">
                 {enabledTargetsCount > 0 && (
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#25D366]/15 text-green-700 border border-[#25D366]/20">
-                    {enabledTargetsCount} target aktif
+                    {enabledTargetsCount} active target{enabledTargetsCount !== 1 ? 's' : ''}
                   </span>
                 )}
                 {globalScheduleCount > 0 && (
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                    {globalScheduleCount} jadwal global
+                    {globalScheduleCount} global schedule{globalScheduleCount !== 1 ? 's' : ''}
                   </span>
                 )}
               </div>
@@ -381,7 +369,7 @@ export default function WahaConfigSection({ botForm, setBotForm }) {
         <div className="space-y-4">
           {/* Connection settings */}
           <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-3">
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">⚙️ Koneksi WAHA</p>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">⚙️ WAHA Connection</p>
             <div>
               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
                 API Endpoint URL
@@ -418,25 +406,25 @@ export default function WahaConfigSection({ botForm, setBotForm }) {
             </div>
           </div>
 
-          {/* ── GLOBAL SCHEDULES ──────────────────────────────── */}
+          {/* Global Schedules */}
           <div className="bg-white rounded-xl border border-gray-100 p-3">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">📅 Jadwal Global</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Berlaku untuk semua target (kecuali target punya jadwal sendiri)</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">📅 Global Schedules</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Applied to all targets (unless a target has its own schedules)</p>
               </div>
               <button
                 type="button"
                 onClick={addGlobalSchedule}
                 className="text-[10px] font-semibold text-[#25D366] hover:text-green-700 transition-colors flex items-center gap-1"
               >
-                <span>+</span> Tambah Jadwal
+                <span>+</span> Add Schedule
               </button>
             </div>
 
             {(config.schedules || []).length === 0 ? (
               <div className="text-[10px] text-gray-400 italic py-3 text-center border border-dashed border-gray-200 rounded-lg">
-                Belum ada jadwal global. Jadwal bisa ditambahkan di sini atau per-target.
+                No global schedules. Schedules can be added here or per target.
               </div>
             ) : (
               <div className="space-y-2">
@@ -452,25 +440,25 @@ export default function WahaConfigSection({ botForm, setBotForm }) {
             )}
           </div>
 
-          {/* ── TARGETS (multiple chat/group IDs) ──────────────── */}
+          {/* Targets */}
           <div className="bg-white rounded-xl border border-gray-100 p-3">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">📱 Target Chat / Grup</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Daftarkan satu atau lebih Chat ID / Group ID WhatsApp</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">📱 Chat / Group Targets</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Register one or more WhatsApp Chat ID or Group ID</p>
               </div>
               <button
                 type="button"
                 onClick={addTarget}
                 className="text-[10px] font-semibold text-[#25D366] hover:text-green-700 transition-colors flex items-center gap-1"
               >
-                <span>+</span> Tambah Target
+                <span>+</span> Add Target
               </button>
             </div>
 
             {(config.targets || []).length === 0 ? (
               <div className="text-[10px] text-gray-400 italic py-3 text-center border border-dashed border-gray-200 rounded-lg">
-                Belum ada target. Klik "+ Tambah Target" untuk menambahkan Chat ID atau Group ID.
+                No targets yet. Click "+ Add Target" to add a Chat ID or Group ID.
               </div>
             ) : (
               <div className="space-y-3">
@@ -487,23 +475,23 @@ export default function WahaConfigSection({ botForm, setBotForm }) {
             )}
           </div>
 
-          {/* ── Legacy fallback note ────────────────────────────── */}
+          {/* Legacy fallback note */}
           {!config.targets?.length && config.chatId && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[10px] text-amber-700">
-              <p className="font-bold">⚠️ Mode Legacy Terdeteksi</p>
-              <p>Chat ID lama <code className="bg-amber-100 px-1 rounded font-mono">{config.chatId}</code> masih aktif.
-              Tambahkan target baru di atas untuk menggunakan sistem multi-target terbaru.
-              Chat ID lama tetap berfungsi untuk backward compatibility.</p>
+              <p className="font-bold">⚠️ Legacy Mode Detected</p>
+              <p>Old Chat ID <code className="bg-amber-100 px-1 rounded font-mono">{config.chatId}</code> is still active.
+              Add a new target above to use the latest multi-target system.
+              The old Chat ID will continue working for backward compatibility.</p>
             </div>
           )}
 
           {/* Info box */}
           <div className="bg-[#25D366]/8 border border-[#25D366]/20 rounded-xl p-3 text-[10px] text-green-800 space-y-1">
-            <p className="font-bold">💡 Tips Penggunaan</p>
-            <p>• <strong>Target tanpa jadwal khusus</strong> → menggunakan jadwal global</p>
-            <p>• <strong>Target dengan jadwal khusus</strong> → jadwal global diabaikan untuk target ini</p>
-            <p>• <strong>Interval minimal 15 menit</strong> untuk mencegah spam</p>
-            <p>• Forward otomatis (saat ada chat) tidak terpengaruh jadwal</p>
+            <p className="font-bold">💡 Usage Tips</p>
+            <p>• <strong>Target without custom schedules</strong> → uses global schedules</p>
+            <p>• <strong>Target with custom schedules</strong> → global schedules are ignored for this target</p>
+            <p>• <strong>Minimum 15-minute interval</strong> to prevent spam</p>
+            <p>• Auto-forward on chat is not affected by schedules</p>
           </div>
         </div>
       )}

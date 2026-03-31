@@ -79,12 +79,44 @@ const TIER_GROUP_LABEL = {
 };
 
 const ALL_CAPABILITIES = [
-  { id: 'webSearch',       icon: '🌐', label: 'Web Search',        desc: 'Bot can browse the internet for up-to-date information', providers: ['openai'] },
-  { id: 'codeInterpreter', icon: '💻', label: 'Code Interpreter',  desc: 'Bot can write and execute Python code', providers: ['openai'] },
-  { id: 'imageGeneration', icon: '🎨', label: 'Image Generation',  desc: 'Bot can create images using DALL-E', providers: ['openai'] },
-  { id: 'canvas',          icon: '📝', label: 'Canvas Mode',       desc: 'Interactive document editing and canvas mode', providers: ['openai'] },
-  { id: 'fileSearch',      icon: '📂', label: 'File Search (RAG)', desc: 'Semantic search across the entire knowledge base', providers: ['openai', 'anthropic'] },
+  {
+    id: 'webSearch',
+    icon: '🌐',
+    label: 'Web Search',
+    desc: 'Bot can browse the internet for up-to-date information. Supported by OpenAI GPT-4o, GPT-4.1, GPT-5 series (NOT o-series reasoning models, Claude, or Gemini).',
+    providers: ['openai'],
+    modelNote: 'GPT-4o, GPT-4.1, GPT-5 series only — not o3/o4-mini',
+  },
+  {
+    id: 'codeInterpreter',
+    icon: '💻',
+    label: 'Code Interpreter',
+    desc: 'Bot can write and execute Python code for data analysis.',
+    providers: ['openai'],
+  },
+  {
+    id: 'imageGeneration',
+    icon: '🎨',
+    label: 'Image Generation',
+    desc: 'Bot can create images using DALL-E.',
+    providers: ['openai'],
+  },
+  {
+    id: 'canvas',
+    icon: '📝',
+    label: 'Canvas Mode',
+    desc: 'Interactive document editing and canvas mode.',
+    providers: ['openai'],
+  },
+  {
+    id: 'fileSearch',
+    icon: '📂',
+    label: 'File Search (RAG)',
+    desc: 'Semantic search across the entire knowledge base.',
+    providers: ['openai', 'anthropic'],
+  },
 ];
+ 
 
 const KNOWLEDGE_MODES = [
   { id: 'relevant', label: '🎯 Relevant Only', desc: 'Inject knowledge only when relevant' },
@@ -1339,9 +1371,9 @@ function AdminDashboard({ user, handleLogout }) {
                       )}
                     </div>
                     <p className="text-[10px] mt-1">
-                      {botForm.aiProvider?.apiKey
-                        ? <span className="text-amber-600 font-semibold">⚠️ Using a custom API Key (not from .env)</span>
-                        : <span className="text-emerald-600 font-semibold">✅ Using OPENAI_API_KEY from server .env</span>}
+                      botForm.aiProvider?.apiKey
+                      ? <span className="text-amber-600 font-semibold">⚠️ Using a custom API Key (not from .env)</span>
+                      : <span className="text-emerald-600 font-semibold">✅ Using {AI_PROVIDERS[currentProvider]?.envKey || 'API Key'} from server .env</span>}
                     </p>
                   </div>
                   {(currentProvider === 'custom' || currentProvider === 'openai') && (
@@ -1380,43 +1412,81 @@ function AdminDashboard({ user, handleLogout }) {
 
               {/* CAPABILITIES TAB */}
               {botModalTab === 'capabilities' && (
-                <div className="space-y-4">
-                  <div className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">⚡ Enable additional capabilities similar to ChatGPT. Availability depends on the selected provider and model.</div>
-                  <div className="space-y-3">
-                    {ALL_CAPABILITIES.map(cap => {
-                      const isSupported = cap.providers.includes(currentProvider);
-                      const isOn = botForm.capabilities?.[cap.id] || false;
-                      return (
-                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 bg-gray-50' : isOn ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
-                          <div className="flex items-start gap-3">
-                            <span className="text-xl">{cap.icon}</span>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className="font-semibold text-sm text-gray-800">{cap.label}</p>
-                                {!isSupported && <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-semibold">Not available for {currentProvider}</span>}
-                              </div>
-                              <p className="text-xs text-gray-400 mt-0.5">{cap.desc}</p>
-                              <div className="flex gap-1 mt-1">{cap.providers.map(p => <span key={p} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold">{AI_PROVIDERS[p]?.icon} {p}</span>)}</div>
-                            </div>
-                          </div>
-                          <button type="button" disabled={!isSupported} onClick={() => setBotForm(f => ({ ...f, capabilities: { ...f.capabilities, [cap.id]: !isOn } }))}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-4 ${isOn && isSupported ? 'bg-primary-dark' : 'bg-gray-200'} ${!isSupported ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isOn && isSupported ? 'translate-x-6' : 'translate-x-1'}`} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {activeCapCount > 0 && <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">⚠️ <strong>{activeCapCount} capability{activeCapCount !== 1 ? 'ies' : ''} active.</strong> May require a paid API tier.</div>}
+  <div className="space-y-4">
+    <div className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">
+      ⚡ Enable additional capabilities. Availability depends on the selected provider and model.
+      <span className="block mt-1 font-semibold">
+        🌐 Web Search works natively only with OpenAI GPT-4o / GPT-4.1 / GPT-5 series.
+        For Claude and Gemini, citations are provided automatically via the Bing/SerpAPI fallback
+        (set <code className="bg-violet-100 px-1 rounded">BING_SEARCH_API_KEY</code> or{' '}
+        <code className="bg-violet-100 px-1 rounded">SERPAPI_KEY</code> in your server .env).
+      </span>
+    </div>
+    <div className="space-y-3">
+      {ALL_CAPABILITIES.map(cap => {
+        const isSupported = cap.providers.includes(currentProvider);
+        const isOn = botForm.capabilities?.[cap.id] || false;
+        // Extra warning: web search enabled but model is o-series
+        const isOSeriesWithWebSearch = cap.id === 'webSearch' && isOn && /^o\d/.test(botForm.aiProvider?.model || '');
+        return (
+          <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 bg-gray-50' : isOn ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
+            <div className="flex items-start gap-3">
+              <span className="text-xl">{cap.icon}</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm text-gray-800">{cap.label}</p>
+                  {!isSupported && (
+                    <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-semibold">
+                      Not available for {currentProvider}
+                    </span>
+                  )}
+                  {cap.modelNote && isSupported && (
+                    <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold border border-blue-100">
+                      {cap.modelNote}
+                    </span>
+                  )}
                 </div>
-              )}
+                <p className="text-xs text-gray-400 mt-0.5">{cap.desc}</p>
+                <div className="flex gap-1 mt-1">
+                  {cap.providers.map(p => (
+                    <span key={p} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold">
+                      {AI_PROVIDERS[p]?.icon} {p}
+                    </span>
+                  ))}
+                </div>
+                {isOSeriesWithWebSearch && (
+                  <p className="text-[10px] text-orange-600 font-semibold mt-1.5">
+                    ⚠️ Web Search is not supported for o-series models. Disable this or switch to GPT-4o/GPT-4.1.
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={!isSupported}
+              onClick={() => setBotForm(f => ({ ...f, capabilities: { ...f.capabilities, [cap.id]: !isOn } }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-4 ${isOn && isSupported ? 'bg-primary-dark' : 'bg-gray-200'} ${!isSupported ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isOn && isSupported ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+    {activeCapCount > 0 && (
+      <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">
+        ⚠️ <strong>{activeCapCount} capability{activeCapCount !== 1 ? 'ies' : ''} active.</strong> May require a paid API tier.
+      </div>
+    )}
+  </div>
+)}
 
               {/* KNOWLEDGE TAB */}
               {botModalTab === 'knowledge' && (
                 <div className="space-y-5">
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
                     📚 Upload documents as the bot's knowledge source. Supports <strong>PDF, Word, Excel, PowerPoint, TXT, CSV, MD</strong>.
-                    {!editingBot && <span className="block mt-1 font-bold text-amber-800">⚠️ Save the bot first before uploading files.</span>}
+                    {!editingBot && <span className="block mt-1 font-bold text-amber-800">⚠️ Please save the bot first before uploading files.</span>}
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Knowledge Base Mode</label>

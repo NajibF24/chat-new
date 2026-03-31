@@ -13,8 +13,6 @@ const getFileUrl = (path) => {
 
 // ─────────────────────────────────────────────────────────────
 // Parse citations from AI response content
-// Extracts the JSON citations block we embed after the main text.
-// Returns { mainContent: string, citations: Array<{url, title}> }
 // ─────────────────────────────────────────────────────────────
 function parseCitations(content = '') {
   const startTag = '<!--CITATIONS_START-->';
@@ -41,7 +39,7 @@ function parseCitations(content = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Citations Panel Component
+// Citations Panel
 // ─────────────────────────────────────────────────────────────
 function CitationsPanel({ citations }) {
   const [expanded, setExpanded] = useState(false);
@@ -59,59 +57,64 @@ function CitationsPanel({ citations }) {
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
         </svg>
-        <span className="group-hover:text-primary-dark">
-          {citations.length} Sumber Referensi
+        <span className="flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+          </svg>
+          {citations.length} Web Source{citations.length !== 1 ? 's' : ''}
         </span>
-        <span className="text-gray-400 font-normal">
-          {expanded ? '— klik untuk tutup' : '— klik untuk lihat'}
+        <span className="text-gray-400 font-normal text-[10px]">
+          {expanded ? '— click to collapse' : '— click to expand'}
         </span>
       </button>
 
       {expanded && (
         <div className="mt-2.5 space-y-1.5">
-          {citations.map((cite, idx) => (
-            <a
-              key={idx}
-              href={cite.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-start gap-2.5 p-2.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:border-blue-200 transition-all group"
-            >
-              {/* Favicon */}
-              <div className="flex-shrink-0 mt-0.5">
-                <img
-                  src={`https://www.google.com/s2/favicons?domain=${new URL(cite.url).hostname}&sz=16`}
-                  alt=""
-                  className="w-4 h-4 rounded"
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              </div>
+          {citations.map((cite, idx) => {
+            let hostname = '';
+            try { hostname = new URL(cite.url).hostname; } catch {}
+            return (
+              <a
+                key={idx}
+                href={cite.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-2.5 p-2.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:border-blue-200 transition-all group"
+              >
+                {/* Favicon */}
+                <div className="flex-shrink-0 mt-0.5">
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=16`}
+                    alt=""
+                    className="w-4 h-4 rounded"
+                    onError={e => { e.target.style.display = 'none'; }}
+                  />
+                </div>
 
-              <div className="flex-1 min-w-0">
-                {/* Citation number + title */}
-                <div className="flex items-center gap-1.5">
-                  <span className="flex-shrink-0 w-4 h-4 bg-primary/10 text-primary-dark rounded text-[9px] font-bold flex items-center justify-center">
-                    {idx + 1}
-                  </span>
-                  <p className="text-xs font-semibold text-gray-700 group-hover:text-primary-dark truncate transition-colors">
-                    {cite.title || cite.url}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="flex-shrink-0 w-4 h-4 bg-primary/10 text-primary-dark rounded text-[9px] font-bold flex items-center justify-center">
+                      {idx + 1}
+                    </span>
+                    <p className="text-xs font-semibold text-gray-700 group-hover:text-primary-dark truncate transition-colors">
+                      {cite.title || cite.url}
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-gray-400 truncate mt-0.5 pl-5">
+                    {hostname || cite.url}
                   </p>
                 </div>
-                {/* URL display */}
-                <p className="text-[10px] text-gray-400 truncate mt-0.5 pl-5.5">
-                  {cite.url}
-                </p>
-              </div>
 
-              {/* External link icon */}
-              <svg
-                className="flex-shrink-0 w-3 h-3 text-gray-400 group-hover:text-primary mt-1 transition-colors"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-          ))}
+                {/* External link icon */}
+                <svg
+                  className="flex-shrink-0 w-3 h-3 text-gray-400 group-hover:text-primary mt-1 transition-colors"
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            );
+          })}
         </div>
       )}
     </div>
@@ -137,7 +140,7 @@ const LANG_BADGE_COLOR = {
 
 function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
   const [copied, setCopied] = useState(false);
-  const lines = code.split('\n').length;
+  const lines   = code.split('\n').length;
   const langKey = (lang || '').toLowerCase();
   const isArtifactable = ARTIFACT_LANGS.includes(langKey) && lines >= MIN_LINES_ARTIFACT;
   const badgeColor = LANG_BADGE_COLOR[langKey] || 'bg-gray-500';
@@ -207,7 +210,6 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
     return () => clearTimeout(t);
   }, []);
 
-  // Parse citations out of the message content (assistant messages only)
   const { mainContent, citations } = isUser
     ? { mainContent: message.content || '', citations: [] }
     : parseCitations(message.content || '');
@@ -324,7 +326,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
             </ReactMarkdown>
           </div>
 
-          {/* ── Citations panel (only for assistant messages with web search) ── */}
+          {/* Citations panel */}
           {!isUser && citations.length > 0 && (
             <CitationsPanel citations={citations} />
           )}

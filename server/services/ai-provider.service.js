@@ -7,21 +7,21 @@ export const AI_PROVIDERS = {
     label:  'OpenAI',
     icon:   '🟢',
     models: [
-      { id: 'gpt-5.2',               label: 'GPT-5.2',               context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5.1',               label: 'GPT-5.1',               context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5',                 label: 'GPT-5',                 context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-5-pro',             label: 'GPT-5 Pro',             context: 1000000, tier: 'flagship'  },
-      { id: 'gpt-4o',                label: 'GPT-4o',                context: 128000,  tier: 'stable'    },
-      { id: 'gpt-4.1',               label: 'GPT-4.1',               context: 1000000, tier: 'stable'    },
-      { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          context: 1000000, tier: 'efficient' },
-      { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          context: 1000000, tier: 'efficient' },
-      { id: 'o3',                    label: 'o3 (Deep Reasoning)',    context: 200000,  tier: 'reasoning' },
-      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',    context: 200000,  tier: 'reasoning' },
-      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',    context: 200000,  tier: 'reasoning' },
-      { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo',           context: 128000,  tier: 'legacy'    },
-      { id: 'gpt-4',                 label: 'GPT-4',                 context: 8192,    tier: 'legacy'    },
-      { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo',         context: 16385,   tier: 'legacy'    },
-      { id: 'gpt-3.5-turbo-16k',     label: 'GPT-3.5 Turbo 16K',     context: 16385,   tier: 'legacy'    },
+      { id: 'gpt-5.2',               label: 'GPT-5.2',               context: 1000000, tier: 'flagship',  webSearch: true  },
+      { id: 'gpt-5.1',               label: 'GPT-5.1',               context: 1000000, tier: 'flagship',  webSearch: true  },
+      { id: 'gpt-5',                 label: 'GPT-5',                 context: 1000000, tier: 'flagship',  webSearch: true  },
+      { id: 'gpt-5-pro',             label: 'GPT-5 Pro',             context: 1000000, tier: 'flagship',  webSearch: true  },
+      { id: 'gpt-4o',                label: 'GPT-4o',                context: 128000,  tier: 'stable',    webSearch: true  },
+      { id: 'gpt-4.1',               label: 'GPT-4.1',               context: 1000000, tier: 'stable',    webSearch: true  },
+      { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          context: 1000000, tier: 'efficient', webSearch: true  },
+      { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          context: 1000000, tier: 'efficient', webSearch: true  },
+      { id: 'o3',                    label: 'o3 (Deep Reasoning)',    context: 200000,  tier: 'reasoning', webSearch: false },
+      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',    context: 200000,  tier: 'reasoning', webSearch: false },
+      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',    context: 200000,  tier: 'reasoning', webSearch: false },
+      { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo',           context: 128000,  tier: 'legacy',    webSearch: false },
+      { id: 'gpt-4',                 label: 'GPT-4',                 context: 8192,    tier: 'legacy',    webSearch: false },
+      { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo',         context: 16385,   tier: 'legacy',    webSearch: false },
+      { id: 'gpt-3.5-turbo-16k',     label: 'GPT-3.5 Turbo 16K',     context: 16385,   tier: 'legacy',    webSearch: false },
     ],
     capabilities: ['webSearch', 'codeInterpreter', 'imageGeneration', 'canvas', 'fileSearch'],
     envKey: 'OPENAI_API_KEY',
@@ -29,10 +29,12 @@ export const AI_PROVIDERS = {
   anthropic: {
     label:  'Anthropic (Claude)',
     icon:   '🟠',
+    // NOTE: Claude models do NOT support Web Search capability.
+    // Citations will be provided via the fallback Bing/SerpAPI system.
     models: [
-      { id: 'claude-opus-4-6',            label: 'Claude Opus 4.6',  context: 200000, tier: 'flagship'  },
-      { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6',context: 200000, tier: 'flagship'  },
-      { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku 4.5', context: 200000, tier: 'efficient' },
+      { id: 'claude-opus-4-6',            label: 'Claude Opus 4.6',  context: 200000, tier: 'flagship',  webSearch: false },
+      { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6',context: 200000, tier: 'flagship',  webSearch: false },
+      { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku 4.5', context: 200000, tier: 'efficient', webSearch: false },
     ],
     capabilities: ['fileSearch'],
     envKey: 'ANTHROPIC_API_KEY',
@@ -40,12 +42,14 @@ export const AI_PROVIDERS = {
   google: {
     label:  'Google Gemini',
     icon:   '🔵',
+    // NOTE: Gemini models do NOT support the Web Search capability toggle.
+    // Citations will be provided via the fallback Bing/SerpAPI system.
     models: [
-      { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   context: 1000000, tier: 'flagship'  },
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', context: 1000000, tier: 'efficient' },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', context: 1000000, tier: 'stable'    },
-      { id: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro',   context: 1000000, tier: 'stable'    },
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', context: 1000000, tier: 'stable'    },
+      { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   context: 1000000, tier: 'flagship',  webSearch: false },
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', context: 1000000, tier: 'efficient', webSearch: false },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', context: 1000000, tier: 'stable',    webSearch: false },
+      { id: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro',   context: 1000000, tier: 'stable',    webSearch: false },
+      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', context: 1000000, tier: 'stable',    webSearch: false },
     ],
     capabilities: [],
     envKey: 'GOOGLE_API_KEY',
@@ -62,25 +66,27 @@ export const AI_PROVIDERS = {
 export const BOT_CAPABILITIES = {
   webSearch: {
     label:       '🌐 Web Search',
-    description: 'Bot dapat menelusuri internet untuk info terkini',
+    description: 'Bot can browse the internet for up-to-date information',
+    // ⚠️ Web Search (Responses API) is only natively supported by OpenAI GPT models (not o-series, not Claude, not Gemini).
+    // For non-OpenAI providers, citations are provided via the Bing/SerpAPI fallback in ai-core.service.js.
     providers:   ['openai'],
     tool:        { type: 'web_search_preview' },
   },
   codeInterpreter: {
     label:       '💻 Code Interpreter',
-    description: 'Bot dapat menulis dan menjalankan kode Python untuk analisis data',
+    description: 'Bot can write and execute Python code for data analysis',
     providers:   ['openai'],
     tool:        { type: 'code_interpreter' },
   },
   imageGeneration: {
     label:       '🎨 Image Generation',
-    description: 'Bot dapat membuat gambar menggunakan DALL-E',
+    description: 'Bot can create images using DALL-E',
     providers:   ['openai'],
     requiresKey: 'OPENAI_API_KEY',
   },
   fileSearch: {
     label:       '📂 File Search (RAG)',
-    description: 'Bot dapat mencari melalui file yang di-upload (vector search)',
+    description: 'Bot can search through uploaded files using vector search',
     providers:   ['openai', 'anthropic'],
     tool:        { type: 'file_search' },
   },
@@ -96,10 +102,10 @@ function isChatModel(model) {
 }
 
 function getModelParams(model, temp, maxTok) {
-  const isReasoningModel = /^o\d/.test(model);
-  const isGpt5Plus       = /^gpt-5/.test(model);
+  const isReasoningModel    = /^o\d/.test(model);
+  const isGpt5Plus          = /^gpt-5/.test(model);
   const useCompletionTokens = isReasoningModel || isGpt5Plus;
-  const omitTemperature = isReasoningModel || isGpt5Plus;
+  const omitTemperature     = isReasoningModel || isGpt5Plus;
 
   const params = {};
   if (useCompletionTokens) { params.max_completion_tokens = maxTok; }
@@ -108,13 +114,24 @@ function getModelParams(model, temp, maxTok) {
   return params;
 }
 
-// ── Citation extraction helpers ───────────────────────────────
-/**
- * Extract URL citations from OpenAI web search annotations.
- * OpenAI returns citations as `annotations` in message content parts.
- * Format:
- *   { type: "url_citation", url_citation: { url, title, start_index, end_index } }
- */
+// ─────────────────────────────────────────────────────────────
+// CITATIONS BLOCK
+// Format used by ChatMessage.jsx to render the clickable sources panel.
+// MUST use these exact delimiters — the frontend splits on them.
+// ─────────────────────────────────────────────────────────────
+
+function buildCitationsBlock(citations) {
+  if (!citations || citations.length === 0) return '';
+  // Payload is a JSON array of { url, title } objects
+  const payload = citations.map(c => ({ url: c.url, title: c.title || c.url }));
+  return `\n\n<!--CITATIONS_START-->\n${JSON.stringify(payload)}\n<!--CITATIONS_END-->`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXTRACT CITATIONS FROM OPENAI ANNOTATIONS
+// OpenAI Responses API returns url_citation annotations
+// ─────────────────────────────────────────────────────────────
+
 function extractCitationsFromAnnotations(message) {
   const citations = [];
   const seenUrls  = new Set();
@@ -151,22 +168,6 @@ function extractCitationsFromAnnotations(message) {
   return citations;
 }
 
-/**
- * Build a citations markdown block appended to the AI response.
- * Format mimics ChatGPT's source list — clickable links.
- * The frontend ChatMessage component renders these as a special
- * collapsible "Sources" section.
- *
- * We use a special delimiter so the frontend can split and render it nicely:
- *   <!--CITATIONS_START-->
- *   [{"url":"...","title":"..."}]
- *   <!--CITATIONS_END-->
- */
-function buildCitationsBlock(citations) {
-  if (!citations || citations.length === 0) return '';
-  return `\n\n<!--CITATIONS_START-->\n${JSON.stringify(citations)}\n<!--CITATIONS_END-->`;
-}
-
 // ─────────────────────────────────────────────────────────────
 // MAIN SERVICE
 // ─────────────────────────────────────────────────────────────
@@ -179,11 +180,6 @@ class AIProviderService {
     return '';
   }
 
-  buildTools(providerConfig, capabilities = {}) {
-    // Disabled as per original — provider only supports 'function' type
-    return undefined;
-  }
-
   async generateCompletion({ providerConfig = {}, systemPrompt, messages, userContent, capabilities = {} }) {
     const provider = providerConfig?.provider || 'openai';
     const model    = providerConfig?.model    || 'gpt-4o';
@@ -194,8 +190,8 @@ class AIProviderService {
 
     if (!apiKey && provider !== 'custom') {
       throw new Error(
-        `API Key untuk provider "${provider}" tidak ditemukan. ` +
-        `Tambahkan di konfigurasi bot atau di .env (${AI_PROVIDERS[provider]?.envKey}).`
+        `API Key for provider "${provider}" not found. ` +
+        `Add it in the bot configuration or in .env (${AI_PROVIDERS[provider]?.envKey}).`
       );
     }
 
@@ -209,7 +205,7 @@ class AIProviderService {
       case 'custom':
         return this._callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint });
       default:
-        throw new Error(`Provider tidak dikenal: ${provider}`);
+        throw new Error(`Unknown provider: ${provider}`);
     }
   }
 
@@ -217,8 +213,8 @@ class AIProviderService {
   async _callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities = {} }) {
     if (!isChatModel(model)) {
       throw new Error(
-        `Model "${model}" tidak didukung untuk chat (bukan chat model). ` +
-        `Ubah model di konfigurasi bot.`
+        `Model "${model}" is not supported for chat. ` +
+        `Please change the model in the bot configuration.`
       );
     }
 
@@ -228,66 +224,72 @@ class AIProviderService {
 
     const tokenParams = getModelParams(model, temp, maxTok);
 
-    // ── Web Search via Responses API (when capability is on) ──
-    // The Responses API supports web_search_preview natively and returns
-    // url_citation annotations with clickable sources.
+    // ── Web Search via Responses API ──────────────────────────
+    // Supported on GPT-4o, GPT-4.1, GPT-5 series.
+    // NOT supported on o-series reasoning models.
+    // The Responses API returns url_citation annotations with real, clickable URLs.
     if (capabilities?.webSearch) {
-      try {
-        const inputMessages = [
-          { role: 'system', content: systemPrompt },
-          ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
-          { role: 'user', content: typeof userContent === 'string' ? userContent : JSON.stringify(userContent) },
-        ];
+      const isReasoningModel = /^o\d/.test(model);
+      if (isReasoningModel) {
+        console.warn(`[OpenAI] Web search not supported for reasoning model "${model}" — skipping.`);
+      } else {
+        try {
+          const inputMessages = [
+            { role: 'system', content: systemPrompt },
+            ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: typeof userContent === 'string' ? userContent : JSON.stringify(userContent) },
+          ];
 
-        const responsesBody = {
-          model,
-          input: inputMessages,
-          tools: [{ type: 'web_search_preview' }],
-          ...tokenParams,
-        };
+          const responsesBody = {
+            model,
+            input: inputMessages,
+            tools: [{ type: 'web_search_preview' }],
+            ...tokenParams,
+          };
 
-        const response = await openai.responses.create(responsesBody);
+          const response = await openai.responses.create(responsesBody);
 
-        // Extract text from output array
-        let text = '';
-        const allAnnotations = [];
+          // Extract text and annotations from output
+          let text = '';
+          const allAnnotations = [];
 
-        for (const output of (response.output || [])) {
-          if (output.type === 'message') {
-            for (const part of (output.content || [])) {
-              if (part.type === 'output_text' || part.type === 'text') {
-                text += (part.text || part.output_text || '');
-                // Collect annotations from this content part
-                for (const ann of (part.annotations || [])) {
-                  if (ann.type === 'url_citation' && ann.url_citation?.url) {
-                    allAnnotations.push(ann);
+          for (const output of (response.output || [])) {
+            if (output.type === 'message') {
+              for (const part of (output.content || [])) {
+                if (part.type === 'output_text' || part.type === 'text') {
+                  text += (part.text || part.output_text || '');
+                  for (const ann of (part.annotations || [])) {
+                    if (ann.type === 'url_citation' && ann.url_citation?.url) {
+                      allAnnotations.push(ann);
+                    }
                   }
                 }
               }
             }
           }
-        }
 
-        // Build citations from collected annotations
-        const seenUrls  = new Set();
-        const citations = [];
-        for (const ann of allAnnotations) {
-          const { url, title } = ann.url_citation;
-          if (!seenUrls.has(url)) {
-            seenUrls.add(url);
-            citations.push({ url, title: title || url });
+          // Build deduplicated citations
+          const seenUrls  = new Set();
+          const citations = [];
+          for (const ann of allAnnotations) {
+            const { url, title } = ann.url_citation;
+            if (!seenUrls.has(url)) {
+              seenUrls.add(url);
+              citations.push({ url, title: title || url });
+            }
           }
+
+          // Append citations block using the standard delimiter
+          if (citations.length > 0) {
+            text += buildCitationsBlock(citations);
+          }
+
+          return { text, usage: response.usage, citations };
+
+        } catch (responsesErr) {
+          console.warn('[OpenAI] Responses API web search failed, falling back to chat completions:', responsesErr.message);
+          // Fall through to standard chat completions below
         }
-
-        if (citations.length > 0) {
-          text += buildCitationsBlock(citations);
-        }
-
-        return { text, usage: response.usage, citations };
-
-      } catch (responsesErr) {
-        // Responses API might not be available — fall through to chat completions
-        console.warn('[OpenAI] Responses API web search failed, falling back to chat completions:', responsesErr.message);
       }
     }
 
@@ -303,7 +305,7 @@ class AIProviderService {
     };
 
     const completion = await openai.chat.completions.create(body);
-    const choice = completion.choices[0];
+    const choice     = completion.choices[0];
 
     if (!choice?.message?.content) {
       console.warn(`[AI DEBUG] model=${model} finish_reason=${choice?.finish_reason}`);
@@ -341,7 +343,7 @@ class AIProviderService {
       text = followUp.choices[0]?.message?.content || '';
     }
 
-    // Check for annotations in chat completions response (newer models)
+    // Check for annotations in newer chat completions responses
     const completionCitations = extractCitationsFromAnnotations(choice?.message);
     if (completionCitations.length > 0) {
       text += buildCitationsBlock(completionCitations);
@@ -351,6 +353,8 @@ class AIProviderService {
   }
 
   // ── Anthropic Claude ───────────────────────────────────────
+  // NOTE: Web Search capability is NOT supported natively.
+  // Citations will be appended by the Bing/SerpAPI fallback in ai-core.service.js.
   async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent }) {
     const userText = Array.isArray(userContent)
       ? userContent.map(b => b.text || '').join('\n')
@@ -382,6 +386,8 @@ class AIProviderService {
   }
 
   // ── Google Gemini ──────────────────────────────────────────
+  // NOTE: Web Search capability is NOT supported natively.
+  // Citations will be appended by the Bing/SerpAPI fallback in ai-core.service.js.
   async _callGemini({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent }) {
     const userText = Array.isArray(userContent)
       ? userContent.map(b => b.text || '').join('\n')
@@ -410,7 +416,7 @@ class AIProviderService {
 
   // ── Custom / OpenAI-compatible ─────────────────────────────
   async _callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint }) {
-    if (!endpoint) throw new Error('Custom provider membutuhkan endpoint URL');
+    if (!endpoint) throw new Error('Custom provider requires an endpoint URL');
     const userText = Array.isArray(userContent)
       ? userContent.map(b => b.text || '').join('\n')
       : String(userContent);

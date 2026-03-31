@@ -33,7 +33,6 @@ async function validateUrl(url, timeoutMs = 4000) {
         { method: 'HEAD', hostname: parsed.hostname, path: parsed.pathname + parsed.search, timeout: timeoutMs,
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GYSBot/1.0)' } },
         (res) => {
-          // 200-399 = valid; 403 = exists but blocked (still valid domain)
           resolve(res.statusCode < 400 || res.statusCode === 403);
         }
       );
@@ -59,7 +58,7 @@ async function searchWeb(query, maxResults = 5) {
       const options = {
         method: 'GET',
         hostname: 'api.bing.microsoft.com',
-        path: `/v7.0/search?q=${encodedQuery}&count=${maxResults}&mkt=id-ID`,
+        path: `/v7.0/search?q=${encodedQuery}&count=${maxResults}&mkt=en-US`,
         headers: { 'Ocp-Apim-Subscription-Key': process.env.BING_SEARCH_API_KEY },
         timeout: 5000,
       };
@@ -95,7 +94,7 @@ async function searchWeb(query, maxResults = 5) {
       const options = {
         method: 'GET',
         hostname: 'serpapi.com',
-        path: `/search.json?q=${encodedQuery}&num=${maxResults}&api_key=${process.env.SERPAPI_KEY}&hl=id`,
+        path: `/search.json?q=${encodedQuery}&num=${maxResults}&api_key=${process.env.SERPAPI_KEY}&hl=en`,
         timeout: 5000,
       };
       const data = await new Promise((resolve, reject) => {
@@ -128,65 +127,40 @@ async function searchWeb(query, maxResults = 5) {
 
 // ─────────────────────────────────────────────────────────────
 // BUILD VERIFIED CITATIONS
-// Combines AI-generated sources with real web search results,
-// validates URLs, returns only reachable sources.
 // ─────────────────────────────────────────────────────────────
 
-async function buildVerifiedCitations({ message, aiResponse, contextSources, language = 'id' }) {
+async function buildVerifiedCitations({ message, aiResponse, contextSources }) {
   const citations = [];
 
-  // ── 1. Internal sources (no URL needed — always valid) ────
+  // ── 1. Internal sources ────────────────────────────────────
   for (const src of contextSources) {
     if (src.startsWith('smartsheet:')) {
       const sheetName = src.replace('smartsheet:', '');
       citations.push({
-        type:        'smartsheet',
-        title:       sheetName,
-        url:         null,
-        snippet:     language === 'en'
-          ? `Real-time data from Smartsheet: ${sheetName}`
-          : `Data real-time dari Smartsheet: ${sheetName}`,
-        verified:    true,
-        isInternal:  true,
+        title:  sheetName,
+        url:    null,
+        isInternal: true,
       });
     } else if (src.startsWith('knowledge:')) {
       const files = src.replace('knowledge:', '').split(',');
       for (const f of files) {
         citations.push({
-          type:       'internal',
           title:      f.trim(),
           url:        null,
-          snippet:    language === 'en'
-            ? `Internal document: ${f.trim()}`
-            : `Dokumen internal: ${f.trim()}`,
-          verified:   true,
           isInternal: true,
         });
       }
     } else if (src === 'internal_document') {
-      citations.push({
-        type: 'internal', title: language === 'en' ? 'Internal Document' : 'Dokumen Internal',
-        url: null, snippet: language === 'en' ? 'From internal knowledge base' : 'Dari knowledge base internal',
-        verified: true, isInternal: true,
-      });
+      citations.push({ title: 'Internal Document', url: null, isInternal: true });
     } else if (src === 'azure_search') {
-      citations.push({
-        type: 'azure', title: 'Azure AI Search',
-        url: null, snippet: language === 'en' ? 'From Azure AI Search index' : 'Dari indeks Azure AI Search',
-        verified: true, isInternal: true,
-      });
+      citations.push({ title: 'Azure AI Search', url: null, isInternal: true });
     }
   }
 
   // ── 2. Web search for real, validated external sources ────
-  // Build a focused search query from the message topic
-  const searchQuery = message.length > 120
-    ? message.substring(0, 120)
-    : message;
+  const searchQuery = message.length > 120 ? message.substring(0, 120) : message;
+  const webResults  = await searchWeb(searchQuery, 8);
 
-  const webResults = await searchWeb(searchQuery, 8);
-
-  // Validate URLs in parallel (max 8 concurrent checks)
   const validationResults = await Promise.allSettled(
     webResults.map(r => validateUrl(r.url))
   );
@@ -195,11 +169,8 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources, lan
     const isValid = validationResults[i].status === 'fulfilled' && validationResults[i].value;
     if (isValid) {
       citations.push({
-        type:       detectSourceType(webResults[i].url, webResults[i].title),
         title:      webResults[i].title,
         url:        webResults[i].url,
-        snippet:    webResults[i].snippet,
-        verified:   true,
         isInternal: false,
       });
     }
@@ -216,13 +187,10 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources, lan
     }
   }
 
-  // ── 4. Cap at reasonable number (context-aware) ────────────
-  // More citations for complex analytical topics, fewer for simple ones
-  const wordCount = message.split(/\s+/).length;
+  // ── 4. Cap citations ──────────────────────────────────────
+  const wordCount    = message.split(/\s+/).length;
   const maxCitations = wordCount > 30 ? 6 : wordCount > 15 ? 4 : 3;
-
-  // Prioritize: internal first, then web
-  const sorted = [
+  const sorted       = [
     ...deduped.filter(c => c.isInternal),
     ...deduped.filter(c => !c.isInternal),
   ];
@@ -230,43 +198,22 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources, lan
   return sorted.slice(0, maxCitations);
 }
 
-function detectSourceType(url = '', title = '') {
-  const u = url.toLowerCase();
-  const t = title.toLowerCase();
-  if (u.includes('wikipedia'))           return 'wikipedia';
-  if (u.includes('github.com'))          return 'github';
-  if (u.includes('bi.go.id') || u.includes('bps.go.id') || u.includes('.go.id')) return 'government';
-  if (u.includes('reuters') || u.includes('bloomberg') || u.includes('cnbc') ||
-      u.includes('bisnis.com') || u.includes('kontan.co.id') || u.includes('tempo.co')) return 'news';
-  if (u.includes('arxiv') || u.includes('scholar') || u.includes('researchgate')) return 'academic';
-  return 'web';
-}
-
 // ─────────────────────────────────────────────────────────────
-// FORMAT CITATIONS INTO MARKDOWN BLOCK
-// (for embedding in AI response)
+// FORMAT CITATIONS BLOCK
+// Uses the <!--CITATIONS_START/END--> delimiter that ChatMessage.jsx
+// expects — same format as ai-provider.service.js buildCitationsBlock()
 // ─────────────────────────────────────────────────────────────
 
-function formatCitationsBlock(citations, language = 'id') {
+function formatCitationsBlock(citations) {
   if (!citations || citations.length === 0) return '';
 
-  const header = language === 'en' ? '📚 **Sources:**' : '📚 **Sumber:**';
-  const lines  = citations.map(c => {
-    const icon = {
-      smartsheet: '📊', internal: '📂', azure: '🔍',
-      wikipedia: '📖', github: '💻', government: '🏛️',
-      news: '📰', academic: '🎓', web: '🌐',
-    }[c.type] || '📌';
+  // Only include citations that have a URL (external web sources).
+  // Internal file sources are mentioned inline in the AI response already.
+  const webCitations = citations.filter(c => c.url);
+  if (webCitations.length === 0) return '';
 
-    if (c.url) {
-      return `- ${icon} [${c.title}](${c.url})${c.snippet ? ` — ${c.snippet.substring(0, 120)}` : ''}`;
-    } else {
-      const prefix = language === 'en' ? 'Internal' : 'Internal';
-      return `- ${icon} **${prefix}:** ${c.title}${c.snippet ? ` — ${c.snippet}` : ''}`;
-    }
-  });
-
-  return `\n\n---\n${header}\n${lines.join('\n')}`;
+  const payload = webCitations.map(c => ({ url: c.url, title: c.title || c.url }));
+  return `\n\n<!--CITATIONS_START-->\n${JSON.stringify(payload)}\n<!--CITATIONS_END-->`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -279,39 +226,65 @@ function detectLanguage(message = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CITATION SYSTEM PROMPT (dynamic, language-aware)
+// DETECT CASUAL MESSAGES
 // ─────────────────────────────────────────────────────────────
 
-function buildCitationInstruction(language = 'id') {
-  if (language === 'en') {
-    return `
-MANDATORY CITATION RULES:
-After your answer, citations will be automatically appended from verified web sources.
-You do NOT need to add a sources section — the system will inject real, validated URLs automatically.
+function isCasualMessage(message = '') {
+  const t = (message || '').trim().toLowerCase();
 
-However, if you used internal documents or Smartsheet data in your answer, mention it inline like:
-  "According to [filename]..." or "Based on Smartsheet data..."
+  const casualPatterns = [
+    /^(halo|hai|hi+|hello|hey|selamat pagi|selamat siang|selamat malam|salam)\s*[!.]*$/i,
+    /^(terima kasih|makasih|thanks+|thank you|thx)\s*[!.]*$/i,
+    /^(ok|oke|iya|ya|yep|yup|nope|tidak|no|yes)\s*[!.]*$/i,
+    /^(bagus|baik|mantap|keren|hebat|luar biasa|great|good|nice|cool|wow|amazing)\s*[!.]*$/i,
+    /^\s*[😀😊🙏👍❤️🔥👋]+\s*$/,
+  ];
 
-IMPORTANT:
-- Do NOT fabricate URLs or source links
-- Do NOT add a "Sources:" section yourself
-- The citation system will handle external sources with real, validated links
-`;
+  const continuationPatterns = [
+    /\b(next|lanjut|continue|more|berikut|selanjutnya|insight|terus|go on|tell me|give me|show me|what else)\b/i,
+  ];
+
+  if (continuationPatterns.some(p => p.test(t))) return false;
+  if (casualPatterns.some(p => p.test(t))) return true;
+  if (t.replace(/[^a-z]/gi, '').length <= 4) return true;
+
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────
+// SKIP CITATION
+// ─────────────────────────────────────────────────────────────
+
+function shouldSkipCitation(message = '', aiResponse = '') {
+  if (isCasualMessage(message)) return true;
+  const wordCount = aiResponse.trim().split(/\s+/).length;
+  if (wordCount < 120) return true;
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXTRACT SEARCH TOPIC
+// ─────────────────────────────────────────────────────────────
+
+function extractSearchTopic(message = '', history = []) {
+  const t = message.trim();
+  if (t.split(/\s+/).length > 8) {
+    return t.length > 180 ? t.substring(0, 180) : t;
   }
 
-  return `
-INSTRUKSI SITASI WAJIB:
-Setelah jawaban kamu, sistem akan otomatis menambahkan sumber-sumber terverifikasi dari web.
-Kamu TIDAK perlu menambahkan bagian sumber sendiri — sistem akan inject URL yang sudah divalidasi secara real-time.
+  const recentHistory = [...history].reverse();
+  for (const h of recentHistory) {
+    const content = h.content || h.text || '';
+    if (content.length > 80) {
+      const clean = content
+        .replace(/\n+---\s*\n.{0,10}(?:Sources).{0,10}\n[\s\S]*$/im, '')
+        .replace(/<!--CITATIONS_START-->[\s\S]*?<!--CITATIONS_END-->/g, '')
+        .trim();
+      return clean.substring(0, 180);
+    }
+  }
 
-Namun, jika kamu menggunakan dokumen internal atau data Smartsheet dalam jawaban kamu, sebutkan secara inline seperti:
-  "Berdasarkan [nama file]..." atau "Menurut data Smartsheet..."
-
-PENTING:
-- JANGAN mengarang URL atau link sumber
-- JANGAN tambahkan bagian "Sumber:" sendiri
-- Sistem citation akan menangani sumber eksternal dengan link nyata dan tervalidasi
-`;
+  return t;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -324,7 +297,7 @@ Your job is to produce polished, visually rich slide content — like Gamma.app 
 ═══════════════════════════════════════════════════════
 RULE #1 — FOLLOW USER INSTRUCTIONS EXACTLY
 ═══════════════════════════════════════════════════════
-- If user specifies slides explicitly (e.g. "slide 1: visi, slide 2: produk"), follow that structure EXACTLY.
+- If user specifies slides explicitly (e.g. "slide 1: vision, slide 2: products"), follow that structure EXACTLY.
 - If user specifies a number of slides, produce exactly that count.
 - If user only gives a title/topic, generate a logical 7–9 slide narrative arc.
 - Match the user's language 100% (Indonesian → Indonesian, English → English).
@@ -341,46 +314,43 @@ You MUST select the most impactful layout for each slide. Apply this decision tr
     → LAYOUT: SECTION
 
   Does it present 2–4 strategic pillars, features, or themes?
-    → LAYOUT: GRID  (icon cards — most visual impact)
+    → LAYOUT: GRID
 
   Does it show KPIs, metrics, percentages, or big numbers?
-    → LAYOUT: STATS  (large callout cards with icons)
+    → LAYOUT: STATS
 
-  Does it describe a TIMELINE, ROADMAP, PHASES, SCHEDULE, or WEEK-BY-WEEK plan?
-    → LAYOUT: TIMELINE  ← ALWAYS use this for anything time-based
-      Never use TABLE for timelines. Never use CONTENT for timelines.
-      A "timeline slide" or "roadmap" or "implementation plan" MUST become TIMELINE.
+  Does it describe a TIMELINE, ROADMAP, PHASES, or SCHEDULE?
+    → LAYOUT: TIMELINE
 
-  Does it compare two things (before/after, pros/cons, option A vs B)?
+  Does it compare two things?
     → LAYOUT: TWO_COLUMN
 
-  Does it show a data TABLE, matrix, or multi-column structured list?
-    → LAYOUT: TABLE  (3+ columns of data)
+  Does it show a data TABLE or matrix?
+    → LAYOUT: TABLE
 
-  Does it show trend, growth, or comparison data suitable for a bar/line chart?
+  Does it show trend or comparison data for a chart?
     → LAYOUT: CHART
 
-  Is it a powerful quote, mission/vision statement?
+  Is it a powerful quote or mission/vision statement?
     → LAYOUT: QUOTE
 
   Is it the final/closing slide?
     → LAYOUT: CLOSING
 
   Is it general narrative content?
-    → LAYOUT: CONTENT  (fallback — use only when nothing else fits)
+    → LAYOUT: CONTENT
 
 ═══════════════════════════════════════════════════════
-RULE #3 — RICH CONTENT STANDARDS (NO LAZY CONTENT)
+RULE #3 — RICH CONTENT STANDARDS
 ═══════════════════════════════════════════════════════
-- GRID items: emoji icon + short title (3–5 words) + 2–3 sentence description (20+ words)
+- GRID items: emoji icon + short title (3–5 words) + 2–3 sentence description
 - STATS: emoji icon + bold value + label + context subtitle
-- TIMELINE: 3–6 steps, each with time label + title + 1–2 sentence description
-- TABLE: 3–5 columns, minimum 3 data rows, each cell has real content
-- CONTENT bullets: minimum 4 bullets, each 10+ words. No 2-word bullets ever.
-- CHART: insightText (2 sentences explaining business impact) + real numeric chartData
+- TIMELINE: 3–6 steps, each with time label + title + description
+- TABLE: 3–5 columns, minimum 3 data rows
+- CONTENT bullets: minimum 4 bullets, each 10+ words
 
 ═══════════════════════════════════════════════════════
-OUTPUT FORMAT — exact syntax required
+OUTPUT FORMAT
 ═══════════════════════════════════════════════════════
 
 # [Presentation Title]
@@ -399,10 +369,7 @@ items:
   text: Accelerating production cycles by 25% through lean methodology and real-time IoT monitoring across all lines.
 - icon: 🛡️
   title: Quality Assurance
-  text: Zero-defect targets enforced by AI-powered visual inspection, reducing rework costs by Rp 1.2B annually.
-- icon: 🌱
-  title: Sustainability
-  text: Carbon footprint reduced 18% through energy optimization aligned with Yamato Steel Group global standards.
+  text: Zero-defect targets enforced by AI-powered visual inspection, reducing rework costs significantly.
 
 ## [Key Performance Indicators]
 LAYOUT: STATS
@@ -411,14 +378,6 @@ stats:
   value: 94%
   label: Production Uptime
   sub: Target FY 2025
-- icon: 💰
-  value: Rp 2.8B
-  label: Cost Reduction
-  sub: Annual Projection
-- icon: 🏆
-  value: 12K
-  label: Tons/Month
-  sub: Average Output
 
 ## [Implementation Roadmap]
 LAYOUT: TIMELINE
@@ -426,110 +385,56 @@ steps:
 - time: Week 1–2
   title: Discovery & Planning
   text: Stakeholder interviews, current state mapping, gap analysis and project charter sign-off
-- time: Week 3–4
-  title: Design & Architecture
-  text: Solution blueprint, vendor evaluation, resource allocation and budget finalization
-- time: Month 2
-  title: Development Sprint 1
-  text: Core module build, API integrations, and internal UAT preparation
-- time: Month 3
-  title: Pilot & Validation
-  text: Controlled rollout to Line A, performance benchmarking, user acceptance testing
-- time: Month 4
-  title: Full Deployment
-  text: Company-wide rollout, staff training, hypercare support and go-live sign-off
 
 ## [Production Trend Analysis]
 LAYOUT: CHART
-insightText: Production volume grew 23% over the year, with Q3 peak driven by export demand. Q4 requires 12% acceleration to meet annual target.
+insightText: Production volume grew 23% over the year, with Q3 peak driven by export demand.
 chartType: bar
-isStacked: false
-showDataLabels: true
 chartData:
 - series: Actual (Tons)
   labels: Q1, Q2, Q3, Q4
   values: 11200, 12400, 13800, 14500
-- series: Target (Tons)
-  labels: Q1, Q2, Q3, Q4
-  values: 12000, 13000, 13500, 15000
 
 ## [Before vs After]
 LAYOUT: TWO_COLUMN
 leftTitle: ❌ Current State
 left:
-- Manual data entry causes 3-hour daily delays in reporting
-- No real-time visibility into production floor status
-- Siloed systems prevent cross-department collaboration
+- Manual data entry causes 3-hour daily delays
 rightTitle: ✅ Future State
 right:
 - Automated sync reduces reporting delays to under 15 minutes
-- Live dashboard accessible from any device, anywhere
-- Unified platform enables real-time cross-team coordination
-
-## [Project Cost Breakdown]
-LAYOUT: TABLE
-tableHeaders: ["Work Package", "Owner", "Budget (Rp)", "Timeline", "Status"]
-tableRows:
-- ["Infrastructure Setup", "IT Dept", "450,000,000", "Month 1", "✅ Approved"]
-- ["Software Licensing", "Procurement", "320,000,000", "Month 1–2", "🔄 In Progress"]
-- ["Training & Change Mgmt", "HR Dept", "180,000,000", "Month 3–4", "⏳ Pending"]
 
 ## [Closing]
 LAYOUT: CLOSING
-subtitle: Terima kasih atas perhatiannya
+subtitle: Thank you for your attention
 contact: info@gyssteel.com
 `;
 
 const PPT_JSON_SYSTEM_PROMPT = `You are a strict JSON converter for a PowerPoint generator.
 Return ONLY valid JSON. No markdown fences. No explanation. No trailing commas.
 
-COMPLETE SCHEMA — one object per layout type:
+COMPLETE SCHEMA:
 
-TITLE:
-{ "layout": "TITLE", "title": "...", "subtitle": "...", "date": "...", "presenter": "..." }
-
-SECTION:
-{ "layout": "SECTION", "title": "...", "subtitle": "...", "sectionNumber": "01" }
-
-CONTENT:
-{ "layout": "CONTENT", "title": "...", "bullets": ["Full sentence bullet 1", "Full sentence bullet 2"] }
-
-GRID (visual icon cards):
-{ "layout": "GRID", "title": "...", "items": [{ "icon": "🚀", "title": "Short Title", "text": "Full description sentence here." }] }
-
-STATS (KPI number cards):
-{ "layout": "STATS", "title": "...", "stats": [{ "icon": "📈", "value": "94%", "label": "Metric Name", "sub": "Context description" }] }
-
-TIMELINE (roadmap / schedule / phases):
-{ "layout": "TIMELINE", "title": "...", "steps": [{ "time": "Week 1–2", "title": "Phase Title", "text": "What happens in this phase." }] }
-
-TWO_COLUMN (comparison / before-after):
-{ "layout": "TWO_COLUMN", "title": "...", "leftTitle": "...", "leftBullets": ["..."], "rightTitle": "...", "rightBullets": ["..."] }
-
-CHART (bar, line, pie):
-{ "layout": "CHART", "title": "...", "insightText": "Business insight sentence.", "chartConfig": { "type": "bar", "isStacked": false, "showDataLabels": true, "data": [{ "name": "Series Name", "labels": ["A","B","C"], "values": [10, 25, 40] }] } }
-
-TABLE (structured data):
-{ "layout": "TABLE", "title": "...", "tableHeaders": ["Col1","Col2","Col3"], "tableRows": [["val","val","val"],["val","val","val"]] }
-
-QUOTE (vision/mission/impact):
-{ "layout": "QUOTE", "quote": "Full quote text here.", "author": "Author Name" }
-
-CLOSING:
-{ "layout": "CLOSING", "title": "Thank You", "subtitle": "...", "contact": "..." }
+TITLE:    { "layout": "TITLE", "title": "...", "subtitle": "...", "date": "...", "presenter": "..." }
+SECTION:  { "layout": "SECTION", "title": "...", "subtitle": "...", "sectionNumber": "01" }
+CONTENT:  { "layout": "CONTENT", "title": "...", "bullets": ["..."] }
+GRID:     { "layout": "GRID", "title": "...", "items": [{ "icon": "🚀", "title": "...", "text": "..." }] }
+STATS:    { "layout": "STATS", "title": "...", "stats": [{ "icon": "📈", "value": "94%", "label": "...", "sub": "..." }] }
+TIMELINE: { "layout": "TIMELINE", "title": "...", "steps": [{ "time": "Week 1–2", "title": "...", "text": "..." }] }
+TWO_COLUMN: { "layout": "TWO_COLUMN", "title": "...", "leftTitle": "...", "leftBullets": ["..."], "rightTitle": "...", "rightBullets": ["..."] }
+CHART:    { "layout": "CHART", "title": "...", "insightText": "...", "chartConfig": { "type": "bar", "isStacked": false, "showDataLabels": true, "data": [{ "name": "Series", "labels": ["A","B"], "values": [10, 25] }] } }
+TABLE:    { "layout": "TABLE", "title": "...", "tableHeaders": ["Col1","Col2"], "tableRows": [["val","val"]] }
+QUOTE:    { "layout": "QUOTE", "quote": "...", "author": "..." }
+CLOSING:  { "layout": "CLOSING", "title": "Thank You", "subtitle": "...", "contact": "..." }
 
 CRITICAL RULES:
-1. Preserve ALL slides in the exact same order — do NOT drop, merge, or reorder slides.
-2. For TIMELINE: map "steps" array exactly. NEVER convert a TIMELINE to a TABLE.
-3. For GRID: map "items" array exactly with icon, title, text fields.
-4. For STATS: map "stats" array with icon, value, label, sub fields.
-5. Preserve original language (ID/EN) in ALL text fields.
-6. "title" must never be empty — use a short placeholder if blank.
-7. All string values must be properly escaped JSON strings.
-8. Numbers in chartConfig values must be actual numbers, not strings.
+1. Preserve ALL slides in exact order.
+2. For TIMELINE: map "steps" array exactly. NEVER convert to TABLE.
+3. Preserve original language in ALL text fields.
+4. "title" must never be empty.
+5. Numbers in chartConfig values must be actual numbers, not strings.
 
-Output format:
-{ "slides": [ { ...slide1 }, { ...slide2 }, ... ] }
+Output format: { "slides": [ { ...slide1 }, { ...slide2 }, ... ] }
 `;
 
 // ─────────────────────────────────────────────────────────────
@@ -537,13 +442,13 @@ Output format:
 // ─────────────────────────────────────────────────────────────
 
 const PPT_RESPONSE_MARKERS = [
+  '✅ **Presentation successfully',
   '✅ **Presentasi berhasil',
-  '✅ **GYS Presentation successfully',
   '⬇️ Download',
   '/api/files/',
   '.pptx',
-  '📑 **Jumlah Slide',
   '📑 **Total Slides',
+  '📑 **Jumlah Slide',
   'GYS Corporate',
   'GYS Gamma',
   'fallback mode',
@@ -559,91 +464,6 @@ function isPptCommand(message = '') {
     (/\b(presentasi|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
       /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t))
   );
-}
-
-// ─────────────────────────────────────────────────────────────
-// DETECT CASUAL MESSAGES (no citation needed)
-// Only skip citation for TRUE greetings / one-word acks.
-// Short continuation prompts ("next insight", "lanjut", "continue",
-// "give me what you got") are NOT casual — the AI will reply
-// with substantive content that needs sources.
-// ─────────────────────────────────────────────────────────────
-function isCasualMessage(message = '') {
-  const t = (message || '').trim().toLowerCase();
-
-  // Pure greetings / thanks / emoji reactions
-  const casualPatterns = [
-    /^(halo|hai|hi+|hello|hey|selamat pagi|selamat siang|selamat malam|salam)\s*[!.]*$/i,
-    /^(terima kasih|makasih|thanks+|thank you|thx)\s*[!.]*$/i,
-    /^(ok|oke|iya|ya|yep|yup|nope|tidak|no|yes)\s*[!.]*$/i,
-    /^(bagus|baik|mantap|keren|hebat|luar biasa|great|good|nice|cool|wow|amazing)\s*[!.]*$/i,
-    /^\s*[😀😊🙏👍❤️🔥👋]+\s*$/,
-  ];
-
-  // These look short but are CONTINUATION prompts — always need citation
-  const continuationPatterns = [
-    /\b(next|lanjut|continue|more|berikut|selanjutnya|insight|terus|go on|tell me|give me|show me|what else)\b/i,
-  ];
-
-  // If it matches a continuation pattern, never skip citation
-  if (continuationPatterns.some(p => p.test(t))) return false;
-
-  // Match explicit casual patterns
-  if (casualPatterns.some(p => p.test(t))) return true;
-
-  // Very short messages that are pure filler (≤ 6 chars, no alpha-meaningful content)
-  // Use 6 not 15 — "lanjut" is 6 chars but caught above by continuationPatterns
-  if (t.replace(/[^a-z]/gi, '').length <= 4) return true;
-
-  return false;
-}
-
-// ─────────────────────────────────────────────────────────────
-// SKIP CITATION — final decision after AI response is known
-// Input message alone is not enough: a short user prompt can
-// still produce a long, substantive AI response that needs sources.
-// ─────────────────────────────────────────────────────────────
-function shouldSkipCitation(message = '', aiResponse = '') {
-  // Always skip for casual input
-  if (isCasualMessage(message)) return true;
-
-  // If AI response is short (< 120 words) it's likely a simple reply
-  const wordCount = aiResponse.trim().split(/\s+/).length;
-  if (wordCount < 120) return true;
-
-  // Never skip for substantive responses
-  return false;
-}
-
-// ─────────────────────────────────────────────────────────────
-// EXTRACT SEARCH TOPIC
-// For short continuation prompts ("next insight", "lanjut", etc.)
-// the search query should be built from history, not the message.
-// ─────────────────────────────────────────────────────────────
-function extractSearchTopic(message = '', history = []) {
-  const t = message.trim();
-
-  // If user message is substantive (> 8 words), use it directly
-  if (t.split(/\s+/).length > 8) {
-    return t.length > 180 ? t.substring(0, 180) : t;
-  }
-
-  // Otherwise, look for the last substantive assistant message in history
-  // (which is the topic the user is asking for "more" of)
-  const recentHistory = [...history].reverse();
-  for (const h of recentHistory) {
-    const content = h.content || h.text || '';
-    if (content.length > 80) {
-      // Strip citation block, grab first 180 chars as topic
-      const clean = content
-        .replace(/\n+---\s*\n.{0,10}(?:Sumber|Sources).{0,10}\n[\s\S]*$/im, '')
-        .trim();
-      return clean.substring(0, 180);
-    }
-  }
-
-  // Final fallback: use the message as-is
-  return t;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -679,16 +499,16 @@ class AICoreService {
     try {
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
-        return `\n\n[ISI FILE: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
+        return `\n\n[FILE CONTENT: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.docx') {
         const result = await mammoth.extractRawText({ path: physicalPath });
-        return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
+        return `\n\n[FILE CONTENT: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
         const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
-        return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+        return `\n\n[FILE CONTENT: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
       } else {
-        return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
+        return `\n\n[FILE CONTENT: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
       }
     } catch { return ''; }
   }
@@ -708,17 +528,14 @@ class AICoreService {
       return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
     }
 
-    // Detect language early — used for citation block language
-    const language = detectLanguage(message || '');
-
-    let contextData = '';
+    let contextData    = '';
     let contextSources = [];
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
         const kouventa = new KouventaService(bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint);
         const reply    = await kouventa.generateResponse(message || '');
-        contextData   += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
+        contextData   += `\n\n=== INTERNAL DOCUMENT REFERENCE ===\n${reply}\n`;
         contextSources.push('internal_document');
       } catch (error) { console.error('Kouventa Error:', error.message); }
     }
@@ -731,7 +548,7 @@ class AICoreService {
         );
         const context = await azureSearch.generateResponse(message || '');
         if (context) {
-          contextData += `\n\n=== REFERENSI AZURE AI SEARCH ===\n${context}\n`;
+          contextData += `\n\n=== AZURE AI SEARCH REFERENCE ===\n${context}\n`;
           const augmentedSystemPrompt = (bot.systemPrompt || bot.prompt || '') + '\n\n' + context;
           bot = { ...bot.toObject(), systemPrompt: augmentedSystemPrompt };
           contextSources.push('azure_search');
@@ -756,7 +573,7 @@ class AICoreService {
         }
       } catch (e) {
         console.error('Smartsheet Error:', e.message);
-        contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
+        contextData += `\n\n=== SMARTSHEET DATA ===\n❌ Failed to load data: ${e.message}\n`;
       }
     }
 
@@ -796,21 +613,26 @@ class AICoreService {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
-    // Pre-check: casual input → skip citation instruction in system prompt too
     const likelyCasual = isCasualMessage(message || '');
+
+    const citationInstruction = likelyCasual ? '' : `
+IMPORTANT: Do NOT add a "Sources:" or "References:" section yourself.
+The system will automatically append verified, clickable source links after your response.
+If you used internal documents or Smartsheet data, mention the file name inline.
+Do NOT fabricate URLs.
+`;
 
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
-      likelyCasual ? '' : buildCitationInstruction(language),
+      citationInstruction,
       contextData,
       contextData
-        ? (language === 'en'
-            ? 'Use the data and knowledge above to answer accurately. Do not fabricate facts.'
-            : 'Gunakan data dan pengetahuan di atas untuk menjawab dengan akurat. Jangan mengarang fakta.')
+        ? 'Use the data and knowledge above to answer accurately. Do not fabricate facts.'
         : '',
     ].filter(Boolean).join('\n\n');
 
+    // ── Call AI Provider ────────────────────────────────────
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt,
@@ -823,35 +645,36 @@ class AICoreService {
 
     let aiResponse = result.text;
 
-    // ── Build verified citations (web search + validation) ──
-    // Decision is made AFTER we have the AI response so we can
-    // check its length (short continuations → may produce long responses)
-    const skipCitation = shouldSkipCitation(message || '', aiResponse);
+    // ── CASE 1: Web Search citations from OpenAI Responses API ──
+    // ai-provider.service.js already embeds <!--CITATIONS_START/END--> in the
+    // response text when web search is active. Nothing else to do here.
+    const hasEmbeddedCitations = aiResponse.includes('<!--CITATIONS_START-->');
 
-    if (!skipCitation) {
-      try {
-        // For short continuation prompts, derive topic from chat history
-        const searchTopic = extractSearchTopic(message || '', history.slice(-6));
+    // ── CASE 2: Fallback citations via Bing/SerpAPI web search ──
+    // Only run this when the provider did NOT embed citations already.
+    if (!hasEmbeddedCitations) {
+      const skipCitation = shouldSkipCitation(message || '', aiResponse);
 
-        const citations = await buildVerifiedCitations({
-          message:        searchTopic,
-          aiResponse,
-          contextSources,
-          language,
-        });
+      if (!skipCitation) {
+        try {
+          const searchTopic = extractSearchTopic(message || '', history.slice(-6));
+          const citations   = await buildVerifiedCitations({
+            message:  searchTopic,
+            aiResponse,
+            contextSources,
+          });
 
-        if (citations.length > 0) {
-          // Strip any AI-generated source block first (prevent duplication)
-          aiResponse = aiResponse
-            .replace(/\n+---\s*\n.{0,10}(?:Sumber|Sources).{0,10}\n[\s\S]*$/im, '')
-            .trim();
+          if (citations.length > 0) {
+            // Strip any stray AI-generated source section first
+            aiResponse = aiResponse
+              .replace(/\n+---\s*\n.{0,10}(?:Sources?|References?).{0,10}\n[\s\S]*$/im, '')
+              .trim();
 
-          // Append verified citation block
-          aiResponse += formatCitationsBlock(citations, language);
+            aiResponse += formatCitationsBlock(citations);
+          }
+        } catch (citErr) {
+          console.warn('[Citations] Failed to build citations:', citErr.message);
         }
-      } catch (citErr) {
-        console.warn('[Citations] Failed to build citations:', citErr.message);
-        // Don't fail the whole request — just skip citations
       }
     }
 
@@ -890,7 +713,7 @@ class AICoreService {
         });
       } catch (e) { console.warn('[PPT] DB history error:', e.message); }
 
-      const userRequest = message || '';
+      const userRequest     = message || '';
       const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
 
       let historicalContent = '';
@@ -907,7 +730,7 @@ class AICoreService {
 
       const contentUserMsg = historicalContent
         ? `Generate a presentation based on this conversation.\nIMPORTANT: Match language of the user request exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\nUser request: ${userRequest}`
-        : `Generate a presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout for each slide — use TIMELINE for schedules/roadmaps, GRID for pillars/features, STATS for KPIs, etc.\n\nUser request: ${userRequest}`;
+        : `Generate a presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout for each slide.\n\nUser request: ${userRequest}`;
 
       const contentResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
@@ -920,10 +743,9 @@ class AICoreService {
       if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
 
       const titleMatch = slideContent.match(/^#\s+(.+)/m);
-      const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
+      const title      = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
 
       console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
-
       console.log('[PPT] Step 2 — converting to JSON...');
 
       const jsonResult = await AIProviderService.generateCompletion({
@@ -949,24 +771,24 @@ class AICoreService {
         pptData = JSON.parse(rawJson);
       } catch (parseErr) {
         console.error('[PPT] JSON parse failed:', parseErr.message);
-        throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
+        throw new Error('AI failed to generate presentation data format. Please try again.');
       }
 
       if (!pptData?.slides?.length) {
-        throw new Error('JSON tidak memiliki slides. Silakan coba lagi.');
+        throw new Error('JSON has no slides. Please try again.');
       }
 
       const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — Layouts: [${layoutLog}]`);
 
       const outputDir = path.join(process.cwd(), 'data', 'files');
-      const result = await PptxService.generate({
+      const result    = await PptxService.generate({
         pptData, slideContent, title, outputDir, styleDesc: 'GYS Gamma Edition',
       });
 
       const reqLower = userRequest.toLowerCase();
-      const reqIndo = reqLower.includes('bahasa indonesia') || reqLower.includes('indo');
-      const reqEng = reqLower.includes('english') || reqLower.includes('inggris');
+      const reqIndo  = reqLower.includes('bahasa indonesia') || reqLower.includes('indo');
+      const reqEng   = reqLower.includes('english') || reqLower.includes('inggris');
 
       let isEnglish = false;
       if (reqEng) {
@@ -1005,7 +827,7 @@ class AICoreService {
 **Auto-detected slide layouts:**
 ${layoutSummary}
 
-💡 _Tip: You can describe slides in detail — e.g. "slide 4: implementation timeline week by week" and the system will auto-pick the best visual layout._`
+💡 _Tip: Describe slides in detail — e.g. "slide 4: implementation timeline week by week" and the system will auto-pick the best visual layout._`
         : `✅ **Presentasi GYS berhasil dibuat!**
 
 📊 **Judul:** ${title}
@@ -1034,7 +856,7 @@ ${layoutSummary}
 
     } catch (error) {
       console.error('❌ [PPT Command]', error);
-      throw new Error(`Gagal membuat presentasi / Failed to create presentation: ${error.message}`);
+      throw new Error(`Failed to create presentation: ${error.message}`);
     }
   }
 }
