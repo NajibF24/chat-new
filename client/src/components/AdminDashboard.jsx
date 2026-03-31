@@ -9,6 +9,8 @@ import { Line, Doughnut } from 'react-chartjs-2';
 import BotAvatar from './BotAvatar';
 import AvatarPicker from './AvatarPicker';
 import EmbedCodeModal from './EmbedCodeModal';
+// --- IMPORT KOMPONEN BARU ---
+import WahaConfigSection from './WahaConfigSection';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, ArcElement, Filler);
 
@@ -134,9 +136,9 @@ function groupModelsByTier(models) {
 // API KEY WIDGET
 // ─────────────────────────────────────────────────────────────
 function ApiKeyWidget({ botId, hasKey }) {
-  const [state,    setState]    = useState('hidden');
+  const [state,     setState]    = useState('hidden');
   const [keyValue, setKeyValue] = useState('');
-  const [copied,   setCopied]   = useState(false);
+  const [copied,    setCopied]   = useState(false);
   const [serverHasKey, setServerHasKey] = useState(hasKey);
 
   const hideTimer = useRef(null);
@@ -252,8 +254,8 @@ function ApiKeyWidget({ botId, hasKey }) {
 // ─────────────────────────────────────────────────────────────
 const AUDIT_CATEGORY_META = {
   auth:      { icon: '🔐', label: 'Auth',      color: 'bg-blue-50   text-blue-700   border-blue-200'    },
-  bot:       { icon: '🤖', label: 'Bot',       color: 'bg-violet-50 text-violet-700 border-violet-200'  },
-  user:      { icon: '👤', label: 'User',      color: 'bg-amber-50  text-amber-700  border-amber-200'   },
+  bot:        { icon: '🤖', label: 'Bot',       color: 'bg-violet-50 text-violet-700 border-violet-200'  },
+  user:      { icon: '👤', label: 'User',      color: 'bg-amber-50  text-amber-700  border-amber-200'    },
   knowledge: { icon: '📚', label: 'Knowledge', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   export:    { icon: '⬇️', label: 'Export',    color: 'bg-sky-50    text-sky-700    border-sky-200'      },
   chat:      { icon: '💬', label: 'AI Chat',   color: 'bg-rose-50   text-rose-700   border-rose-200'    },
@@ -395,9 +397,9 @@ function DetailPanel({ detail, action }) {
 function AdminDashboard({ user, handleLogout }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab]   = useState('dashboard');
-  const [stats, setStats]           = useState(null);
-  const [users, setUsers]           = useState([]);
-  const [bots,  setBots]            = useState([]);
+  const [stats, setStats]            = useState(null);
+  const [users, setUsers]            = useState([]);
+  const [bots,  setBots]             = useState([]);
   const [chatLogs, setChatLogs]     = useState([]);
   const [logPage, setLogPage]       = useState(1);
   const [logTotalPages, setLogTotalPages] = useState(1);
@@ -423,16 +425,16 @@ function AdminDashboard({ user, handleLogout }) {
   const [embedBot, setEmbedBot] = useState(null);
 
   // Audit Trail state
-  const [auditLogs,       setAuditLogs]       = useState([]);
-  const [auditPage,       setAuditPage]       = useState(1);
+  const [auditLogs,        setAuditLogs]        = useState([]);
+  const [auditPage,        setAuditPage]        = useState(1);
   const [auditTotalPages, setAuditTotalPages] = useState(1);
-  const [auditTotal,      setAuditTotal]      = useState(0);
-  const [auditLoading,    setAuditLoading]    = useState(false);
-  const [auditCategory,   setAuditCategory]   = useState('');
-  const [auditSearch,     setAuditSearch]     = useState('');
-  const [auditDateFrom,   setAuditDateFrom]   = useState('');
-  const [auditDateTo,     setAuditDateTo]     = useState('');
-  const [auditExpanded,   setAuditExpanded]   = useState(null);
+  const [auditTotal,       setAuditTotal]      = useState(0);
+  const [auditLoading,     setAuditLoading]    = useState(false);
+  const [auditCategory,    setAuditCategory]   = useState('');
+  const [auditSearch,      setAuditSearch]     = useState('');
+  const [auditDateFrom,    setAuditDateFrom]   = useState('');
+  const [auditDateTo,      setAuditDateTo]     = useState('');
+  const [auditExpanded,    setAuditExpanded]   = useState(null);
   const [auditTokenStats, setAuditTokenStats] = useState(null);
 
   useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []);
@@ -540,7 +542,7 @@ function AdminDashboard({ user, handleLogout }) {
       const { botApiKey: _omit, ...payload } = botForm;
       const cleanPayload = { ...payload, starterQuestions: botForm.starterQuestions.filter(q => q.trim()) };
       if (editingBot) await axios.put(`/api/admin/bots/${editingBot._id}`, cleanPayload);
-      else            await axios.post('/api/admin/bots', cleanPayload);
+      else             await axios.post('/api/admin/bots', cleanPayload);
       setShowBotModal(false); fetchBots(); fetchStats();
     } catch (err) { alert(err.response?.data?.error || err.message); }
   };
@@ -714,7 +716,7 @@ function AdminDashboard({ user, handleLogout }) {
             {/* Stats grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { title: 'Total Users',  value: stats.totalUsers,   icon: '👥', gradient: 'from-blue-500 to-blue-600',    light: 'bg-blue-50', text: 'text-blue-600'   },
+                { title: 'Total Users',  value: stats.totalUsers,   icon: '👥', gradient: 'from-blue-500 to-blue-600',   light: 'bg-blue-50', text: 'text-blue-600'   },
                 { title: 'Active Bots',  value: stats.totalBots,    icon: '🤖', gradient: 'from-emerald-500 to-emerald-600', light: 'bg-emerald-50', text: 'text-emerald-600' },
                 { title: 'Total Chats',  value: stats.totalChats,   icon: '💬', gradient: 'from-violet-500 to-violet-600', light: 'bg-violet-50', text: 'text-violet-600' },
                 { title: 'Threads',      value: stats.totalThreads, icon: '📂', gradient: 'from-amber-500 to-amber-600',  light: 'bg-amber-50',  text: 'text-amber-600'  },
@@ -1194,8 +1196,8 @@ function AdminDashboard({ user, handleLogout }) {
             {/* Modal tabs */}
             <div className="flex border-b border-gray-100 bg-white px-4 overflow-x-auto flex-shrink-0">
               {[
-                { id: 'basic',        label: 'Basic',        icon: '📝' },
-                { id: 'ai',           label: 'AI & Model',   icon: '🤖' },
+                { id: 'basic',         label: 'Basic',         icon: '📝' },
+                { id: 'ai',            label: 'AI & Model',   icon: '🤖' },
                 { id: 'capabilities', label: `Capabilities${activeCapCount > 0 ? ` (${activeCapCount})` : ''}`, icon: '⚡' },
                 { id: 'knowledge',    label: `Knowledge${knowledgeFiles.length > 0 ? ` (${knowledgeFiles.length})` : ''}`, icon: '📚' },
                 { id: 'integrations', label: 'Integrations', icon: '🔌' },
@@ -1477,66 +1479,8 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   )}
 
-                  {/* WAHA WhatsApp */}
-                  {(() => {
-                    const config = botForm.wahaConfig || {};
-                    return (
-                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-[#25D366]/40 bg-[#25D366]/5' : 'border-gray-100 bg-white'}`}>
-                        <div className="flex justify-between items-center mb-3">
-                          <div className="flex items-center gap-2"><span className="text-lg">💬</span><span className="font-semibold text-sm text-gray-800">WhatsApp Forwarder (WAHA)</span></div>
-                          <button type="button" onClick={() => setBotForm(f => ({ ...f, wahaConfig: { ...f.wahaConfig, enabled: !config.enabled } }))}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
-                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
-                          </button>
-                        </div>
-                        {config.enabled && (
-                          <div className="space-y-3 mt-4 pt-4 border-t border-[#25D366]/20">
-                            <div>
-                              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">API Endpoint URL</label>
-                              <input type="text" value={config.endpoint || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, endpoint: e.target.value}}))} placeholder="http://your_server_ip:3000/api/sendText" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                            </div>
-                            <div className="grid grid-cols-3 gap-3">
-                              <div>
-                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Chat / Group ID</label>
-                                <input type="text" value={config.chatId || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, chatId: e.target.value}}))} placeholder="120363xxxxxx@g.us" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                                <p className="text-[9px] text-gray-400 mt-1">@g.us (Group) / @c.us (DM)</p>
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Session Name</label>
-                                <input type="text" value={config.session || 'default'} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, session: e.target.value}}))} placeholder="default" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">WAHA API Key</label>
-                                <input type="password" value={config.apiKey || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, apiKey: e.target.value}}))} placeholder="Secret API Key" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                              </div>
-                            </div>
-                            {/* Daily Schedule */}
-                            <div className="mt-4 pt-4 border-t border-[#25D366]/20">
-                              <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs font-semibold text-gray-700">⏰ Daily Auto-Send Scheduler</label>
-                                <button type="button" onClick={() => setBotForm(f => ({ ...f, wahaConfig: { ...f.wahaConfig, dailySchedule: { ...f.wahaConfig.dailySchedule, enabled: !f.wahaConfig.dailySchedule?.enabled } } }))}
-                                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${botForm.wahaConfig?.dailySchedule?.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
-                                  <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform ${botForm.wahaConfig?.dailySchedule?.enabled ? 'translate-x-3.5' : 'translate-x-1'}`} />
-                                </button>
-                              </div>
-                              {botForm.wahaConfig?.dailySchedule?.enabled && (
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-[#25D366]/5 p-3 rounded-xl border border-[#25D366]/10">
-                                  <div>
-                                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Time (local)</label>
-                                    <input type="time" value={botForm.wahaConfig.dailySchedule?.time || '08:00'} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, dailySchedule: {...f.wahaConfig.dailySchedule, time: e.target.value}}}))} className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none" />
-                                  </div>
-                                  <div className="md:col-span-3">
-                                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Trigger Message</label>
-                                    <input type="text" value={botForm.wahaConfig.dailySchedule?.prompt || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, dailySchedule: {...f.wahaConfig.dailySchedule, prompt: e.target.value}}}))} placeholder="e.g. Generate today's summary report" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none" />
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  {/* --- GANTI BLOK WAHA LAMA DENGAN KOMPONEN --- */}
+                  <WahaConfigSection botForm={botForm} setBotForm={setBotForm} />
 
                   {/* Smartsheet / Kouventa / Azure Search */}
                   {[
