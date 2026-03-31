@@ -15,9 +15,9 @@ export const AI_PROVIDERS = {
       { id: 'gpt-4.1',               label: 'GPT-4.1',               context: 1000000, tier: 'stable',    webSearch: true  },
       { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          context: 1000000, tier: 'efficient', webSearch: true  },
       { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          context: 1000000, tier: 'efficient', webSearch: true  },
-      { id: 'o3',                    label: 'o3 (Deep Reasoning)',    context: 200000,  tier: 'reasoning', webSearch: false },
-      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',    context: 200000,  tier: 'reasoning', webSearch: false },
-      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',    context: 200000,  tier: 'reasoning', webSearch: false },
+      { id: 'o3',                    label: 'o3 (Deep Reasoning)',   context: 200000,  tier: 'reasoning', webSearch: false },
+      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',   context: 200000,  tier: 'reasoning', webSearch: false },
+      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',   context: 200000,  tier: 'reasoning', webSearch: false },
       { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo',           context: 128000,  tier: 'legacy',    webSearch: false },
       { id: 'gpt-4',                 label: 'GPT-4',                 context: 8192,    tier: 'legacy',    webSearch: false },
       { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo',         context: 16385,   tier: 'legacy',    webSearch: false },
@@ -124,7 +124,7 @@ function buildCitationsBlock(citations) {
   if (!citations || citations.length === 0) return '';
   // Payload is a JSON array of { url, title } objects
   const payload = citations.map(c => ({ url: c.url, title: c.title || c.url }));
-  return `\n\n<!--CITATIONS_START-->\n${JSON.stringify(payload)}\n<!--CITATIONS_END-->`;
+  return `\n\n\n${JSON.stringify(payload)}\n`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -240,11 +240,16 @@ class AIProviderService {
             { role: 'user', content: typeof userContent === 'string' ? userContent : JSON.stringify(userContent) },
           ];
 
+          // FIX: Extract max_completion_tokens and max_tokens out of tokenParams 
+          // so we can explicitly pass max_output_tokens for the Responses API
+          const { max_completion_tokens, max_tokens, ...restTokenParams } = tokenParams;
+
           const responsesBody = {
             model,
             input: inputMessages,
             tools: [{ type: 'web_search_preview' }],
-            ...tokenParams,
+            max_output_tokens: maxTok, // Correct parameter for Responses API
+            ...restTokenParams,
           };
 
           const response = await openai.responses.create(responsesBody);
