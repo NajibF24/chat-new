@@ -1,7 +1,6 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import axios from 'axios'; // ✅ TAMBAHKAN AXIOS UNTUK HTTP REQUEST
 import AICoreService from '../services/ai-core.service.js';
 import { generateImage } from '../services/image.service.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -11,6 +10,7 @@ import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import AuditService from '../services/audit.service.js';
 import AIProviderService from '../services/ai-provider.service.js';
+import { forwardChatToWaha } from '../services/wahaScheduler.js';
 
 const router = express.Router();
 
@@ -30,14 +30,13 @@ const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(mod
 // ── Helper: normalize usage across providers ──────────────────
 function normalizeUsage(usage, model = '') {
   if (!usage) return null;
-
-  const promptTokens = usage.prompt_tokens ?? usage.input_tokens ?? usage.promptTokenCount ?? 0;
-  const completionTokens = usage.completion_tokens ?? usage.output_tokens ?? usage.candidatesTokenCount ?? 0;
-  const totalTokens = usage.total_tokens ?? usage.totalTokenCount ?? (promptTokens + completionTokens);
-  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? null;
-  const isReasoningMod = isReasoningModel(model);
-  const warningMaxTokens = isReasoningMod && reasoningTokens ? reasoningTokens >= (completionTokens * 0.9) : false;
-
+  const promptTokens     = usage.prompt_tokens       ?? usage.input_tokens      ?? usage.promptTokenCount     ?? 0;
+  const completionTokens = usage.completion_tokens   ?? usage.output_tokens     ?? usage.candidatesTokenCount ?? 0;
+  const totalTokens      = usage.total_tokens        ?? usage.totalTokenCount   ?? (promptTokens + completionTokens);
+  const reasoningTokens  = usage.completion_tokens_details?.reasoning_tokens    ?? null;
+  const warningMaxTokens = isReasoningModel(model) && reasoningTokens
+    ? reasoningTokens >= (completionTokens * 0.9)
+    : false;
   return { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens };
 }
 
@@ -45,15 +44,17 @@ function normalizeUsage(usage, model = '') {
 // ENDPOINTS
 // ─────────────────────────────────────────────────────────────
 
+// 1. Upload File
 router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
     filename: req.file.filename, originalname: req.file.originalname,
     path: req.file.path, mimetype: req.file.mimetype,
-    url: `/api/files/${req.file.filename}`, size: req.file.size
+    url: `/api/files/${req.file.filename}`, size: req.file.size,
   });
 });
 
+// 2. Get Bots
 router.get('/bots', requireAuth, async (req, res) => {
   try {
     const userId = req.session.userId;
@@ -66,13 +67,16 @@ router.get('/bots', requireAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// 3. Get Threads
 router.get('/threads', requireAuth, async (req, res) => {
   try {
-    const threads = await Thread.find({ userId: req.session.userId }).populate('botId', 'name').sort({ lastMessageAt: -1 });
+    const threads = await Thread.find({ userId: req.session.userId })
+      .populate('botId', 'name').sort({ lastMessageAt: -1 });
     res.json(threads);
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// 4. Get Messages
 router.get('/thread/:threadId', requireAuth, async (req, res) => {
   try {
     const chats = await Chat.find({ threadId: req.params.threadId }).sort({ createdAt: 1 });
@@ -80,6 +84,7 @@ router.get('/thread/:threadId', requireAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// 5. Delete Thread
 router.delete('/thread/:threadId', requireAuth, async (req, res) => {
   try {
     await Thread.findOneAndDelete({ _id: req.params.threadId, userId: req.session.userId });
@@ -88,27 +93,55 @@ router.delete('/thread/:threadId', requireAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// 6. Send Message ── MAIN ENDPOINT
+// 6. Send Message — MAIN ENDPOINT
 router.post('/message', requireAuth, async (req, res) => {
   try {
     const { message, botId, history, threadId } = req.body;
-    const userId = req.session.userId;
-    const attachedFile = req.body.attachedFile || null;
-
-    const bot = await Bot.findById(botId).lean();
-    const botName  = bot?.name  || 'Unknown Bot';
-    const model    = bot?.aiProvider?.model || 'unknown';
-    const provider = bot?.aiProvider?.provider || 'openai';
-    const maxTokens = bot?.aiProvider?.maxTokens ?? 2000;
+    const userId          = req.session.userId;
+    const attachedFile    = req.body.attachedFile || null;
     const sessionUsername = req.session?.username;
 
-    // (Kode Image Generator tetap sama - disembunyikan untuk menyingkat teks)
+    const bot       = await Bot.findById(botId).lean();
+    const botName   = bot?.name                  || 'Unknown Bot';
+    const model     = bot?.aiProvider?.model     || 'unknown';
+    const provider  = bot?.aiProvider?.provider  || 'openai';
+    const maxTokens = bot?.aiProvider?.maxTokens ?? 2000;
+
+    // ── Image Generation ─────────────────────────────────────
     const cleanMsg = message ? message.trim().toLowerCase() : '';
     if (cleanMsg.startsWith('/image') || cleanMsg.startsWith('/img') || cleanMsg.startsWith('gambarkan')) {
-       // ... logika image (di-skip di penjelasan namun ada di file asli jika copy-paste)
-       // Untuk aman, gunakan logika yang lama atau yang Anda miliki
+      try {
+        let prompt = message.replace(/^\/image|^\/img|^gambarkan/i, '').trim();
+        if (!prompt) prompt = 'High quality industrial steel art';
+
+        const imageUrl = await generateImage(prompt);
+        const markdownResponse = `![${prompt}](${imageUrl})\n\n*Generated for: "${prompt}"*`;
+
+        let targetThreadId = threadId;
+        if (!targetThreadId) {
+          const newThread = new Thread({ userId, botId, title: prompt.substring(0, 30), lastMessageAt: new Date() });
+          await newThread.save();
+          targetThreadId = newThread._id;
+        }
+
+        await new Chat({ userId, botId, threadId: targetThreadId, role: 'user', content: message }).save();
+        await new Chat({ userId, botId, threadId: targetThreadId, role: 'assistant', content: markdownResponse }).save();
+
+        await AuditService.log({
+          req, category: 'chat', action: 'IMAGE_GENERATE',
+          targetId: botId, targetName: botName,
+          detail: { prompt: prompt.substring(0, 100), model: 'dall-e', provider: 'openai' },
+          username: sessionUsername,
+        });
+
+        return res.json({ response: markdownResponse, threadId: targetThreadId });
+      } catch (imgError) {
+        console.error('Image Service Error:', imgError);
+        return res.status(500).json({ error: 'Gagal membuat gambar: ' + imgError.message });
+      }
     }
 
+    // ── Normal AI Message ────────────────────────────────────
     const startTime = Date.now();
     const result = await AICoreService.processMessage({
       userId, botId, message, attachedFile, threadId,
@@ -116,47 +149,33 @@ router.post('/message', requireAuth, async (req, res) => {
     });
     const durationMs = Date.now() - startTime;
 
-    // ✅ BLOK WAHA DITAMBAHKAN DI SINI
-    console.log(`[DEBUG WAHA] Bot: ${bot.name} | WAHA Enabled: ${bot.wahaConfig?.enabled}`);
-    
-    if (bot.wahaConfig?.enabled && bot.wahaConfig?.chatId && bot.wahaConfig?.endpoint) {
-      console.log(`[WAHA] Mencoba mengirim pesan ke WA Grup: ${bot.wahaConfig.chatId}`);
-      
-      (async () => {
-        try {
-          // Format Pesan WhatsApp
-          const waText = `🤖 *LOG CHAT BOT: ${bot.name}*\n👤 *User:* ${sessionUsername || 'Unknown'}\n\n*💬 Pertanyaan:*\n${message}\n\n*🤖 Jawaban:*\n${result.response}`;
-          
-          await axios.post(bot.wahaConfig.endpoint, {
-            chatId: bot.wahaConfig.chatId,
-            text: waText,
-            session: bot.wahaConfig.session || 'default'
-          }, {
-            headers: {
-              // Jika WAHA API Key ada, masukkan di header X-Api-Key
-              'X-Api-Key': bot.wahaConfig.apiKey || '',
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          console.log(`[WAHA] Sukses meneruskan chat ke grup: ${bot.wahaConfig.chatId}`);
-        } catch (waErr) {
-          console.error('[WAHA] Gagal meneruskan pesan:', waErr.response?.data || waErr.message);
-        }
-      })();
-    }
+    // ── WAHA Forward (fire & forget) — uses new multi-target helper ──
+    forwardChatToWaha(bot, sessionUsername, message, result?.response || '').catch(() => {});
 
+    // ── Audit Log ────────────────────────────────────────────
     const usage = normalizeUsage(result?.usage, model);
     const auditDetail = {
       bot: botName, model, provider, durationMs, maxTokensConfig: maxTokens,
-      tokens: usage ? { prompt: usage.promptTokens, completion: usage.completionTokens, total: usage.totalTokens, ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }) } : null,
-      ...(usage?.warningMaxTokens && { warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}). Response may be empty. Increase Max Tokens to at least ${Math.ceil(maxTokens * 2)}.` }),
-      ...((!result?.response || result.response.trim() === '') && { emptyResponse: true, emptyReason: usage?.warningMaxTokens ? 'max_tokens_exhausted_by_reasoning' : 'unknown' }),
+      tokens: usage ? {
+        prompt:     usage.promptTokens,
+        completion: usage.completionTokens,
+        total:      usage.totalTokens,
+        ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
+      } : null,
+      ...(usage?.warningMaxTokens && {
+        warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
+      }),
+      ...((!result?.response || result.response.trim() === '') && {
+        emptyResponse: true,
+        emptyReason: usage?.warningMaxTokens ? 'max_tokens_exhausted_by_reasoning' : 'unknown',
+      }),
     };
 
     await AuditService.log({
-      req, category: 'chat', action: result?.response?.trim() ? 'AI_RESPONSE' : 'AI_RESPONSE_EMPTY',
-      status: result?.response?.trim() ? 'success' : 'failed', targetId: botId, targetName: botName,
+      req, category: 'chat',
+      action:  result?.response?.trim() ? 'AI_RESPONSE' : 'AI_RESPONSE_EMPTY',
+      status:  result?.response?.trim() ? 'success'     : 'failed',
+      targetId: botId, targetName: botName,
       detail: auditDetail, username: sessionUsername,
     });
 
@@ -166,7 +185,8 @@ router.post('/message', requireAuth, async (req, res) => {
     console.error('Chat Error:', error);
     await AuditService.log({
       req, category: 'chat', action: 'AI_RESPONSE_ERROR', status: 'failed',
-      targetName: req.body?.botId || 'unknown', detail: { error: error.message },
+      targetName: req.body?.botId || 'unknown',
+      detail: { error: error.message },
       username: req.session?.username,
     }).catch(() => {});
     res.status(500).json({ error: error.message });
@@ -174,44 +194,72 @@ router.post('/message', requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// 🌐 EXTERNAL API CHAT (Akses menggunakan API Key)
+// 🌐 EXTERNAL API CHAT — akses via x-api-key header
 // ============================================================
-// server/routes/chat.js
-
 router.post('/external', async (req, res) => {
   try {
     const apiKey = req.headers['x-api-key'];
-    const { message } = req.body;
-
-    // 1. Cari bot berdasarkan API Key yang dikirim dari Postman/CURL
-    const bot = await Bot.findOne({ botApiKey: apiKey });
-    
-    if (!bot) {
-      return res.status(403).json({ 
-        error: "Akses ditolak: API Key tidak valid atau Bot tidak ditemukan" 
-      });
+    if (!apiKey) {
+      return res.status(401).json({ error: 'Akses ditolak: x-api-key tidak ditemukan di header' });
     }
 
-    // 2. Kirim pesan ke AI dengan menyertakan "Identitas" (System Prompt) bot
-    // Inilah yang membuat jawaban AI tidak lagi general/umum.
+    const bot = await Bot.findOne({ botApiKey: apiKey }).lean();
+    if (!bot) {
+      return res.status(403).json({ error: 'Akses ditolak: API Key tidak valid atau Bot tidak ditemukan' });
+    }
+
+    const { message, username, history } = req.body;
+    if (!message?.trim()) {
+      return res.status(400).json({ error: 'Field "message" wajib diisi' });
+    }
+
+    const callerUsername = username || 'system.external';
+    const model          = bot.aiProvider?.model     || 'unknown';
+    const provider       = bot.aiProvider?.provider  || 'openai';
+    const maxTokens      = bot.aiProvider?.maxTokens ?? 2000;
+
+    const startTime = Date.now();
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider,
-      // ✅ KUNCI: Gunakan instruksi spesifik bot (Daily Snack Insight)
-      systemPrompt: bot.prompt || bot.systemPrompt, 
-      messages: [], // Chat history dikosongkan untuk trigger external
-      userContent: message, // Pesan: "Give me what you got!"
-      capabilities: bot.capabilities
+      systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
+      messages:       (history || []).map(m => ({ role: m.role, content: m.content })),
+      userContent:    message,
+      capabilities:   bot.capabilities,
+      knowledgeFiles: bot.knowledgeFiles || [],
+      knowledgeMode:  bot.knowledgeMode  || 'relevant',
     });
 
-    // 3. Kembalikan jawaban yang sudah spesifik
-    res.json({
-      botName: bot.name,
-      answer: aiResponse.text // Hasilnya akan berupa 1 paragraf analisa baja
-    });
+    const durationMs  = Date.now() - startTime;
+    const responseText = aiResponse?.text || aiResponse?.response || '';
+
+    forwardChatToWaha(bot, callerUsername, message, responseText).catch(() => {});
+
+    const usage = normalizeUsage(aiResponse?.usage, model);
+    await AuditService.log({
+      req,
+      category:   'chat',
+      action:     responseText.trim() ? 'AI_RESPONSE' : 'AI_RESPONSE_EMPTY',
+      status:     responseText.trim() ? 'success'     : 'failed',
+      targetId:   bot._id,
+      targetName: bot.name,
+      username:   callerUsername,
+      detail: {
+        bot: bot.name, model, provider, durationMs, maxTokensConfig: maxTokens,
+        source: 'external_api',
+        tokens: usage ? {
+          prompt: usage.promptTokens, completion: usage.completionTokens,
+          total: usage.totalTokens,
+          ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
+        } : null,
+      },
+    }).catch(() => {});
+
+    res.json({ success: true, botName: bot.name, response: responseText });
 
   } catch (error) {
-    console.error('External API Error:', error);
+    console.error('[EXTERNAL] Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
 export default router;

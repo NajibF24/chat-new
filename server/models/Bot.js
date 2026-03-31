@@ -31,12 +31,38 @@ const capabilitiesSchema = new mongoose.Schema({
   fileSearch:      { type: Boolean, default: false },
 }, { _id: false });
 
+// ── WAHA Scheduled Message Sub-Schema ────────────────────────
+// Supports flexible schedule: daily, hourly, or custom cron-like times
+const wahaScheduleItemSchema = new mongoose.Schema({
+  enabled:   { type: Boolean, default: false },
+  label:     { type: String, default: '' },      // User-friendly name e.g. "Morning Briefing"
+  prompt:    { type: String, default: '' },       // Message/prompt to send
+  // Schedule type: 'daily' (specific time), 'interval' (every N minutes), 'times' (multiple times per day)
+  scheduleType: {
+    type: String,
+    enum: ['daily', 'interval', 'times'],
+    default: 'daily',
+  },
+  time:        { type: String, default: '08:00' }, // For 'daily' type: HH:MM
+  intervalMin: { type: Number, default: 60 },       // For 'interval' type: every N minutes (min 15)
+  // For 'times' type: multiple times per day e.g. ["08:00", "12:00", "17:00"]
+  times:     { type: [String], default: [] },
+}, { _id: true });
+
+// ── WAHA Target (Chat/Group) Sub-Schema ──────────────────────
+const wahaTargetSchema = new mongoose.Schema({
+  label:   { type: String, default: '' },          // e.g. "Engineering Team", "Management Group"
+  chatId:  { type: String, required: true },       // WhatsApp Chat/Group ID
+  enabled: { type: Boolean, default: true },
+  // Per-target schedules (overrides global if set)
+  schedules: { type: [wahaScheduleItemSchema], default: [] },
+}, { _id: true });
+
 // ── Main Bot Schema ───────────────────────────────────────────
 const botSchema = new mongoose.Schema({
   name:        { type: String, required: true, unique: true },
   description: { type: String, default: '' },
 
-  // ✅ BARU: Siapa yang membuat bot ini
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -79,19 +105,31 @@ const botSchema = new mongoose.Schema({
     textColor: { type: String, default: '#ffffff' },
   },
 
-  // ── Integrations ─────────────────────────────────────────
+  // ── WAHA WhatsApp Integration (UPDATED) ──────────────────
   wahaConfig: {
     enabled:  { type: Boolean, default: false },
     endpoint: { type: String, default: '' },
-    chatId:   { type: String, default: '' },
     session:  { type: String, default: 'default' },
     apiKey:   { type: String, default: '' },
+
+    // ✅ NEW: Multiple targets (chat IDs / groups)
+    targets: { type: [wahaTargetSchema], default: [] },
+
+    // ── Legacy single chatId (kept for backward compat) ────
+    chatId:   { type: String, default: '' },
+
+    // ── Global schedules (apply to ALL targets unless overridden) ──
+    schedules: { type: [wahaScheduleItemSchema], default: [] },
+
+    // ── Legacy single daily schedule (kept for backward compat) ──
     dailySchedule: {
       enabled: { type: Boolean, default: false },
       time:    { type: String, default: '08:00' },
-      prompt:  { type: String, default: 'Sapa user dengan selamat pagi dan berikan satu pertanyaan acak tentang kabar mereka hari ini.' },
+      prompt:  { type: String, default: '' },
     },
   },
+
+  // ── Other Integrations ───────────────────────────────────
   smartsheetConfig: {
     enabled:        { type: Boolean, default: false },
     apiKey:         { type: String, default: '' },
