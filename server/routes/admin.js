@@ -1,6 +1,7 @@
 // server/routes/admin.js
 // ✅ FIX: Bot Creator hanya lihat bot miliknya / assigned / bot lama (createdBy null)
 // ✅ FIX: API Key tidak auto-generate, tidak tampil otomatis, ada endpoint reveal terpisah
+// ✅ FIX: wahaConfig.targets dan wahaConfig.schedules sekarang tersimpan dengan benar
 
 import express    from 'express';
 import bcrypt     from 'bcryptjs';
@@ -88,6 +89,69 @@ const sanitizeCapabilities = (caps = {}) => ({
   fileSearch:      Boolean(caps.fileSearch),
 });
 
+// ── Helper: sanitize a single schedule item ───────────────────
+function sanitizeScheduleItem(s) {
+  if (!s || typeof s !== 'object') return null;
+  return {
+    ...(s._id ? { _id: s._id } : {}),
+    enabled:      Boolean(s.enabled),
+    label:        String(s.label || ''),
+    prompt:       String(s.prompt || ''),
+    scheduleType: ['daily', 'interval', 'times'].includes(s.scheduleType) ? s.scheduleType : 'daily',
+    time:         String(s.time || '08:00'),
+    intervalMin:  Math.max(15, parseInt(s.intervalMin) || 60),
+    times:        Array.isArray(s.times) ? s.times.filter(t => typeof t === 'string') : [],
+  };
+}
+
+// ── Helper: sanitize a single target item ────────────────────
+function sanitizeTarget(t) {
+  if (!t || typeof t !== 'object') return null;
+  return {
+    ...(t._id ? { _id: t._id } : {}),
+    label:     String(t.label || ''),
+    chatId:    String(t.chatId || ''),
+    enabled:   Boolean(t.enabled !== false), // default true
+    schedules: Array.isArray(t.schedules)
+      ? t.schedules.map(sanitizeScheduleItem).filter(Boolean)
+      : [],
+  };
+}
+
+// ── Helper: sanitize full wahaConfig ─────────────────────────
+function sanitizeWahaConfig(wahaConfig, existingWahaConfig) {
+  if (!wahaConfig) return existingWahaConfig || {};
+
+  return {
+    enabled:         Boolean(wahaConfig.enabled),
+    endpoint:        String(wahaConfig.endpoint || ''),
+    chatId:          String(wahaConfig.chatId   || ''),
+    session:         String(wahaConfig.session  || 'default'),
+    // Preserve existing apiKey if incoming value is masked '***'
+    apiKey: wahaConfig.apiKey === '***'
+      ? (existingWahaConfig?.apiKey || '')
+      : String(wahaConfig.apiKey || ''),
+    incomingEnabled: Boolean(wahaConfig.incomingEnabled),
+
+    // ✅ FIXED: properly save targets array
+    targets: Array.isArray(wahaConfig.targets)
+      ? wahaConfig.targets.map(sanitizeTarget).filter(t => t && t.chatId)
+      : (existingWahaConfig?.targets || []),
+
+    // ✅ FIXED: properly save global schedules array
+    schedules: Array.isArray(wahaConfig.schedules)
+      ? wahaConfig.schedules.map(sanitizeScheduleItem).filter(Boolean)
+      : (existingWahaConfig?.schedules || []),
+
+    // Legacy single daily schedule (backward compat)
+    dailySchedule: {
+      enabled: Boolean(wahaConfig.dailySchedule?.enabled),
+      time:    String(wahaConfig.dailySchedule?.time    || '08:00'),
+      prompt:  String(wahaConfig.dailySchedule?.prompt  || ''),
+    },
+  };
+}
+
 // ── Helper: build diff ────────────────────────────────────────
 function buildDiff(before, after, keys) {
   const b = {}, a = {};
@@ -100,25 +164,15 @@ function buildDiff(before, after, keys) {
 }
 
 // ── Helper: cek akses bot ─────────────────────────────────────
-// Aturan akses:
-//   Admin         → selalu boleh semua bot
-//   Bot Creator   → boleh jika:
-//     1. bot.createdBy === user._id        (dia yang buat)
-//     2. bot._id ada di user.assignedBots  (di-assign oleh admin)
-//     3. bot.createdBy === null/undefined  (bot lama sebelum fitur ini — visible ke semua Bot Creator)
 async function canAccessBot(user, botOrId) {
   if (user.isAdmin) return true;
 
   const botId = typeof botOrId === 'object' ? String(botOrId._id ?? botOrId) : String(botOrId);
   const bot   = typeof botOrId === 'object' ? botOrId : await Bot.findById(botId).select('createdBy').lean();
 
-  // ✅ Bot lama tanpa createdBy → accessible oleh semua Bot Creator
   if (bot && (bot.createdBy === null || bot.createdBy === undefined)) return true;
-
-  // Cek apakah dia yang buat
   if (bot && String(bot.createdBy) === String(user._id)) return true;
 
-  // Cek apakah di-assign ke dia
   const dbUser = await User.findById(user._id).select('assignedBots').lean();
   const assigned = (dbUser?.assignedBots || []).map(String);
   return assigned.includes(botId);
@@ -327,27 +381,21 @@ router.get('/bots', requireAdminOrBotCreator, async (req, res) => {
     let query = {};
 
     if (!req.user.isAdmin) {
-      // Bot Creator dapat melihat:
-      //   1. Bot yang dia buat (createdBy === user._id)
-      //   2. Bot yang di-assign admin ke dia
-      //   3. Bot lama tanpa createdBy (null) — data sebelum fitur ini ada
       const dbUser = await User.findById(req.user._id).select('assignedBots').lean();
       const assignedIds = dbUser?.assignedBots || [];
       query = {
         $or: [
           { createdBy: req.user._id },
           { _id: { $in: assignedIds } },
-          { createdBy: null },          // ✅ bot lama tidak punya createdBy
+          { createdBy: null },
         ],
       };
     }
-    // Admin: query = {} → semua bot
 
     const bots = await Bot.find(query).lean();
 
     const sanitized = bots.map(b => ({
       ...b,
-      // ✅ API Key SELALU disembunyikan — pakai GET /bots/:id/api-key untuk reveal
       botApiKey: b.botApiKey ? '***' : '',
       aiProvider: b.aiProvider
         ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' }
@@ -385,8 +433,8 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
       prompt: prompt || '',
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
-      createdBy: req.user._id,   // ✅ Simpan siapa yang buat
-      botApiKey: '',             // ✅ Tidak auto-generate
+      createdBy: req.user._id,
+      botApiKey: '',
       aiProvider: {
         provider:    aiProvider?.provider    || 'openai',
         model:       aiProvider?.model       || 'gpt-4.1',
@@ -396,14 +444,10 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
         maxTokens:   aiProvider?.maxTokens   ?? 2000,
       },
       capabilities: sanitizeCapabilities(capabilities),
-      wahaConfig: {
-        enabled:  wahaConfig?.enabled  || false,
-        endpoint: wahaConfig?.endpoint || '',
-        chatId:   wahaConfig?.chatId   || '',
-        session:  wahaConfig?.session  || 'default',
-        apiKey:   wahaConfig?.apiKey   || '',
-        incomingEnabled: wahaConfig?.incomingEnabled || false,
-      },
+
+      // ✅ FIXED: wahaConfig sekarang menyimpan targets dan schedules
+      wahaConfig: sanitizeWahaConfig(wahaConfig, {}),
+
       smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
       kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
@@ -429,6 +473,8 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
         capabilities: Object.entries(sanitizeCapabilities(capabilities))
           .filter(([, v]) => v).map(([k]) => k),
         createdBy: req.user._id,
+        wahaTargets:   (newBot.wahaConfig?.targets   || []).length,
+        wahaSchedules: (newBot.wahaConfig?.schedules || []).length,
       },
     });
 
@@ -463,17 +509,10 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
       starterQuestions: starterQuestions || [],
       knowledgeMode: knowledgeMode || 'relevant',
       capabilities: sanitizeCapabilities(capabilities),
-      // ✅ botApiKey tidak bisa diubah lewat sini — pakai POST /regenerate-key
-      wahaConfig: {
-        enabled:  wahaConfig?.enabled  || false,
-        endpoint: wahaConfig?.endpoint || '',
-        chatId:   wahaConfig?.chatId   || '',
-        session:  wahaConfig?.session  || 'default',
-        apiKey: wahaConfig?.apiKey === '***'
-          ? existing.wahaConfig?.apiKey
-          : (wahaConfig?.apiKey || ''),
-        incomingEnabled: wahaConfig?.incomingEnabled || false,
-      },
+
+      // ✅ FIXED: wahaConfig sekarang menyimpan targets dan schedules dengan benar
+      wahaConfig: sanitizeWahaConfig(wahaConfig, existing.wahaConfig?.toObject?.() || existing.wahaConfig || {}),
+
       smartsheetConfig: {
         enabled: smartsheetConfig?.enabled || false,
         sheetId: smartsheetConfig?.sheetId || '',
@@ -537,12 +576,21 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
       ['name', 'model', 'provider', 'tone', 'knowledgeMode'],
     );
 
+    // ✅ Log jumlah targets dan schedules untuk debugging
+    const newTargets   = (updateData.wahaConfig?.targets   || []).length;
+    const newSchedules = (updateData.wahaConfig?.schedules || []).length;
+    console.log(`[BOT UPDATE] wahaConfig — targets: ${newTargets}, schedules: ${newSchedules}`);
+
     const updated = await Bot.findByIdAndUpdate(req.params.id, updateData, { new: true });
 
     AuditService.log({
       req, category: 'bot', action: 'BOT_UPDATE',
       targetId: updated._id, targetName: updated.name,
-      detail: diff ?? { note: 'no field changes' },
+      detail: {
+        ...(diff ?? { note: 'no field changes' }),
+        wahaTargets:   newTargets,
+        wahaSchedules: newSchedules,
+      },
     });
 
     const result = updated.toObject();
@@ -585,7 +633,6 @@ router.delete('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
 // 🔑 BOT API KEY — Generate & Reveal (Terpisah, Eksplisit)
 // ============================================================
 
-// ── GET /bots/:id/api-key — Reveal key (hanya saat user klik "Lihat") ──
 router.get('/bots/:id/api-key', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id).select('botApiKey createdBy name').lean();
@@ -609,7 +656,6 @@ router.get('/bots/:id/api-key', requireAdminOrBotCreator, async (req, res) => {
   }
 });
 
-// ── POST /bots/:id/regenerate-key — Generate / Regenerate ────
 router.post('/bots/:id/regenerate-key', requireAdminOrBotCreator, async (req, res) => {
   try {
     const bot = await Bot.findById(req.params.id);
@@ -629,7 +675,6 @@ router.post('/bots/:id/regenerate-key', requireAdminOrBotCreator, async (req, re
       detail: { note: isFirstGenerate ? 'API Key generated for the first time' : 'API Key regenerated' },
     });
 
-    // ✅ Key dikirim SEKALI saat generate — frontend tampilkan lalu sembunyikan
     res.json({
       message: isFirstGenerate ? 'API Key berhasil dibuat' : 'API Key berhasil dibuat ulang',
       botApiKey: newApiKey,
