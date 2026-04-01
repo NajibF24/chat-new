@@ -93,7 +93,7 @@ const sanitizeCapabilities = (caps = {}) => ({
 function sanitizeScheduleItem(s) {
   if (!s || typeof s !== 'object') return null;
   return {
-    ...(s._id ? { _id: s._id } : {}),
+    // HAPUS baris _id — biarkan Mongoose generate otomatis
     enabled:      Boolean(s.enabled),
     label:        String(s.label || ''),
     prompt:       String(s.prompt || ''),
@@ -108,10 +108,10 @@ function sanitizeScheduleItem(s) {
 function sanitizeTarget(t) {
   if (!t || typeof t !== 'object') return null;
   return {
-    ...(t._id ? { _id: t._id } : {}),
+    // HAPUS baris _id — biarkan Mongoose generate otomatis
     label:     String(t.label || ''),
     chatId:    String(t.chatId || ''),
-    enabled:   Boolean(t.enabled !== false), // default true
+    enabled:   Boolean(t.enabled !== false),
     schedules: Array.isArray(t.schedules)
       ? t.schedules.map(sanitizeScheduleItem).filter(Boolean)
       : [],
