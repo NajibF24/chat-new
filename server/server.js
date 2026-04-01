@@ -14,6 +14,7 @@ import chatRoutes from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes from './routes/embed.js';
 import pptxRoutes from './routes/pptx.js';  // ← TAMBAHAN BARU (1 baris)
+import webhookRoutes from './routes/webhook.js';
 import { startWahaScheduler } from './services/wahaScheduler.js';
 
 dotenv.config();
@@ -110,7 +111,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/smartsheet', smartsheetRoutes);
 app.use('/api/embed', embedRoutes);
 app.use('/api/pptx', pptxRoutes);  // ← TAMBAHAN BARU (1 baris)
-
+app.use('/api/webhook', webhookRoutes);
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint Not Found' }));

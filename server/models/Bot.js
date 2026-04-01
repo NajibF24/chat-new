@@ -111,6 +111,7 @@ const botSchema = new mongoose.Schema({
     endpoint: { type: String, default: '' },
     session:  { type: String, default: 'default' },
     apiKey:   { type: String, default: '' },
+    incomingEnabled: { type: Boolean, default: false },
 
     // ✅ NEW: Multiple targets (chat IDs / groups)
     targets: { type: [wahaTargetSchema], default: [] },

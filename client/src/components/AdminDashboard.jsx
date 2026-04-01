@@ -1550,7 +1550,7 @@ function AdminDashboard({ user, handleLogout }) {
                   )}
 
                   {/* --- GANTI BLOK WAHA LAMA DENGAN KOMPONEN --- */}
-                  <WahaConfigSection botForm={botForm} setBotForm={setBotForm} />
+                  <WahaConfigSection botForm={botForm} setBotForm={setBotForm} editingBot={editingBot} />
 
                   {/* Smartsheet / Kouventa / Azure Search */}
                   {[

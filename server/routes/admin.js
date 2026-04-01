@@ -402,6 +402,7 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
         chatId:   wahaConfig?.chatId   || '',
         session:  wahaConfig?.session  || 'default',
         apiKey:   wahaConfig?.apiKey   || '',
+        incomingEnabled: wahaConfig?.incomingEnabled || false,
       },
       smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
       kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
@@ -471,6 +472,7 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
         apiKey: wahaConfig?.apiKey === '***'
           ? existing.wahaConfig?.apiKey
           : (wahaConfig?.apiKey || ''),
+        incomingEnabled: wahaConfig?.incomingEnabled || false,
       },
       smartsheetConfig: {
         enabled: smartsheetConfig?.enabled || false,
