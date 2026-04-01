@@ -551,16 +551,20 @@ function AdminDashboard({ user, handleLogout }) {
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
       onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
       wahaConfig: {
-        enabled: bot.wahaConfig?.enabled || false,
-        endpoint: bot.wahaConfig?.endpoint || '',
-        chatId: bot.wahaConfig?.chatId || '',
-        session: bot.wahaConfig?.session || 'default',
-        apiKey: bot.wahaConfig?.apiKey || '',
+        enabled:         bot.wahaConfig?.enabled         || false,
+        endpoint:        bot.wahaConfig?.endpoint        || '',
+        chatId:          bot.wahaConfig?.chatId          || '',
+        session:         bot.wahaConfig?.session         || 'default',
+        apiKey:          bot.wahaConfig?.apiKey          || '',
+        incomingEnabled: bot.wahaConfig?.incomingEnabled || false,
+        // ✅ TAMBAH INI:
+        targets:         bot.wahaConfig?.targets         || [],
+        schedules:       bot.wahaConfig?.schedules       || [],
         dailySchedule: {
           enabled: bot.wahaConfig?.dailySchedule?.enabled || false,
-          time: bot.wahaConfig?.dailySchedule?.time || '08:00',
-          prompt: bot.wahaConfig?.dailySchedule?.prompt || ''
-        }
+          time:    bot.wahaConfig?.dailySchedule?.time    || '08:00',
+          prompt:  bot.wahaConfig?.dailySchedule?.prompt  || '',
+        },
       },
       avatar: bot.avatar || { type: 'emoji', emoji: '🤖', bgColor: '#6366f1' },
     });
