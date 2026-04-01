@@ -22,6 +22,9 @@ const MAX_HISTORY    = 12;
 const RESET_COMMANDS = ['/reset', '/clear', '/mulai', 'reset', 'clear'];
 const HELP_COMMANDS  = ['/help', '/bantuan', 'help', 'bantuan', '/start'];
 
+// Base URL internal — user & WAHA harus bisa akses ini (jaringan GYS)
+const SERVER_INTERNAL_URL = (process.env.SERVER_INTERNAL_URL || 'http://172.16.31.48:8080').replace(/\/$/, '');
+
 // ── Deteksi PPT command ───────────────────────────────────────
 const isPptCommand = (msg = '') => {
   const t = msg.toLowerCase().trim();
@@ -70,7 +73,6 @@ async function saveTempMedia(buffer, mimeType, filename) {
 
 // ── Download media dari WAHA dengan berbagai strategi ─────────
 async function downloadWahaMedia(wahaConfig, payload) {
-  // Kumpulkan semua kandidat URL dari payload WAHA
   const candidateUrls = [
     payload.media?.url,
     payload.mediaUrl,
@@ -92,7 +94,6 @@ async function downloadWahaMedia(wahaConfig, payload) {
     throw new Error('Tidak ada URL media yang ditemukan di payload');
   }
 
-  // Derive WAHA base URL dari endpoint config
   let wahaBaseUrl = '';
   try {
     const u = new URL(wahaConfig.endpoint);
@@ -106,13 +107,12 @@ async function downloadWahaMedia(wahaConfig, payload) {
 
   for (const rawUrl of candidateUrls) {
     try {
-      // Jika URL relatif atau pakai localhost/container name, ganti dengan IP WAHA
       let downloadUrl = rawUrl;
       if (rawUrl.startsWith('/')) {
         downloadUrl = `${wahaBaseUrl}${rawUrl}`;
       } else if (rawUrl.includes('localhost') || rawUrl.includes('127.0.0.1') || rawUrl.includes('waha:')) {
-        const urlObj   = new URL(rawUrl);
-        const baseObj  = new URL(wahaBaseUrl);
+        const urlObj    = new URL(rawUrl);
+        const baseObj   = new URL(wahaBaseUrl);
         urlObj.hostname = baseObj.hostname;
         urlObj.port     = baseObj.port;
         urlObj.protocol = baseObj.protocol;
@@ -120,7 +120,6 @@ async function downloadWahaMedia(wahaConfig, payload) {
       }
 
       console.log(`[WA Webhook] Trying download: ${downloadUrl}`);
-
       const res = await axios.get(downloadUrl, {
         headers,
         responseType: 'arraybuffer',
@@ -129,7 +128,6 @@ async function downloadWahaMedia(wahaConfig, payload) {
 
       const buffer = Buffer.from(res.data);
       const mime   = res.headers['content-type']?.split(';')[0] || mimeType;
-
       console.log(`[WA Webhook] Media downloaded OK: ${buffer.length} bytes, type: ${mime}`);
       return { buffer, mimeType: mime, filename };
 
@@ -139,7 +137,6 @@ async function downloadWahaMedia(wahaConfig, payload) {
     }
   }
 
-  // Fallback: coba WAHA API endpoint /api/files/:session/:mediaId
   const messageId = payload.id || payload._data?.id?.id;
   if (messageId) {
     try {
@@ -224,6 +221,50 @@ async function saveHistory(botId, phoneNumber, userMsg, assistantMsg, maxLen) {
     );
   } catch (e) {
     console.error('[WA Webhook] saveHistory error:', e.message);
+  }
+}
+
+// ── Kirim file via WAHA — URL-first, fallback ke link teks ────
+async function sendFileWithFallback(waha, wahaConfig, phoneNumber, fileUrl, filename, caption) {
+  try {
+    // WAHA fetch file dari URL lalu forward ke WhatsApp
+    await waha.post('/api/sendFile', {
+      session: wahaConfig.session || 'default',
+      chatId:  phoneNumber,
+      file:    { url: fileUrl, filename },
+      caption,
+    });
+    console.log(`[WA Webhook] sendFile via URL OK: ${filename}`);
+  } catch (err) {
+    console.warn(`[WA Webhook] sendFile gagal (${err?.response?.status || err.message}), fallback ke link teks`);
+    // Fallback: kirim link — user bisa buka di browser (selama di jaringan GYS)
+    await waha.sendText(phoneNumber,
+      `${caption}\n\n` +
+      `📥 *Download file:*\n${fileUrl}\n\n` +
+      `_Buka link di browser HP kamu (pastikan terhubung jaringan GYS)_`
+    );
+  }
+}
+
+// ── Kirim gambar via WAHA — URL-first, fallback ke link teks ──
+async function sendImageWithFallback(waha, wahaConfig, phoneNumber, imageUrl, caption) {
+  try {
+    // WAHA fetch gambar dari URL lalu forward ke WhatsApp
+    await waha.post('/api/sendImage', {
+      session: wahaConfig.session || 'default',
+      chatId:  phoneNumber,
+      file:    { url: imageUrl },
+      caption,
+    });
+    console.log(`[WA Webhook] sendImage via URL OK`);
+  } catch (err) {
+    console.warn(`[WA Webhook] sendImage gagal (${err?.response?.status || err.message}), fallback ke link teks`);
+    // Fallback: kirim link — user bisa buka di browser
+    await waha.sendText(phoneNumber,
+      `${caption}\n\n` +
+      `🖼️ *Lihat gambar:*\n${imageUrl}\n\n` +
+      `_Buka link di browser HP kamu (pastikan terhubung jaringan GYS)_`
+    );
   }
 }
 
@@ -351,7 +392,6 @@ router.post('/waha/:botId', async (req, res) => {
         const AICoreModule = await import('../services/ai-core.service.js');
         const AICore       = AICoreModule.default;
 
-        // ✅ FIX: gunakan ObjectId yang valid (createdBy atau _id bot)
         const virtualUserId = bot.createdBy || bot._id;
 
         const result = await AICore.processMessage({
@@ -364,7 +404,7 @@ router.post('/waha/:botId', async (req, res) => {
 
         await waha.stopTyping(phoneNumber);
 
-        // Cek apakah response mengandung link file .pptx
+        // Cek apakah response mengandung path file .pptx
         const pptxUrlMatch = result?.response?.match(/\/api\/files\/[^\s)"]+\.pptx/);
         if (pptxUrlMatch) {
           const relativePath = pptxUrlMatch[0].replace('/api/files/', '');
@@ -372,19 +412,12 @@ router.post('/waha/:botId', async (req, res) => {
           const filename     = relativePath.split('/').pop();
 
           if (fs.existsSync(filePath)) {
-            // ✅ FIX: kirim file langsung sebagai base64
-            const fileBuffer = fs.readFileSync(filePath);
-            const base64Data = fileBuffer.toString('base64');
-            await waha.post('/api/sendFile', {
-              session:  wahaConfig.session || 'default',
-              chatId:   phoneNumber,
-              file:     {
-                mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                data:     base64Data,
-                filename,
-              },
-              caption: `📊 *Presentasi siap!*\nFile: ${filename}`,
-            });
+            const fileUrl = `${SERVER_INTERNAL_URL}/api/files/${relativePath}`;
+            await sendFileWithFallback(
+              waha, wahaConfig, phoneNumber,
+              fileUrl, filename,
+              `📊 *Presentasi siap!*\nFile: ${filename}`
+            );
           } else {
             await waha.sendText(phoneNumber, `📊 *Presentasi selesai!*\n\n${result.response}`);
           }
@@ -417,22 +450,20 @@ router.post('/waha/:botId', async (req, res) => {
         const { generateImage } = await import('../services/image.service.js');
         const relativeUrl = await generateImage(prompt);
 
-        // ✅ FIX: baca file lalu kirim sebagai base64 (WAHA tidak perlu akses URL portal)
-        const filePath   = path.join(process.cwd(), 'data', 'files',
-          relativeUrl.replace('/api/files/', ''));
-        const imgBuffer  = fs.readFileSync(filePath);
-        const base64Data = imgBuffer.toString('base64');
+        // Bentuk URL internal yang bisa diakses di jaringan GYS
+        const imageUrl = `${SERVER_INTERNAL_URL}${relativeUrl}`;
 
         await waha.stopTyping(phoneNumber);
 
-        await waha.post('/api/sendImage', {
-          session: wahaConfig.session || 'default',
-          chatId:  phoneNumber,
-          file:    { mimetype: 'image/jpeg', data: base64Data },
-          caption: `🎨 ${prompt}`,
-        });
+        await sendImageWithFallback(
+          waha, wahaConfig, phoneNumber,
+          imageUrl,
+          `🎨 ${prompt}`
+        );
 
         // Hapus file sementara setelah 5 menit
+        const filePath = path.join(process.cwd(), 'data', 'files',
+          relativeUrl.replace('/api/files/', ''));
         setTimeout(() => fs.promises.unlink(filePath).catch(() => {}), 5 * 60 * 1000);
 
         await saveHistory(botId, phoneNumber, incomingText, `[Gambar dibuat: ${prompt}]`, MAX_HISTORY);
@@ -456,12 +487,10 @@ router.post('/waha/:botId', async (req, res) => {
     // ── 9. Normal AI chat ────────────────────────────────────
     let userContent = incomingText || (hasMedia ? `[File dikirim: ${mediaFilename}]` : '');
 
-    // Extract konten file jika ada
     if (attachedFile) {
       try {
         const isImage = attachedFile.mimetype.startsWith('image/');
         if (!isImage) {
-          // Dokumen: extract text
           const { content } = await KnowledgeBaseService.extractContent(
             attachedFile.path, attachedFile.filename, attachedFile.mimetype
           );
@@ -473,7 +502,6 @@ router.post('/waha/:botId', async (req, res) => {
             console.log(`[WA Webhook] File extracted: ${attachedFile.filename} (${content.length} chars)`);
           }
         } else {
-          // Gambar: bisa kirim ke OpenAI vision jika supported
           userContent = userContent || `Tolong analisis gambar ini (${attachedFile.filename}).`;
         }
       } catch (e) {
@@ -481,11 +509,9 @@ router.post('/waha/:botId', async (req, res) => {
         userContent = userContent || `[File diterima: ${attachedFile.filename}, tapi gagal dibaca]`;
       }
 
-      // Hapus file tmp setelah 10 menit
       setTimeout(() => fs.promises.unlink(attachedFile.path).catch(() => {}), 10 * 60 * 1000);
     }
 
-    // Build context dari knowledge base dan smartsheet
     const knowledgeCtx  = buildKnowledgeContext(bot, userContent);
     const smartsheetCtx = await buildSmartsheetContext(bot, userContent);
     const contextData   = [knowledgeCtx, smartsheetCtx].filter(Boolean).join('\n\n');
@@ -493,7 +519,6 @@ router.post('/waha/:botId', async (req, res) => {
     let systemPrompt = buildSystemPrompt(bot, phoneNumber);
     if (contextData) systemPrompt += `\n\n${contextData}`;
 
-    // Panggil AI
     const aiResult = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider,
       systemPrompt,
@@ -501,7 +526,7 @@ router.post('/waha/:botId', async (req, res) => {
       userContent,
       capabilities:   {
         ...bot.capabilities,
-        webSearch:      false, // WA tidak butuh web search native
+        webSearch:       false,
         codeInterpreter: false,
         imageGeneration: false,
       },
@@ -512,10 +537,8 @@ router.post('/waha/:botId', async (req, res) => {
     await waha.stopTyping(phoneNumber);
     await waha.sendText(phoneNumber, aiText);
 
-    // Simpan history
     await saveHistory(botId, phoneNumber, userContent.substring(0, 500), aiText, MAX_HISTORY);
 
-    // Audit log
     await AuditService.log({
       req,
       category: 'chat', action: 'AI_RESPONSE',
