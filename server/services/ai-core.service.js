@@ -19,6 +19,7 @@ import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
 import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
+import PptxTemplateService from './pptx-template.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // URL VALIDATOR — HEAD request to verify URL is reachable
@@ -771,236 +772,275 @@ Do NOT fabricate URLs.
   // PPT COMMAND HANDLER
   // ─────────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile = null }) {
+  try {
+    let dbHistory = [];
     try {
-      let dbHistory = [];
+      if (threadId) {
+        dbHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(30).lean();
+      }
+      dbHistory = dbHistory.filter(h => {
+        if (!h.content) return false;
+        if (PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))) return false;
+        return true;
+      });
+    } catch (e) { console.warn('[PPT] DB history error:', e.message); }
+ 
+    const userRequest     = message || '';
+    const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
+ 
+    let historicalContent = '';
+    if (refersToHistory && dbHistory.length > 0) {
+      historicalContent = dbHistory
+        .filter(h => h.content && h.content.length > 100)
+        .filter(h => !PPT_RESPONSE_MARKERS.some(m => (h.content || '').includes(m)))
+        .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
+        .join('\n\n---\n\n')
+        .substring(0, 8000);
+    }
+ 
+    console.log('[PPT] Step 1 — generating smart content with auto layout detection...');
+ 
+    // ── Extract images dari DOCX yang di-attach ──────────────
+    let docxImages    = [];
+    let docxText      = '';
+    let hasDocxImages = false;
+ 
+    if (attachedFile) {
+      const attachedExt = path.extname(
+        attachedFile.originalname || attachedFile.filename || ''
+      ).toLowerCase();
+      if (attachedExt === '.docx' || attachedFile.mimetype?.includes('wordprocessingml')) {
+        const physPath = attachedFile.serverPath || attachedFile.path;
+        if (physPath && fs.existsSync(physPath)) {
+          docxImages    = await extractDocxImagesForChat(physPath);
+          hasDocxImages = docxImages.length > 0;
+          try {
+            const mammothMod = await import('mammoth');
+            const result = await mammothMod.default.extractRawText({ path: physPath });
+            docxText = result.value || '';
+          } catch (e) { console.warn('[PPT] DOCX text error:', e.message); }
+        }
+      }
+    }
+ 
+    const isAnthropicProvider = bot.aiProvider?.provider === 'anthropic';
+    let contentResult;
+ 
+    if (isAnthropicProvider && hasDocxImages) {
+      const axios  = (await import('axios')).default;
+      const apiKey = bot.aiProvider.apiKey?.trim() || process.env.ANTHROPIC_API_KEY || '';
+      const model  = bot.aiProvider.model || 'claude-sonnet-4-6';
+      const maxTok = Math.max(bot.aiProvider.maxTokens ?? 4096, 8000);
+ 
+      const contextText = [
+        historicalContent ? `CONVERSATION:\n${historicalContent}\n\n` : '',
+        docxText ? `DOCUMENT:\n${docxText.substring(0, 25000)}\n\n` : '',
+        `REQUEST: ${userRequest}`,
+        `\nMatch language exactly. ${docxImages.length} images attached below.`,
+      ].filter(Boolean).join('');
+ 
+      const blocks = [{ type: 'text', text: contextText }];
+      docxImages.forEach((img, i) => {
+        blocks.push({ type: 'text', text: `[IMAGE ${i+1}: "${img.name}" (${img.sizeKB}KB)]` });
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.base64 } });
+      });
+ 
       try {
-        if (threadId) {
-          dbHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(30).lean();
-        }
-        dbHistory = dbHistory.filter(h => {
-          if (!h.content) return false;
-          if (PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))) return false;
-          return true;
-        });
-      } catch (e) { console.warn('[PPT] DB history error:', e.message); }
-
-      const userRequest     = message || '';
-      const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
-
-      let historicalContent = '';
-      if (refersToHistory && dbHistory.length > 0) {
-        historicalContent = dbHistory
-          .filter(h => h.content && h.content.length > 100)
-          .filter(h => !PPT_RESPONSE_MARKERS.some(m => (h.content || '').includes(m)))
-          .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
-          .join('\n\n---\n\n')
-          .substring(0, 8000);
-      }
-
-      console.log('[PPT] Step 1 — generating smart content with auto layout detection...');
-
-      // ── NEW: Extract images dari DOCX yang di-attach ──────
-      let docxImages    = [];
-      let docxText      = '';
-      let hasDocxImages = false;
-
-      if (attachedFile) {
-        const attachedExt = path.extname(
-          attachedFile.originalname || attachedFile.filename || ''
-        ).toLowerCase();
-        if (attachedExt === '.docx' || attachedFile.mimetype?.includes('wordprocessingml')) {
-          const physPath = attachedFile.serverPath || attachedFile.path;
-          if (physPath && fs.existsSync(physPath)) {
-            docxImages    = await extractDocxImagesForChat(physPath);
-            hasDocxImages = docxImages.length > 0;
-            try {
-              const mammothMod = await import('mammoth');
-              const result = await mammothMod.default.extractRawText({ path: physPath });
-              docxText = result.value || '';
-            } catch (e) { console.warn('[PPT] DOCX text error:', e.message); }
-          }
-        }
-      }
-
-      const isAnthropicProvider = bot.aiProvider?.provider === 'anthropic';
-      let contentResult;
-
-      if (isAnthropicProvider && hasDocxImages) {
-        // Claude + DOCX + images → multimodal request
-        const axios  = (await import('axios')).default;
-        const apiKey = bot.aiProvider.apiKey?.trim() || process.env.ANTHROPIC_API_KEY || '';
-        const model  = bot.aiProvider.model || 'claude-sonnet-4-6';
-        const maxTok = Math.max(bot.aiProvider.maxTokens ?? 4096, 8000);
-
-        const contextText = [
-          historicalContent ? `CONVERSATION:\n${historicalContent}\n\n` : '',
-          docxText ? `DOCUMENT:\n${docxText.substring(0, 25000)}\n\n` : '',
-          `REQUEST: ${userRequest}`,
-          `\nMatch language exactly. ${docxImages.length} images attached below.`,
-        ].filter(Boolean).join('');
-
-        const blocks = [{ type: 'text', text: contextText }];
-        docxImages.forEach((img, i) => {
-          blocks.push({ type: 'text', text: `[IMAGE ${i+1}: "${img.name}" (${img.sizeKB}KB)]` });
-          blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.base64 } });
-        });
-
-        try {
-          const resp = await axios.post(
-            'https://api.anthropic.com/v1/messages',
-            { model, max_tokens: maxTok, temperature: bot.aiProvider.temperature ?? 0.1,
-              system: PPT_CONTENT_SYSTEM_PROMPT, messages: [{ role: 'user', content: blocks }] },
-            { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-              timeout: 180000 }
-          );
-          const text = resp.data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
-          contentResult = { text, usage: resp.data.usage };
-        } catch (err) {
-          console.warn('[PPT/Vision] Failed, falling back to text-only:', err.message);
-          contentResult = await AIProviderService.generateCompletion({
-            providerConfig: bot.aiProvider, systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
-            messages: [], userContent: contextText + '\n[Note: image analysis unavailable]',
-          });
-        }
-      } else {
-        // Text-only path
-        const contentUserMsg = `Generate a presentation.\nMatch language exactly.\n\n` +
-          (historicalContent ? `History:\n${historicalContent}\n\n` : '') +
-          (docxText ? `Document:\n${docxText.substring(0, 20000)}\n\n` : '') +
-          `Request: ${userRequest}`;
-
+        const resp = await axios.post(
+          'https://api.anthropic.com/v1/messages',
+          { model, max_tokens: maxTok, temperature: bot.aiProvider.temperature ?? 0.1,
+            system: PPT_CONTENT_SYSTEM_PROMPT, messages: [{ role: 'user', content: blocks }] },
+          { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+            timeout: 180000 }
+        );
+        const text = resp.data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
+        contentResult = { text, usage: resp.data.usage };
+      } catch (err) {
+        console.warn('[PPT/Vision] Failed, falling back to text-only:', err.message);
         contentResult = await AIProviderService.generateCompletion({
-          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-          systemPrompt: PPT_CONTENT_SYSTEM_PROMPT, messages: [], userContent: contentUserMsg,
+          providerConfig: bot.aiProvider, systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
+          messages: [], userContent: contextText + '\n[Note: image analysis unavailable]',
         });
       }
-
-      const slideContent = contentResult.text;
-      if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
-
-      const titleMatch = slideContent.match(/^#\s+(.+)/m);
-      const title      = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
-
-      console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
-      console.log('[PPT] Step 2 — converting to JSON...');
-
-      const jsonResult = await AIProviderService.generateCompletion({
+    } else {
+      const contentUserMsg = `Generate a presentation.\nMatch language exactly.\n\n` +
+        (historicalContent ? `History:\n${historicalContent}\n\n` : '') +
+        (docxText ? `Document:\n${docxText.substring(0, 20000)}\n\n` : '') +
+        `Request: ${userRequest}`;
+ 
+      contentResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: PPT_JSON_SYSTEM_PROMPT,
-        messages: [],
-        userContent: `Convert this presentation to JSON:\n\n${slideContent}`,
+        systemPrompt: PPT_CONTENT_SYSTEM_PROMPT, messages: [], userContent: contentUserMsg,
       });
-
-      let rawJson = jsonResult.text
-        .replace(/```json\s*/gi, '')
-        .replace(/```\s*/gi, '')
-        .trim();
-
-      const jsonStart = rawJson.indexOf('{');
-      const jsonEnd   = rawJson.lastIndexOf('}');
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
-      }
-
-      let pptData;
+    }
+ 
+    const slideContent = contentResult.text;
+    if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
+ 
+    const titleMatch = slideContent.match(/^#\s+(.+)/m);
+    const title      = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
+ 
+    console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
+    console.log('[PPT] Step 2 — converting to JSON...');
+ 
+    const jsonResult = await AIProviderService.generateCompletion({
+      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      systemPrompt: PPT_JSON_SYSTEM_PROMPT,
+      messages: [],
+      userContent: `Convert this presentation to JSON:\n\n${slideContent}`,
+    });
+ 
+    let rawJson = jsonResult.text
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/gi, '')
+      .trim();
+ 
+    const jsonStart = rawJson.indexOf('{');
+    const jsonEnd   = rawJson.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+    }
+ 
+    let pptData;
+    try {
+      pptData = JSON.parse(rawJson);
+    } catch (parseErr) {
+      console.error('[PPT] JSON parse failed:', parseErr.message);
+      throw new Error('AI failed to generate presentation data format. Please try again.');
+    }
+ 
+    if (!pptData?.slides?.length) {
+      throw new Error('JSON has no slides. Please try again.');
+    }
+ 
+    const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
+    console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — Layouts: [${layoutLog}]`);
+ 
+    // ── Step 3: Generate PPTX ────────────────────────────────
+    const outputDir = path.join(process.cwd(), 'data', 'files');
+    console.log(`[PPT] Step 3 — generating PPTX file (${pptData.slides.length} slides)...`);
+ 
+    let result = null;
+ 
+    // ── BARU: Coba template dari knowledge base dulu ──────────
+    if (PptxTemplateService.hasTemplate(bot)) {
+      console.log('[PPT] Template PPTX found in knowledge base — using real template...');
       try {
-        pptData = JSON.parse(rawJson);
-      } catch (parseErr) {
-        console.error('[PPT] JSON parse failed:', parseErr.message);
-        throw new Error('AI failed to generate presentation data format. Please try again.');
+        result = await PptxTemplateService.generate({
+          bot,
+          pptData,
+          title,
+          outputDir,
+        });
+ 
+        if (result) {
+          console.log(`[PPT] ✅ Generated using template: "${result.usedTemplate}"`);
+        } else {
+          console.log('[PPT] Template generation returned null, falling back to pptxgenjs...');
+        }
+      } catch (templateErr) {
+        console.warn('[PPT] Template generation failed:', templateErr.message);
+        console.warn('[PPT] Falling back to pptxgenjs renderer...');
+        result = null;
       }
-
-      if (!pptData?.slides?.length) {
-        throw new Error('JSON has no slides. Please try again.');
-      }
-
-      const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
-      console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — Layouts: [${layoutLog}]`);
-
-      const outputDir = path.join(process.cwd(), 'data', 'files');
-      console.log(`[PPT] Step 3 — generating PPTX file (${pptData.slides.length} slides, ${docxImages.length} images)...`);
-      const result = await PptxService.generate({
-        pptData, slideContent, title, outputDir, styleDesc: 'GYS Gamma Edition',
-        images: docxImages,   // ← TAMBAHKAN: teruskan gambar ke renderer
+    }
+ 
+    // ── Fallback ke pptxgenjs jika tidak ada template / gagal ─
+    if (!result) {
+      console.log('[PPT] Using pptxgenjs renderer...');
+      result = await PptxService.generate({
+        pptData,
+        slideContent,
+        title,
+        outputDir,
+        styleDesc: 'GYS Gamma Edition',
+        images: docxImages,
       });
-      console.log(`[PPT] Step 3 done — ${result.pptxName}`);
-
-      const reqLower = userRequest.toLowerCase();
-      const reqIndo  = reqLower.includes('bahasa indonesia') || reqLower.includes('indo');
-      const reqEng   = reqLower.includes('english') || reqLower.includes('inggris');
-
-      let isEnglish = false;
-      if (reqEng) {
-        isEnglish = true;
-      } else if (reqIndo) {
-        isEnglish = false;
-      } else {
-        const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
-        const indWords = reqLower.match(/\b(buat|buatkan|bikin|bikinkan|tolong|presentasi)\b/g) || [];
-        isEnglish = engWords.length > indWords.length;
-      }
-
-      const layoutIcons = {
-        TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
-        TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
-        TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯',
-      };
-
-      const layoutSummary = pptData.slides
-        .map((s, i) => {
-          const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
-          return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
-        })
-        .join('\n');
-
-      const imageNote = hasDocxImages
-        ? `\n\n📸 **${docxImages.length} gambar dari dokumen** dianalisis dan dimasukkan ke presentasi`
-        : '';
-
-      const responseMarkdown = isEnglish
-        ? `✅ **GYS Presentation successfully generated!**
-
+    }
+ 
+    // ── Step 4: Response markdown ─────────────────────────────
+    console.log(`[PPT] Step 3 done — ${result.pptxName}`);
+ 
+    const reqLower = userRequest.toLowerCase();
+    const reqIndo  = reqLower.includes('bahasa indonesia') || reqLower.includes('indo');
+    const reqEng   = reqLower.includes('english') || reqLower.includes('inggris');
+ 
+    let isEnglish = false;
+    if (reqEng) {
+      isEnglish = true;
+    } else if (reqIndo) {
+      isEnglish = false;
+    } else {
+      const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
+      const indWords = reqLower.match(/\b(buat|buatkan|bikin|bikinkan|tolong|presentasi)\b/g) || [];
+      isEnglish = engWords.length > indWords.length;
+    }
+ 
+    const layoutIcons = {
+      TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
+      TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
+      TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯',
+    };
+ 
+    const layoutSummary = pptData.slides
+      .map((s, i) => {
+        const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
+        return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
+      })
+      .join('\n');
+ 
+    const imageNote    = hasDocxImages
+      ? `\n\n📸 **${docxImages.length} gambar dari dokumen** dianalisis dan dimasukkan ke presentasi`
+      : '';
+ 
+    // ── BARU: Tampilkan info template yang dipakai ────────────
+    const templateNote = result.usedTemplate
+      ? `\n\n📋 **Template:** Menggunakan template asli "${result.usedTemplate}" dari Knowledge Base`
+      : '';
+ 
+    const responseMarkdown = isEnglish
+      ? `✅ **GYS Presentation successfully generated!**
+ 
 📊 **Title:** ${title}
 📑 **Total Slides:** ${result.slideCount} slides
-🎨 **Theme:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}${imageNote}
-
+🎨 **Theme:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}${templateNote}${imageNote}
+ 
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
-
+ 
 **Auto-detected slide layouts:**
 ${layoutSummary}
-
-💡 _Tip: Describe slides in detail — e.g. "slide 4: implementation timeline week by week" and the system will auto-pick the best visual layout._`
-        : `✅ **Presentasi GYS berhasil dibuat!**
-
+ 
+💡 _Tip: Upload a GYS-themed PPT file to the Knowledge Base for the bot to automatically use it as template._`
+      : `✅ **Presentasi GYS berhasil dibuat!**
+ 
 📊 **Judul:** ${title}
 📑 **Jumlah Slide:** ${result.slideCount} slides
-🎨 **Tema:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}${imageNote}
-
+🎨 **Tema:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}${templateNote}${imageNote}
+ 
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
-
+ 
 **Layout yang dipilih otomatis per slide:**
 ${layoutSummary}
-
-💡 _Tip: Deskripsikan slide secara detail — misal "slide 4: timeline implementasi per minggu" dan sistem akan otomatis pilih layout terbaik._`;
-
-      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
-      await new Chat({
-        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
-        attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
-      }).save();
-      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
-
-      return {
-        response: responseMarkdown, threadId,
-        attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
-      };
-
-    } catch (error) {
-      console.error('❌ [PPT Command]', error);
-      throw new Error(`Failed to create presentation: ${error.message}`);
-    }
+ 
+💡 _Tip: Upload file PPT bertemakan GYS ke Knowledge Base agar bot otomatis menggunakan template asli Anda._`;
+ 
+    await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+    await new Chat({
+      userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+      attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+    }).save();
+    await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+ 
+    return {
+      response: responseMarkdown, threadId,
+      attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+    };
+ 
+  } catch (error) {
+    console.error('❌ [PPT Command]', error);
+    throw new Error(`Failed to create presentation: ${error.message}`);
   }
 }
 
