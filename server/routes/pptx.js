@@ -18,6 +18,11 @@ import PptxService, { HTML_SLIDE_SYSTEM_PROMPT } from '../services/pptx.service.
 import AuditService from '../services/audit.service.js';
 import KnowledgeBaseService from '../services/knowledge-base.service.js';
 
+// ── Image extraction limits for Claude API ──────────────────
+const MAX_IMAGES_PER_REQUEST  = 8;          // Claude: max 8 images untuk reliabilitas
+const MAX_IMAGE_PAYLOAD_MB    = 8;          // Total payload max 8MB
+const MAX_IMAGE_PAYLOAD_BYTES = MAX_IMAGE_PAYLOAD_MB * 1024 * 1024;
+const MAX_SINGLE_IMAGE_KB     = 800;        // Skip gambar > 800KB
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const router     = express.Router();
@@ -37,43 +42,78 @@ const docUpload = multer({
 // EXTRACT IMAGES FROM DOCX (embedded images → base64)
 // ─────────────────────────────────────────────────────────────
 
-function extractDocxImages(buffer) {
+async function extractDocxImages(buffer) {
   const images = [];
   try {
-    const zip     = new AdmZip(buffer);
+    const AdmZip = (await import('adm-zip')).default;
+    const zip    = new AdmZip(buffer);
     const entries = zip.getEntries();
 
+    const mediaEntries = [];
     for (const entry of entries) {
       if (!entry.entryName.startsWith('word/media/')) continue;
 
       const ext  = path.extname(entry.entryName).toLowerCase();
-      const mime = ext === '.png'  ? 'image/png'
-                 : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
-                 : ext === '.gif'  ? 'image/gif'
-                 : ext === '.webp' ? 'image/webp'
-                 : ext === '.bmp'  ? 'image/bmp'
-                 : null;
+      const mimeMap = {
+        '.png':  'image/png',
+        '.jpg':  'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif':  'image/gif',   // akan di-convert ke JPEG
+        '.webp': 'image/webp',
+      };
+      const mime = mimeMap[ext];
+      if (!mime) continue; // skip .bmp, .emf, .wmf
 
-      if (!mime) continue;
-
-      const imageData = entry.getData();
-      const base64    = imageData.toString('base64');
-      const sizeKB    = Math.round(imageData.length / 1024);
-
-      // Skip tiny images (icons, bullets, decorative elements < 5KB)
+      const sizeKB = Math.round(entry.header.size / 1024);
       if (sizeKB < 5) continue;
+      if (sizeKB > MAX_SINGLE_IMAGE_KB) {
+        console.log(`[PPTX] Skip large image ${entry.entryName} (${sizeKB}KB > ${MAX_SINGLE_IMAGE_KB}KB)`);
+        continue;
+      }
+      mediaEntries.push({ entry, ext, mime, sizeKB, name: path.basename(entry.entryName) });
+    }
 
+    // Sort by size descending (gambar besar = lebih banyak konten)
+    mediaEntries.sort((a, b) => b.sizeKB - a.sizeKB);
+    console.log(`[PPTX] Found ${mediaEntries.length} valid images in DOCX`);
+
+    let totalPayloadBytes = 0;
+
+    for (const { entry, ext, mime, sizeKB, name } of mediaEntries) {
+      if (images.length >= MAX_IMAGES_PER_REQUEST) break;
+
+      let finalMime = mime;
+      let finalData = entry.getData();
+
+      // Convert GIF → JPEG agar aman untuk Claude API
+      if (ext === '.gif') {
+        try {
+          const sharp = (await import('sharp')).default;
+          finalData = await sharp(finalData).jpeg({ quality: 80 }).toBuffer();
+          finalMime = 'image/jpeg';
+        } catch (sharpErr) {
+          console.warn(`[PPTX] Cannot convert GIF (sharp unavailable), skipping ${name}`);
+          continue;
+        }
+      }
+
+      const base64 = finalData.toString('base64');
+      if (totalPayloadBytes + base64.length > MAX_IMAGE_PAYLOAD_BYTES) {
+        console.log(`[PPTX] Payload limit reached at ${images.length} images (${(totalPayloadBytes/1024/1024).toFixed(1)}MB)`);
+        break;
+      }
+
+      totalPayloadBytes += base64.length;
       images.push({
-        name:   path.basename(entry.entryName),
-        mime,
+        name,
+        mime:    finalMime,
         base64,
         sizeKB,
-        // Validated data URL
-        dataUrl: `data:${mime};base64,${base64}`,
+        dataUrl: `data:${finalMime};base64,${base64}`,
       });
     }
 
-    console.log(`[PPTX/Doc] Extracted ${images.length} images from DOCX (${images.map(i => i.sizeKB + 'KB').join(', ')})`);
+    console.log(`[PPTX] Extracted ${images.length} images, total payload: ${(totalPayloadBytes/1024/1024).toFixed(2)}MB`);
   } catch (e) {
     console.warn('[PPTX] extractDocxImages error:', e.message);
   }
@@ -123,59 +163,52 @@ function isGeminiProvider(bot) {
 function buildClaudeVisionContent(docText, images, userRequest, style, gysThemeInstructions) {
   const contentBlocks = [];
 
-  // ── Text block pertama: instruksi + isi dokumen ────────────
   const imageNote = images.length > 0
-    ? `\n\nDOKUMEN INI MEMILIKI ${images.length} GAMBAR YANG DILAMPIRKAN.\n` +
-      `Setiap gambar dikirim sebagai vision input setelah teks ini.\n` +
-      `INSTRUKSI GAMBAR:\n` +
-      `- Jika gambar adalah chart/grafik/diagram → buat slide CHART atau TABLE dengan data yang diekstrak\n` +
-      `- Jika gambar adalah foto/ilustrasi/infografis → deskripsikan dan masukkan ke slide yang paling relevan\n` +
-      `- Jika gambar adalah screenshot UI → buat slide CONTENT yang mendeskripsikannya\n` +
-      `- JANGAN abaikan gambar — setiap gambar harus tercermin dalam minimal satu slide\n`
-    : '';
+    ? `\n\nDocument contains ${images.length} images (attached below as vision inputs).\n` +
+      `For EACH image, determine its type and incorporate into presentation:\n` +
+      `  • Chart/graph/table → Create CHART or TABLE slide with extracted data\n` +
+      `  • Architecture/diagram → Create CONTENT or GRID slide\n` +
+      `  • Screenshot/UI → Create CONTENT slide summarizing it\n` +
+      `  • NEVER skip an image — every image must appear in at least one slide\n`
+    : '\n\nNo images in document — generate slides from text only.\n';
 
   const themeNote = gysThemeInstructions
-    ? `\n\nTEMA GYS WAJIB DIIKUTI:\n${gysThemeInstructions}\n`
+    ? `\n\nMANDATORY GYS THEME:\n${gysThemeInstructions}\n`
     : '';
 
   contentBlocks.push({
     type: 'text',
-    text: `Kamu adalah expert Presentation Designer.\n` +
-          `Buat presentasi dari dokumen berikut.\n\n` +
-          `PERMINTAAN USER: ${userRequest}\n` +
-          `GAYA/TEMA: ${style}\n` +
-          `${imageNote}${themeNote}\n` +
-          `ISI DOKUMEN:\n${docText.substring(0, 35000)}\n\n` +
-          `INSTRUKSI PENTING:\n` +
-          `1. Ekstrak SEMUA informasi penting dari dokumen\n` +
-          `2. Pertahankan struktur heading/sub-heading dokumen\n` +
-          `3. Setiap section utama dokumen = minimal 1 slide\n` +
-          `4. Gunakan layout yang paling sesuai untuk setiap konten\n` +
-          `5. Match bahasa dokumen (Indonesia atau English)\n` +
-          `6. Untuk gambar yang ada: lihat dan analisis, lalu buat slide sesuai isinya\n`,
+    text:
+      `You are an expert Presentation Designer.\n` +
+      `Create a comprehensive presentation from the document below.\n\n` +
+      `USER REQUEST: ${userRequest}\n` +
+      `STYLE/THEME: ${style}\n` +
+      `${imageNote}${themeNote}\n` +
+      `DOCUMENT TEXT:\n${docText.substring(0, 30000)}\n\n` +
+      `INSTRUCTIONS:\n` +
+      `1. Extract ALL key information from the document\n` +
+      `2. Create one slide per major section/heading\n` +
+      `3. Analyze each image and create a dedicated slide for it\n` +
+      `4. Match document language (Indonesian or English)\n` +
+      `5. Minimum 8 slides\n`,
   });
 
-  // ── Image blocks: satu block per gambar ───────────────────
-  // ✅ Claude API format yang benar: type='image', source.type='base64'
-  for (let i = 0; i < Math.min(images.length, 15); i++) {
-    const img = images[i];
-
-    // Text context sebelum setiap gambar
+  // Gambar sudah divalidasi dan dibatasi oleh extractDocxImages
+  images.forEach((img, i) => {
     contentBlocks.push({
       type: 'text',
-      text: `\n[GAMBAR ${i + 1} dari ${images.length}: ${img.name} (${img.sizeKB}KB)]\nAnalisis gambar ini dan tentukan apakah itu chart, diagram, foto, atau ilustrasi:`,
+      text: `\n[IMAGE ${i + 1} of ${images.length}: "${img.name}" (${img.sizeKB}KB)]\n` +
+            `Analyze: is it a chart, diagram, screenshot, or photo?`,
     });
-
-    // ✅ Image block dengan format Claude API yang benar
     contentBlocks.push({
       type:   'image',
       source: {
         type:       'base64',
-        media_type: img.mime,  // harus: 'image/png', 'image/jpeg', dll.
-        data:       img.base64, // TIDAK include prefix 'data:image/png;base64,'
+        media_type: img.mime,
+        data:       img.base64,  // ← raw base64, TANPA prefix "data:..."
       },
     });
-  }
+  });
 
   return contentBlocks;
 }
@@ -414,54 +447,75 @@ async function callAIWithContent({ bot, systemPrompt, userContent, isMultiModal 
   const providerConfig = bot.aiProvider;
   const provider = providerConfig?.provider || 'openai';
 
-  // For Claude with multimodal content, we need to call the Anthropic API directly
-  // with the proper array format
   if (provider === 'anthropic' && isMultiModal && Array.isArray(userContent)) {
     const axios  = (await import('axios')).default;
     const apiKey = providerConfig.apiKey?.trim() || process.env.ANTHROPIC_API_KEY || '';
-
     if (!apiKey) throw new Error('Anthropic API Key tidak ditemukan');
 
-    const model    = providerConfig.model    || 'claude-sonnet-4-6';
-    const maxTok   = providerConfig.maxTokens ?? 4096;
-    const temp     = providerConfig.temperature ?? 0.1;
+    const model  = providerConfig.model    || 'claude-sonnet-4-6';
+    const maxTok = Math.max(providerConfig.maxTokens ?? 4096, 8000);
+    const temp   = providerConfig.temperature ?? 0.1;
 
-    console.log(`[PPTX/Claude Vision] Sending ${userContent.filter(b => b.type === 'image').length} images to Claude`);
-
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model,
-        max_tokens:  Math.max(maxTok, 4096), // need more tokens for document analysis
-        temperature: temp,
-        system:      systemPrompt,
-        messages:    [{ role: 'user', content: userContent }],
-      },
-      {
-        headers: {
-          'x-api-key':         apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type':      'application/json',
-        },
-        timeout: 120000, // 2 minutes for large documents
-      }
+    const imageBlocks = userContent.filter(b => b.type === 'image');
+    const approxKB = Math.round(
+      userContent.reduce((sum, b) => sum + (b.source?.data?.length || b.text?.length || 0), 0) / 1024
     );
+    console.log(`[PPTX/Claude Vision] ${imageBlocks.length} images, ~${approxKB}KB payload`);
 
-    const text = response.data.content
-      ?.filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('') || '';
+    try {
+      const response = await axios.post(
+        'https://api.anthropic.com/v1/messages',
+        {
+          model,
+          max_tokens:  maxTok,
+          temperature: temp,
+          system:      systemPrompt,
+          messages:    [{ role: 'user', content: userContent }],
+        },
+        {
+          headers: {
+            'x-api-key':         apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type':      'application/json',
+          },
+          timeout: 180000, // 3 menit untuk dokumen besar
+          maxContentLength: 50 * 1024 * 1024,
+        }
+      );
 
-    return { text, usage: response.data.usage };
+      const text = response.data.content
+        ?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
+
+      if (!text?.trim()) throw new Error('Empty response from Claude vision API');
+
+      console.log(`[PPTX/Claude Vision] OK: ${text.length} chars, ${response.data.usage?.input_tokens} tokens`);
+      return { text, usage: response.data.usage };
+
+    } catch (visionErr) {
+      const errMsg = visionErr.response?.data?.error?.message || visionErr.message;
+      console.warn(`[PPTX/Claude Vision] FAILED: ${errMsg}`);
+      console.warn('[PPTX/Claude Vision] Falling back to text-only...');
+
+      // ← FALLBACK: text saja tanpa gambar
+      const textContent = userContent
+        .filter(b => b.type === 'text').map(b => b.text).join('\n\n');
+
+      return AIProviderService.generateCompletion({
+        providerConfig,
+        systemPrompt,
+        messages:    [],
+        userContent: textContent + '\n\n[NOTE: Image analysis unavailable. Create slides from text only.]',
+      });
+    }
   }
 
-  // For other providers, use the standard service
+  // Provider lain (OpenAI, Gemini, Custom)
   return AIProviderService.generateCompletion({
     providerConfig,
     systemPrompt,
-    messages:    [],
+    messages: [],
     userContent: Array.isArray(userContent)
-      ? userContent.map(b => b.text || '').join('\n')
+      ? userContent.filter(b => b.type === 'text').map(b => b.text).join('\n')
       : userContent,
   });
 }

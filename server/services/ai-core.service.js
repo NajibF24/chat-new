@@ -200,7 +200,7 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources }) {
 
 // ─────────────────────────────────────────────────────────────
 // FORMAT CITATIONS BLOCK
-// Uses the <!--CITATIONS_START/END--> delimiter that ChatMessage.jsx
+// Uses the delimiter that ChatMessage.jsx
 // expects — same format as ai-provider.service.js buildCitationsBlock()
 // ─────────────────────────────────────────────────────────────
 
@@ -213,7 +213,7 @@ function formatCitationsBlock(citations) {
   if (webCitations.length === 0) return '';
 
   const payload = webCitations.map(c => ({ url: c.url, title: c.title || c.url }));
-  return `\n\n<!--CITATIONS_START-->\n${JSON.stringify(payload)}\n<!--CITATIONS_END-->`;
+  return `\n\n\n${JSON.stringify(payload)}\n`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ function extractSearchTopic(message = '', history = []) {
     if (content.length > 80) {
       const clean = content
         .replace(/\n+---\s*\n.{0,10}(?:Sources).{0,10}\n[\s\S]*$/im, '')
-        .replace(/<!--CITATIONS_START-->[\s\S]*?<!--CITATIONS_END-->/g, '')
+        .replace(/[\s\S]*?/g, '')
         .trim();
       return clean.substring(0, 180);
     }
@@ -465,6 +465,55 @@ function isPptCommand(message = '') {
       /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t))
   );
 }
+// ── Constants ────────────────────────────────────────────────
+const MAX_IMAGES_CORE    = 6;
+const MAX_IMAGE_KB_CORE  = 600;
+const MAX_PAYLOAD_CORE   = 6 * 1024 * 1024; // 6MB
+
+async function extractDocxImagesForChat(filePath) {
+  const images = [];
+  try {
+    const AdmZip = (await import('adm-zip')).default;
+    const buffer = fs.readFileSync(filePath);
+    const zip    = new AdmZip(buffer);
+    const entries = zip.getEntries();
+
+    const mediaEntries = [];
+    for (const entry of entries) {
+      if (!entry.entryName.startsWith('word/media/')) continue;
+      const ext = path.extname(entry.entryName).toLowerCase();
+      const mimeMap = { '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.webp':'image/webp' };
+      const mime = mimeMap[ext];
+      if (!mime) continue;
+      const sizeKB = Math.round(entry.header.size / 1024);
+      if (sizeKB < 5 || sizeKB > MAX_IMAGE_KB_CORE) continue;
+      mediaEntries.push({ entry, ext, mime, sizeKB, name: path.basename(entry.entryName) });
+    }
+
+    mediaEntries.sort((a, b) => b.sizeKB - a.sizeKB);
+
+    let totalBytes = 0;
+    for (const { entry, ext, mime, sizeKB, name } of mediaEntries) {
+      if (images.length >= MAX_IMAGES_CORE) break;
+      let finalMime = mime, finalData = entry.getData();
+      if (ext === '.gif') {
+        try {
+          const sharp = (await import('sharp')).default;
+          finalData = await sharp(finalData).jpeg({ quality: 75 }).toBuffer();
+          finalMime = 'image/jpeg';
+        } catch { continue; }
+      }
+      const b64 = finalData.toString('base64');
+      if (totalBytes + b64.length > MAX_PAYLOAD_CORE) break;
+      totalBytes += b64.length;
+      images.push({ name, mime: finalMime, base64: b64, sizeKB });
+    }
+    console.log(`[AICoreService] Extracted ${images.length} images from DOCX`);
+  } catch (e) {
+    console.warn('[AICoreService] extractDocxImagesForChat error:', e.message);
+  }
+  return images;
+}
 
 // ─────────────────────────────────────────────────────────────
 // MAIN SERVICE CLASS
@@ -525,7 +574,7 @@ class AICoreService {
     }
 
     if (isPptCommand(message)) {
-      return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
+      return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
     }
 
     let contextData    = '';
@@ -646,9 +695,9 @@ Do NOT fabricate URLs.
     let aiResponse = result.text;
 
     // ── CASE 1: Web Search citations from OpenAI Responses API ──
-    // ai-provider.service.js already embeds <!--CITATIONS_START/END--> in the
+    // ai-provider.service.js already embeds in the
     // response text when web search is active. Nothing else to do here.
-    const hasEmbeddedCitations = aiResponse.includes('<!--CITATIONS_START-->');
+    const hasEmbeddedCitations = aiResponse.includes('');
 
     // ── CASE 2: Fallback citations via Bing/SerpAPI web search ──
     // Only run this when the provider did NOT embed citations already.
@@ -699,7 +748,7 @@ Do NOT fabricate URLs.
   // ─────────────────────────────────────────────────────────────
   // PPT COMMAND HANDLER
   // ─────────────────────────────────────────────────────────────
-  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
+  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile = null }) {
     try {
       let dbHistory = [];
       try {
@@ -728,16 +777,81 @@ Do NOT fabricate URLs.
 
       console.log('[PPT] Step 1 — generating smart content with auto layout detection...');
 
-      const contentUserMsg = historicalContent
-        ? `Generate a presentation based on this conversation.\nIMPORTANT: Match language of the user request exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\nUser request: ${userRequest}`
-        : `Generate a presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout for each slide.\n\nUser request: ${userRequest}`;
+      // ── NEW: Extract images dari DOCX yang di-attach ──────
+      let docxImages    = [];
+      let docxText      = '';
+      let hasDocxImages = false;
 
-      const contentResult = await AIProviderService.generateCompletion({
-        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
-        messages: [],
-        userContent: contentUserMsg,
-      });
+      if (attachedFile) {
+        const attachedExt = path.extname(
+          attachedFile.originalname || attachedFile.filename || ''
+        ).toLowerCase();
+        if (attachedExt === '.docx' || attachedFile.mimetype?.includes('wordprocessingml')) {
+          const physPath = attachedFile.serverPath || attachedFile.path;
+          if (physPath && fs.existsSync(physPath)) {
+            docxImages    = await extractDocxImagesForChat(physPath);
+            hasDocxImages = docxImages.length > 0;
+            try {
+              const mammothMod = await import('mammoth');
+              const result = await mammothMod.default.extractRawText({ path: physPath });
+              docxText = result.value || '';
+            } catch (e) { console.warn('[PPT] DOCX text error:', e.message); }
+          }
+        }
+      }
+
+      const isAnthropicProvider = bot.aiProvider?.provider === 'anthropic';
+      let contentResult;
+
+      if (isAnthropicProvider && hasDocxImages) {
+        // Claude + DOCX + images → multimodal request
+        const axios  = (await import('axios')).default;
+        const apiKey = bot.aiProvider.apiKey?.trim() || process.env.ANTHROPIC_API_KEY || '';
+        const model  = bot.aiProvider.model || 'claude-sonnet-4-6';
+        const maxTok = Math.max(bot.aiProvider.maxTokens ?? 4096, 8000);
+
+        const contextText = [
+          historicalContent ? `CONVERSATION:\n${historicalContent}\n\n` : '',
+          docxText ? `DOCUMENT:\n${docxText.substring(0, 25000)}\n\n` : '',
+          `REQUEST: ${userRequest}`,
+          `\nMatch language exactly. ${docxImages.length} images attached below.`,
+        ].filter(Boolean).join('');
+
+        const blocks = [{ type: 'text', text: contextText }];
+        docxImages.forEach((img, i) => {
+          blocks.push({ type: 'text', text: `[IMAGE ${i+1}: "${img.name}" (${img.sizeKB}KB)]` });
+          blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.base64 } });
+        });
+
+        try {
+          const resp = await axios.post(
+            'https://api.anthropic.com/v1/messages',
+            { model, max_tokens: maxTok, temperature: bot.aiProvider.temperature ?? 0.1,
+              system: PPT_CONTENT_SYSTEM_PROMPT, messages: [{ role: 'user', content: blocks }] },
+            { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+              timeout: 180000 }
+          );
+          const text = resp.data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
+          contentResult = { text, usage: resp.data.usage };
+        } catch (err) {
+          console.warn('[PPT/Vision] Failed, falling back to text-only:', err.message);
+          contentResult = await AIProviderService.generateCompletion({
+            providerConfig: bot.aiProvider, systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
+            messages: [], userContent: contextText + '\n[Note: image analysis unavailable]',
+          });
+        }
+      } else {
+        // Text-only path
+        const contentUserMsg = `Generate a presentation.\nMatch language exactly.\n\n` +
+          (historicalContent ? `History:\n${historicalContent}\n\n` : '') +
+          (docxText ? `Document:\n${docxText.substring(0, 20000)}\n\n` : '') +
+          `Request: ${userRequest}`;
+
+        contentResult = await AIProviderService.generateCompletion({
+          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+          systemPrompt: PPT_CONTENT_SYSTEM_PROMPT, messages: [], userContent: contentUserMsg,
+        });
+      }
 
       const slideContent = contentResult.text;
       if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
@@ -814,12 +928,16 @@ Do NOT fabricate URLs.
         })
         .join('\n');
 
+      const imageNote = hasDocxImages
+        ? `\n\n📸 **${docxImages.length} gambar dari dokumen** dianalisis dan dimasukkan ke presentasi`
+        : '';
+
       const responseMarkdown = isEnglish
         ? `✅ **GYS Presentation successfully generated!**
 
 📊 **Title:** ${title}
 📑 **Total Slides:** ${result.slideCount} slides
-🎨 **Theme:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}
+🎨 **Theme:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}${imageNote}
 
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
@@ -832,7 +950,7 @@ ${layoutSummary}
 
 📊 **Judul:** ${title}
 📑 **Jumlah Slide:** ${result.slideCount} slides
-🎨 **Tema:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}
+🎨 **Tema:** GYS Gamma Style${result.usedFallback ? ' _(fallback mode)_' : ''}${imageNote}
 
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
