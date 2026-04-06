@@ -3,7 +3,7 @@
 // GYS Portal AI — Native PPTX Service
 // Tema: Garuda Yamato Steel - Gamma.app Style Edition
 // Layouts: TITLE, SECTION, GRID, CONTENT, TWO_COLUMN,
-//          STATS, TIMELINE, CHART, TABLE, QUOTE, CLOSING
+//          STATS, TIMELINE, CHART, TABLE, QUOTE, CLOSING, IMAGE
 // ============================================================
 
 import PptxGenJS from "pptxgenjs";
@@ -509,7 +509,7 @@ function renderStats(pptx, slide, data, pageLabel) {
   addFooter(slide, pptx, pageLabel);
 }
 
-// ── TIMELINE (Roadmap — NEW) ───────────────────────────────
+// ── TIMELINE (Roadmap) ─────────────────────────────────────
 function renderTimeline(pptx, slide, data, pageLabel) {
   slide.addShape(pptx.ShapeType.rect, {
     x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
@@ -522,8 +522,7 @@ function renderTimeline(pptx, slide, data, pageLabel) {
   const steps = (data.steps || []).slice(0, 6);
   const count = Math.max(steps.length, 1);
 
-  // ── Horizontal line connecting all steps ──────────────────
-  const lineY   = 2.2;   // vertical center of the timeline
+  const lineY   = 2.2;
   const padX    = 0.5;
   const lineLen = GYS.slideW - padX * 2;
   slide.addShape(pptx.ShapeType.rect, {
@@ -535,9 +534,8 @@ function renderTimeline(pptx, slide, data, pageLabel) {
   const nodeSize = 0.36;
 
   steps.forEach((step, i) => {
-    const cx = padX + i * stepW + stepW / 2;  // center X of this step
+    const cx = padX + i * stepW + stepW / 2;
 
-    // ── Connector line segment (teal filled up to this node) ─
     if (i < steps.length - 1) {
       slide.addShape(pptx.ShapeType.rect, {
         x: cx, y: lineY - 0.025, w: stepW, h: 0.05,
@@ -545,34 +543,28 @@ function renderTimeline(pptx, slide, data, pageLabel) {
       });
     }
 
-    // ── Node circle ──────────────────────────────────────────
     const nodeX = cx - nodeSize / 2;
     const nodeY = lineY - nodeSize / 2;
-    // Outer ring
     slide.addShape(pptx.ShapeType.ellipse, {
       x: nodeX - 0.06, y: nodeY - 0.06, w: nodeSize + 0.12, h: nodeSize + 0.12,
       fill: { color: GYS.tealLight }, line: { type: "none" },
     });
-    // Inner filled circle
     slide.addShape(pptx.ShapeType.ellipse, {
       x: nodeX, y: nodeY, w: nodeSize, h: nodeSize,
       fill: { color: GYS.teal }, line: { type: "none" },
     });
-    // Step number inside circle
     slide.addText(String(i + 1), {
       x: nodeX, y: nodeY, w: nodeSize, h: nodeSize,
       fontSize: 12, bold: true, color: GYS.white, align: "center", valign: "middle",
       fontFace: GYS.fontTitle,
     });
 
-    // ── TIME LABEL (above line) ───────────────────────────────
     slide.addText(step.time || `Step ${i + 1}`, {
       x: cx - stepW * 0.44, y: lineY - 0.9, w: stepW * 0.88, h: 0.38,
       fontSize: 10, bold: true, color: GYS.tealAccent,
       align: "center", fontFace: GYS.fontTitle, wrap: true,
     });
 
-    // ── Card below the line ───────────────────────────────────
     const cardX = cx - stepW * 0.44;
     const cardY = lineY + 0.42;
     const cardW = stepW * 0.88;
@@ -584,20 +576,17 @@ function renderTimeline(pptx, slide, data, pageLabel) {
       line: { color: GYS.grayBorder, width: 1 },
       rectRadius: 0.1,
     });
-    // Top teal strip on card
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cardX, y: cardY, w: cardW, h: 0.1,
       fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.05,
     });
 
-    // Step title
     slide.addText(step.title || "Phase", {
       x: cardX + 0.1, y: cardY + 0.12, w: cardW - 0.2, h: 0.55,
       fontSize: count <= 3 ? 13 : 11, bold: true, color: GYS.darkText,
       wrap: true, fontFace: GYS.fontTitle, valign: "top",
     });
 
-    // Step description
     slide.addText(step.text || "", {
       x: cardX + 0.1, y: cardY + 0.68, w: cardW - 0.2, h: 1.65,
       fontSize: count <= 3 ? 12 : 10, color: GYS.bodyText,
@@ -629,7 +618,6 @@ function renderChart(pptx, slide, data, pageLabel) {
   const chartData  = cfg.data || [];
   const hasInsight = Boolean(data.insightText);
 
-  // Insight panel on left
   if (hasInsight) {
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 0.18, y: 1.0, w: 3.0, h: 4.15,
@@ -739,7 +727,6 @@ function renderQuote(pptx, slide, data, pageLabel) {
     x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
     fill: { color: GYS.teal }, line: { type: "none" },
   });
-  // Large decorative circles
   slide.addShape(pptx.ShapeType.ellipse, {
     x: -1.2, y: -1.5, w: 5, h: 5,
     fill: { color: GYS.tealDark }, line: { type: "none" },
@@ -751,7 +738,6 @@ function renderQuote(pptx, slide, data, pageLabel) {
 
   addLogoDark(slide, pptx, 0.28, 0.2);
 
-  // Opening quote mark
   slide.addText("\u201C", {
     x: 0.5, y: 0.6, w: 1.8, h: 1.4,
     fontSize: 110, color: GYS.tealAccent, bold: true, fontFace: "Georgia",
@@ -780,7 +766,6 @@ function renderClosing(pptx, slide, data, pageLabel) {
     x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
     fill: { color: GYS.teal }, line: { type: "none" },
   });
-  // Geometric accents
   slide.addShape(pptx.ShapeType.ellipse, {
     x: -1.5, y: -2, w: 6, h: 6,
     fill: { color: GYS.tealDark }, line: { type: "none" },
@@ -797,7 +782,6 @@ function renderClosing(pptx, slide, data, pageLabel) {
     fontFace: GYS.fontTitle,
   });
 
-  // Separator line
   slide.addShape(pptx.ShapeType.rect, {
     x: 3.5, y: 2.0, w: 3.0, h: 0.04,
     fill: { color: GYS.tealAccent }, line: { type: "none" },
@@ -828,11 +812,90 @@ function renderClosing(pptx, slide, data, pageLabel) {
   addFooter(slide, pptx, pageLabel);
 }
 
+// ── IMAGE (NEW — embeds actual image from DOCX) ────────────
+// images[] is the array of { name, mime, base64, sizeKB } objects
+// data.imageIndex is the 0-based index into that array
+function renderImageSlide(pptx, slide, data, pageLabel, images = []) {
+  // White/light background
+  slide.addShape(pptx.ShapeType.rect, {
+    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
+    fill: { color: GYS.offWhite }, line: { type: "none" },
+  });
+  addHeaderBar(slide, pptx);
+  addLogoLight(slide, pptx);
+  addSlideTitle(slide, data.title);
+
+  // Resolve image from the images array
+  const idx = typeof data.imageIndex === "number" ? data.imageIndex : parseInt(data.imageIndex ?? "0", 10);
+  const imgObj = images[idx] ?? images[0];  // fallback to first image if index out of range
+
+  if (imgObj && imgObj.base64) {
+    // Image display area: full width below header, above caption
+    const hasCaption = Boolean(data.caption);
+    const imgY    = 0.9;
+    const imgH    = hasCaption ? 3.8 : 4.3;
+    const imgX    = 0.25;
+    const imgW    = GYS.slideW - 0.5;
+
+    try {
+      // pptxgenjs accepts base64 string with data URI prefix
+      slide.addImage({
+        data: `data:${imgObj.mime};base64,${imgObj.base64}`,
+        x: imgX,
+        y: imgY,
+        w: imgW,
+        h: imgH,
+        sizing: { type: "contain", w: imgW, h: imgH },
+      });
+    } catch (imgErr) {
+      // If image embedding fails, show placeholder with error
+      console.warn(`[PPT/IMAGE] Failed to embed image "${imgObj.name}": ${imgErr.message}`);
+      slide.addShape(pptx.ShapeType.rect, {
+        x: imgX, y: imgY, w: imgW, h: imgH,
+        fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 },
+      });
+      slide.addText(`⚠️ Image: ${imgObj.name}\n(Could not embed)`, {
+        x: imgX, y: imgY, w: imgW, h: imgH,
+        fontSize: 14, color: GYS.mutedText, align: "center", valign: "middle",
+        fontFace: GYS.fontBody,
+      });
+    }
+
+    // Caption bar below image
+    if (hasCaption) {
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: imgX, y: imgY + imgH + 0.05, w: imgW, h: 0.42,
+        fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.06,
+      });
+      slide.addText(data.caption, {
+        x: imgX + 0.15, y: imgY + imgH + 0.06, w: imgW - 0.3, h: 0.38,
+        fontSize: 11, color: GYS.white, valign: "middle", wrap: true,
+        fontFace: GYS.fontBody,
+      });
+    }
+  } else {
+    // No image available at this index — show placeholder
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.25, y: 0.9, w: GYS.slideW - 0.5, h: 4.2,
+      fill: { color: GYS.tealLight }, line: { color: GYS.tealAccent, width: 2 }, rectRadius: 0.1,
+    });
+    slide.addText(`🖼️ Image ${idx + 1}\n(Not available)`, {
+      x: 0.25, y: 0.9, w: GYS.slideW - 0.5, h: 4.2,
+      fontSize: 18, color: GYS.mutedText, align: "center", valign: "middle",
+      fontFace: GYS.fontBody,
+    });
+  }
+
+  addFooter(slide, pptx, pageLabel);
+}
+
+
 // ────────────────────────────────────────────────────────────
 // MAIN generate()
+// Added: images[] parameter for embedding DOCX images
 // ────────────────────────────────────────────────────────────
 const PptxService = {
-  async generate({ pptData, slideContent, title, outputDir, styleDesc }) {
+  async generate({ pptData, slideContent, title, outputDir, styleDesc, images = [] }) {
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -844,8 +907,13 @@ const PptxService = {
     pptx.subject = title || "Presentation";
     pptx.title   = title || "Presentation";
 
-    let slideCount  = 0;
+    let slideCount   = 0;
     let usedFallback = false;
+
+    // Log image availability for debugging
+    if (images.length > 0) {
+      console.log(`[PPT] Rendering with ${images.length} embedded images`);
+    }
 
     try {
       if (!pptData?.slides?.length) throw new Error("No slides in pptData");
@@ -898,6 +966,10 @@ const PptxService = {
           case "THANK_YOU":
             renderClosing(pptx, slide, sd, pageLabel);
             break;
+          case "IMAGE":
+            // Pass the images array so renderer can look up by imageIndex
+            renderImageSlide(pptx, slide, sd, pageLabel, images);
+            break;
           default:
             renderContent(pptx, slide, sd, pageLabel);
             break;
@@ -923,7 +995,7 @@ const PptxService = {
     const filepath  = path.join(outputDir, filename);
 
     await pptx.writeFile({ fileName: filepath });
-    console.log(`✅ [PPT] Generated: ${filename} (${slideCount} slides)`);
+    console.log(`✅ [PPT] Generated: ${filename} (${slideCount} slides, ${images.length} embedded images)`);
 
     return {
       pptxFile:    filepath,

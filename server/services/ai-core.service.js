@@ -293,7 +293,7 @@ function extractSearchTopic(message = '', history = []) {
 
 const PPT_CONTENT_SYSTEM_PROMPT = `You are an expert Presentation Strategist and Visual Designer for PT Garuda Yamato Steel (GYS).
 Your job is to produce polished, visually rich slide content — like Gamma.app or Beautiful.ai.
-
+ 
 ═══════════════════════════════════════════════════════
 RULE #1 — FOLLOW USER INSTRUCTIONS EXACTLY
 ═══════════════════════════════════════════════════════
@@ -301,66 +301,81 @@ RULE #1 — FOLLOW USER INSTRUCTIONS EXACTLY
 - If user specifies a number of slides, produce exactly that count.
 - If user only gives a title/topic, generate a logical 7–9 slide narrative arc.
 - Match the user's language 100% (Indonesian → Indonesian, English → English).
-
+ 
 ═══════════════════════════════════════════════════════
 RULE #2 — SMART LAYOUT AUTO-DETECTION (MANDATORY)
 ═══════════════════════════════════════════════════════
 You MUST select the most impactful layout for each slide. Apply this decision tree:
-
+ 
   Is it the opening slide?
     → LAYOUT: TITLE
-
+ 
   Is it a topic transition / section divider?
     → LAYOUT: SECTION
-
+ 
   Does it present 2–4 strategic pillars, features, or themes?
     → LAYOUT: GRID
-
+ 
   Does it show KPIs, metrics, percentages, or big numbers?
     → LAYOUT: STATS
-
+ 
   Does it describe a TIMELINE, ROADMAP, PHASES, or SCHEDULE?
     → LAYOUT: TIMELINE
-
+ 
   Does it compare two things?
     → LAYOUT: TWO_COLUMN
-
+ 
   Does it show a data TABLE or matrix?
     → LAYOUT: TABLE
-
+ 
   Does it show trend or comparison data for a chart?
     → LAYOUT: CHART
-
+ 
   Is it a powerful quote or mission/vision statement?
     → LAYOUT: QUOTE
-
+ 
   Is it the final/closing slide?
     → LAYOUT: CLOSING
-
+ 
+  Does it show a screenshot, diagram, architecture, UI, or photo from the document?
+    → LAYOUT: IMAGE
+    → You MUST set imageIndex to the 0-based position of the image in the document
+ 
   Is it general narrative content?
     → LAYOUT: CONTENT
-
+ 
 ═══════════════════════════════════════════════════════
-RULE #3 — RICH CONTENT STANDARDS
+RULE #3 — IMAGE SLIDES (CRITICAL — READ CAREFULLY)
+═══════════════════════════════════════════════════════
+When images are attached to this prompt:
+- EVERY image MUST appear as its own IMAGE slide (or embedded in a relevant slide)
+- Use LAYOUT: IMAGE for each screenshot, diagram, architecture chart, or photo
+- Set imageIndex to the 0-based position of the image (first image = 0, second = 1, etc.)
+- Write a descriptive caption explaining what the image shows
+- Place IMAGE slides near the topic they illustrate (not all at the end)
+- Do NOT describe the image in text instead of showing it — use IMAGE layout
+ 
+═══════════════════════════════════════════════════════
+RULE #4 — RICH CONTENT STANDARDS
 ═══════════════════════════════════════════════════════
 - GRID items: emoji icon + short title (3–5 words) + 2–3 sentence description
 - STATS: emoji icon + bold value + label + context subtitle
 - TIMELINE: 3–6 steps, each with time label + title + description
 - TABLE: 3–5 columns, minimum 3 data rows
 - CONTENT bullets: minimum 4 bullets, each 10+ words
-
+ 
 ═══════════════════════════════════════════════════════
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════
-
+ 
 # [Presentation Title]
-
+ 
 ## [Opening Slide Title]
 LAYOUT: TITLE
 subtitle: [Subtitle]
 date: [Date if provided]
 presenter: [Name if provided]
-
+ 
 ## [Strategic Overview]
 LAYOUT: GRID
 items:
@@ -370,7 +385,7 @@ items:
 - icon: 🛡️
   title: Quality Assurance
   text: Zero-defect targets enforced by AI-powered visual inspection, reducing rework costs significantly.
-
+ 
 ## [Key Performance Indicators]
 LAYOUT: STATS
 stats:
@@ -378,14 +393,14 @@ stats:
   value: 94%
   label: Production Uptime
   sub: Target FY 2025
-
+ 
 ## [Implementation Roadmap]
 LAYOUT: TIMELINE
 steps:
 - time: Week 1–2
   title: Discovery & Planning
   text: Stakeholder interviews, current state mapping, gap analysis and project charter sign-off
-
+ 
 ## [Production Trend Analysis]
 LAYOUT: CHART
 insightText: Production volume grew 23% over the year, with Q3 peak driven by export demand.
@@ -394,7 +409,7 @@ chartData:
 - series: Actual (Tons)
   labels: Q1, Q2, Q3, Q4
   values: 11200, 12400, 13800, 14500
-
+ 
 ## [Before vs After]
 LAYOUT: TWO_COLUMN
 leftTitle: ❌ Current State
@@ -403,7 +418,12 @@ left:
 rightTitle: ✅ Future State
 right:
 - Automated sync reduces reporting delays to under 15 minutes
-
+ 
+## [AWS VPC Architecture]
+LAYOUT: IMAGE
+imageIndex: 0
+caption: VPC configuration for prod_agent_ai_vpc with CIDR 10.200.0.0/17 in AWS Asia Pacific Jakarta region
+ 
 ## [Closing]
 LAYOUT: CLOSING
 subtitle: Thank you for your attention
@@ -412,9 +432,9 @@ contact: info@gyssteel.com
 
 const PPT_JSON_SYSTEM_PROMPT = `You are a strict JSON converter for a PowerPoint generator.
 Return ONLY valid JSON. No markdown fences. No explanation. No trailing commas.
-
+ 
 COMPLETE SCHEMA:
-
+ 
 TITLE:    { "layout": "TITLE", "title": "...", "subtitle": "...", "date": "...", "presenter": "..." }
 SECTION:  { "layout": "SECTION", "title": "...", "subtitle": "...", "sectionNumber": "01" }
 CONTENT:  { "layout": "CONTENT", "title": "...", "bullets": ["..."] }
@@ -426,14 +446,16 @@ CHART:    { "layout": "CHART", "title": "...", "insightText": "...", "chartConfi
 TABLE:    { "layout": "TABLE", "title": "...", "tableHeaders": ["Col1","Col2"], "tableRows": [["val","val"]] }
 QUOTE:    { "layout": "QUOTE", "quote": "...", "author": "..." }
 CLOSING:  { "layout": "CLOSING", "title": "Thank You", "subtitle": "...", "contact": "..." }
-
+IMAGE:    { "layout": "IMAGE", "title": "...", "imageIndex": 0, "caption": "..." }
+ 
 CRITICAL RULES:
 1. Preserve ALL slides in exact order.
 2. For TIMELINE: map "steps" array exactly. NEVER convert to TABLE.
 3. Preserve original language in ALL text fields.
 4. "title" must never be empty.
 5. Numbers in chartConfig values must be actual numbers, not strings.
-
+6. For IMAGE layout: "imageIndex" MUST be the exact integer from the source text (0-based). Do NOT change it.
+ 
 Output format: { "slides": [ { ...slide1 }, { ...slide2 }, ... ] }
 `;
 
@@ -896,8 +918,9 @@ Do NOT fabricate URLs.
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — Layouts: [${layoutLog}]`);
 
       const outputDir = path.join(process.cwd(), 'data', 'files');
-      const result    = await PptxService.generate({
+      const result = await PptxService.generate({
         pptData, slideContent, title, outputDir, styleDesc: 'GYS Gamma Edition',
+        images: docxImages,   // ← TAMBAHKAN BARIS INI
       });
 
       const reqLower = userRequest.toLowerCase();
