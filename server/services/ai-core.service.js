@@ -1043,5 +1043,5 @@ ${layoutSummary}
     throw new Error(`Failed to create presentation: ${error.message}`);
   }
 }
-
+}
 export default new AICoreService();
