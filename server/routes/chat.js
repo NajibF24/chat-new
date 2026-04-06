@@ -182,7 +182,8 @@ router.post('/message', requireAuth, async (req, res) => {
     res.json(result);
 
   } catch (error) {
-    console.error('Chat Error:', error);
+    console.error('Chat Error:', error.message);
+    console.error('Chat Error stack:', error.stack);   // ← TAMBAHKAN baris ini
     await AuditService.log({
       req, category: 'chat', action: 'AI_RESPONSE_ERROR', status: 'failed',
       targetName: req.body?.botId || 'unknown',

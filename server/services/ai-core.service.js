@@ -339,21 +339,21 @@ You MUST select the most impactful layout for each slide. Apply this decision tr
  
   Does it show a screenshot, diagram, architecture, UI, or photo from the document?
     → LAYOUT: IMAGE
-    → You MUST set imageIndex to the 0-based position of the image in the document
+    → Set imageIndex to the 0-based position of the image (first image = 0, second = 1, etc.)
  
   Is it general narrative content?
     → LAYOUT: CONTENT
  
 ═══════════════════════════════════════════════════════
-RULE #3 — IMAGE SLIDES (CRITICAL — READ CAREFULLY)
+RULE #3 — IMAGE SLIDES (CRITICAL)
 ═══════════════════════════════════════════════════════
 When images are attached to this prompt:
-- EVERY image MUST appear as its own IMAGE slide (or embedded in a relevant slide)
+- EVERY image MUST appear as its own IMAGE slide
 - Use LAYOUT: IMAGE for each screenshot, diagram, architecture chart, or photo
-- Set imageIndex to the 0-based position of the image (first image = 0, second = 1, etc.)
+- Set imageIndex to the exact 0-based position of that image
 - Write a descriptive caption explaining what the image shows
-- Place IMAGE slides near the topic they illustrate (not all at the end)
-- Do NOT describe the image in text instead of showing it — use IMAGE layout
+- Place IMAGE slides near the topic they illustrate
+- Do NOT describe the image in text — use IMAGE layout to show it directly
  
 ═══════════════════════════════════════════════════════
 RULE #4 — RICH CONTENT STANDARDS
@@ -422,7 +422,7 @@ right:
 ## [AWS VPC Architecture]
 LAYOUT: IMAGE
 imageIndex: 0
-caption: VPC configuration for prod_agent_ai_vpc with CIDR 10.200.0.0/17 in AWS Asia Pacific Jakarta region
+caption: VPC configuration for prod_agent_ai_vpc with CIDR 10.200.0.0/17 in AWS Asia Pacific Jakarta
  
 ## [Closing]
 LAYOUT: CLOSING
@@ -454,7 +454,7 @@ CRITICAL RULES:
 3. Preserve original language in ALL text fields.
 4. "title" must never be empty.
 5. Numbers in chartConfig values must be actual numbers, not strings.
-6. For IMAGE layout: "imageIndex" MUST be the exact integer from the source text (0-based). Do NOT change it.
+6. For IMAGE layout: "imageIndex" MUST be the exact integer from the source (0-based). Preserve it exactly as a number.
  
 Output format: { "slides": [ { ...slide1 }, { ...slide2 }, ... ] }
 `;
@@ -918,10 +918,12 @@ Do NOT fabricate URLs.
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — Layouts: [${layoutLog}]`);
 
       const outputDir = path.join(process.cwd(), 'data', 'files');
+      console.log(`[PPT] Step 3 — generating PPTX file (${pptData.slides.length} slides, ${docxImages.length} images)...`);
       const result = await PptxService.generate({
         pptData, slideContent, title, outputDir, styleDesc: 'GYS Gamma Edition',
-        images: docxImages,   // ← TAMBAHKAN BARIS INI
+        images: docxImages,   // ← TAMBAHKAN: teruskan gambar ke renderer
       });
+      console.log(`[PPT] Step 3 done — ${result.pptxName}`);
 
       const reqLower = userRequest.toLowerCase();
       const reqIndo  = reqLower.includes('bahasa indonesia') || reqLower.includes('indo');
