@@ -369,14 +369,19 @@ function analyzeTemplate(zip) {
                     || (slides.length > 1 ? slides[1] : slides[0]);
 
   console.log(`[PPT Template] TITLE=slide${titleSlide.index+1}(${titleSlide.path}) CONTENT=slide${contentSlide.index+1}(${contentSlide.path}) CLOSING=slide${closingSlide.index+1}(${closingSlide.path})`);
+  const imageSlide = slides.find(s => s.hasPic && s.names.includes('Image 0'))
+               || slides.find(s => s.hasPic)
+               || contentSlide;
 
-  return { slides, titleSlide, contentSlide, closingSlide };
+  return { slides, titleSlide, contentSlide, closingSlide, imageSlide };
+
 }
 
 function pickTemplateSlide(analysis, layout) {
   const L = layout.toUpperCase();
   if (L === 'TITLE')   return analysis.titleSlide;
   if (L === 'CLOSING') return analysis.closingSlide;
+  if (L === 'IMAGE')   return analysis.imageSlide; 
   return analysis.contentSlide;
 }
 
