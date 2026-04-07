@@ -1,4 +1,6 @@
 // server/services/ai-core.service.js
+// FIXED: Citations always shown when webSearch is enabled on bot
+// FIXED: Better citation logic - never skip for informational queries
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -50,16 +52,18 @@ async function validateUrl(url, timeoutMs = 4000) {
 // WEB SEARCH — Bing Search API (or SerpAPI as fallback)
 // ─────────────────────────────────────────────────────────────
 
-async function searchWeb(query, maxResults = 5) {
+async function searchWeb(query, maxResults = 8) {
+  const results = [];
+  
   if (process.env.BING_SEARCH_API_KEY) {
     try {
       const encodedQuery = encodeURIComponent(query);
       const options = {
         method: 'GET',
         hostname: 'api.bing.microsoft.com',
-        path: `/v7.0/search?q=${encodedQuery}&count=${maxResults}&mkt=en-US`,
+        path: `/v7.0/search?q=${encodedQuery}&count=${maxResults}&mkt=en-US&freshness=Week`,
         headers: { 'Ocp-Apim-Subscription-Key': process.env.BING_SEARCH_API_KEY },
-        timeout: 5000,
+        timeout: 8000,
       };
       const data = await new Promise((resolve, reject) => {
         const req = https.request(options, (res) => {
@@ -88,7 +92,7 @@ async function searchWeb(query, maxResults = 5) {
         method: 'GET',
         hostname: 'serpapi.com',
         path: `/search.json?q=${encodedQuery}&num=${maxResults}&api_key=${process.env.SERPAPI_KEY}&hl=en`,
-        timeout: 5000,
+        timeout: 8000,
       };
       const data = await new Promise((resolve, reject) => {
         const req = https.request(options, (res) => {
@@ -110,14 +114,15 @@ async function searchWeb(query, maxResults = 5) {
     }
   }
 
-  return [];
+  return results;
 }
 
 // ─────────────────────────────────────────────────────────────
 // BUILD VERIFIED CITATIONS
+// FIXED: Skip URL validation for web-search-enabled bots to always show results
 // ─────────────────────────────────────────────────────────────
 
-async function buildVerifiedCitations({ message, aiResponse, contextSources }) {
+async function buildVerifiedCitations({ message, aiResponse, contextSources, skipValidation = false }) {
   const citations = [];
 
   for (const src of contextSources) {
@@ -135,26 +140,34 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources }) {
     }
   }
 
-  const searchQuery = message.length > 120 ? message.substring(0, 120) : message;
+  const searchQuery = message.length > 150 ? message.substring(0, 150) : message;
   const webResults  = await searchWeb(searchQuery, 8);
-  const validationResults = await Promise.allSettled(webResults.map(r => validateUrl(r.url)));
-
-  for (let i = 0; i < webResults.length; i++) {
-    const isValid = validationResults[i].status === 'fulfilled' && validationResults[i].value;
-    if (isValid) {
-      citations.push({ title: webResults[i].title, url: webResults[i].url, isInternal: false });
+  
+  if (skipValidation) {
+    // For web-search bots: include all results without validation (faster, always shows)
+    for (const r of webResults) {
+      citations.push({ title: r.title, url: r.url, isInternal: false });
+    }
+  } else {
+    // For regular queries: validate URLs (slower but more accurate)
+    const validationResults = await Promise.allSettled(webResults.map(r => validateUrl(r.url)));
+    for (let i = 0; i < webResults.length; i++) {
+      const isValid = validationResults[i].status === 'fulfilled' && validationResults[i].value;
+      if (isValid) {
+        citations.push({ title: webResults[i].title, url: webResults[i].url, isInternal: false });
+      }
     }
   }
 
   const seen    = new Set();
   const deduped = [];
   for (const c of citations) {
-    const key = c.url ? new URL(c.url).hostname : c.title;
+    const key = c.url ? (() => { try { return new URL(c.url).hostname; } catch { return c.url; } })() : c.title;
     if (!seen.has(key)) { seen.add(key); deduped.push(c); }
   }
 
-  const wordCount    = message.split(/\s+/).length;
-  const maxCitations = wordCount > 30 ? 6 : wordCount > 15 ? 4 : 3;
+  // For web-search bots: show up to 8 citations; regular: up to 6
+  const maxCitations = skipValidation ? 8 : 6;
   const sorted       = [
     ...deduped.filter(c => c.isInternal),
     ...deduped.filter(c => !c.isInternal),
@@ -172,7 +185,7 @@ function formatCitationsBlock(citations) {
   const webCitations = citations.filter(c => c.url);
   if (webCitations.length === 0) return '';
   const payload = webCitations.map(c => ({ url: c.url, title: c.title || c.url }));
-  return `\n\n\n${JSON.stringify(payload)}\n`;
+  return `\n\n<!--CITATIONS_START-->\n${JSON.stringify(payload)}\n<!--CITATIONS_END-->`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -185,61 +198,80 @@ function detectLanguage(message = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DETECT CASUAL MESSAGES
+// DETECT CASUAL MESSAGES — STRICTER: only pure greetings
+// FIXED: No longer flags short informational queries as casual
 // ─────────────────────────────────────────────────────────────
 
 function isCasualMessage(message = '') {
   const t = (message || '').trim().toLowerCase();
 
-  const casualPatterns = [
-    /^(halo|hai|hi+|hello|hey|selamat pagi|selamat siang|selamat malam|salam)\s*[!.]*$/i,
-    /^(terima kasih|makasih|thanks+|thank you|thx)\s*[!.]*$/i,
-    /^(ok|oke|iya|ya|yep|yup|nope|tidak|no|yes)\s*[!.]*$/i,
-    /^(bagus|baik|mantap|keren|hebat|luar biasa|great|good|nice|cool|wow|amazing)\s*[!.]*$/i,
+  // Only truly casual messages — pure greetings, single emoji, thanks
+  const pureCasualPatterns = [
+    /^(halo|hai|hi+|hello|hey)\s*[!.]*$/i,
+    /^(terima kasih|makasih|thanks?|thank you|thx)\s*[!.]*$/i,
+    /^(ok|oke)\s*[!.]*$/i,
     /^\s*[😀😊🙏👍❤️🔥👋]+\s*$/,
   ];
 
-  const continuationPatterns = [
-    /\b(next|lanjut|continue|more|berikut|selanjutnya|insight|terus|go on|tell me|give me|show me|what else)\b/i,
-  ];
-
-  if (continuationPatterns.some(p => p.test(t))) return false;
-  if (casualPatterns.some(p => p.test(t))) return true;
-  if (t.replace(/[^a-z]/gi, '').length <= 4) return true;
+  if (pureCasualPatterns.some(p => p.test(t))) return true;
+  
+  // Only mark as casual if it's <= 2 words AND not a question
+  const wordCount = t.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= 2 && !t.includes('?') && !t.match(/\b(update|news|insight|snack|next|info|harga|market|steel|baja)\b/i)) {
+    return true;
+  }
 
   return false;
 }
 
 // ─────────────────────────────────────────────────────────────
-// SKIP CITATION
+// SHOULD SKIP CITATION
+// FIXED: Never skip if bot has webSearch capability enabled
 // ─────────────────────────────────────────────────────────────
 
-function shouldSkipCitation(message = '', aiResponse = '') {
+function shouldSkipCitation(message = '', aiResponse = '', botCapabilities = {}) {
+  // NEVER skip if webSearch is enabled on this bot
+  if (botCapabilities?.webSearch) return false;
+  
+  // Always skip for truly casual messages
   if (isCasualMessage(message)) return true;
+  
+  // Skip for very short responses (likely error or one-word answer)
   const wordCount = aiResponse.trim().split(/\s+/).length;
-  if (wordCount < 120) return true;
+  if (wordCount < 30) return true;
+  
   return false;
 }
 
 // ─────────────────────────────────────────────────────────────
 // EXTRACT SEARCH TOPIC
+// FIXED: Better topic extraction for steel/market queries
 // ─────────────────────────────────────────────────────────────
 
 function extractSearchTopic(message = '', history = []) {
   const t = message.trim();
+  
+  // For steel/market related queries, build a more specific search
+  const steelKeywords = /\b(steel|baja|besi|iron|scrap|billet|harga|price|market|pasar|industry|industri|indonesia|global|china|trade|ekspor|impor)\b/i;
+  
+  if (steelKeywords.test(t)) {
+    // Add current year context for market queries
+    const year = new Date().getFullYear();
+    const baseQuery = t.length > 150 ? t.substring(0, 150) : t;
+    return `${baseQuery} ${year}`;
+  }
+  
   if (t.split(/\s+/).length > 8) {
     return t.length > 180 ? t.substring(0, 180) : t;
   }
 
+  // Check recent conversation for context
   const recentHistory = [...history].reverse();
   for (const h of recentHistory) {
     const content = h.content || h.text || '';
-    if (content.length > 80) {
-      const clean = content
-        .replace(/\n+---\s*\n.{0,10}(?:Sources).{0,10}\n[\s\S]*$/im, '')
-        .replace(/[\s\S]*?/g, '')
-        .trim();
-      return clean.substring(0, 180);
+    if (content.length > 80 && !content.includes('<!--CITATIONS')) {
+      const clean = content.replace(/<!--CITATIONS_START-->[\s\S]*?<!--CITATIONS_END-->/g, '').trim();
+      if (clean.length > 50) return clean.substring(0, 180);
     }
   }
 
@@ -560,6 +592,9 @@ class AICoreService {
 
     let contextData    = '';
     let contextSources = [];
+    
+    // Check if this bot has webSearch capability enabled
+    const botHasWebSearch = Boolean(bot.capabilities?.webSearch);
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
       try {
@@ -645,7 +680,12 @@ class AICoreService {
 
     const likelyCasual = isCasualMessage(message || '');
 
-    const citationInstruction = likelyCasual ? '' : `
+    // FIXED: For web-search bots, always instruct AI to write in a way that citations will be added
+    const citationInstruction = likelyCasual ? '' : botHasWebSearch ? `
+IMPORTANT: You are a web-search-enabled assistant. Always write your response referencing the most recent and relevant information.
+Your response will automatically have source links appended below — do NOT add your own "Sources:" section.
+Write your response, then the system will add verified web sources automatically.
+` : `
 IMPORTANT: Do NOT add a "Sources:" or "References:" section yourself.
 The system will automatically append verified, clickable source links after your response.
 If you used internal documents or Smartsheet data, mention the file name inline.
@@ -674,27 +714,40 @@ Do NOT fabricate URLs.
 
     let aiResponse = result.text;
 
-    const hasEmbeddedCitations = aiResponse.includes('');
+    const hasEmbeddedCitations = aiResponse.includes('<!--CITATIONS_START-->');
 
     if (!hasEmbeddedCitations) {
-      const skipCitation = shouldSkipCitation(message || '', aiResponse);
+      // FIXED: Check bot capabilities, not just message length
+      const skipCitation = shouldSkipCitation(message || '', aiResponse, bot.capabilities || {});
+      
       if (!skipCitation) {
         try {
           const searchTopic = extractSearchTopic(message || '', history.slice(-6));
-          const citations   = await buildVerifiedCitations({
-            message:  searchTopic,
+          console.log(`[Citations] Searching for: "${searchTopic.substring(0, 80)}" | webSearch bot: ${botHasWebSearch}`);
+          
+          const citations = await buildVerifiedCitations({
+            message:        searchTopic,
             aiResponse,
             contextSources,
+            skipValidation: botHasWebSearch, // Skip URL validation for web-search bots = faster + always shows
           });
+          
           if (citations.length > 0) {
+            // Remove any self-added sources section from AI
             aiResponse = aiResponse
-              .replace(/\n+---\s*\n.{0,10}(?:Sources?|References?).{0,10}\n[\s\S]*$/im, '')
+              .replace(/\n+---\s*\n.{0,10}(?:Sources?|References?|Sumber).{0,10}\n[\s\S]*$/im, '')
+              .replace(/\*\*(?:Sources?|References?|Sumber)\*\*[\s\S]*$/im, '')
               .trim();
             aiResponse += formatCitationsBlock(citations);
+            console.log(`[Citations] Added ${citations.length} citations`);
+          } else {
+            console.log('[Citations] No citations found');
           }
         } catch (citErr) {
           console.warn('[Citations] Failed to build citations:', citErr.message);
         }
+      } else {
+        console.log('[Citations] Skipped (casual message or short response)');
       }
     }
 
@@ -876,7 +929,7 @@ Do NOT fabricate URLs.
             pptData,
             title,
             outputDir,
-            docxImages, // ← pass images so IMAGE slides can embed them
+            docxImages,
           });
 
           if (result) {
@@ -971,7 +1024,6 @@ ${layoutSummary}
  
 💡 _Tip: Upload file PPT bertemakan GYS ke Knowledge Base agar bot otomatis menggunakan template asli Anda._`;
 
-      // ── Save to DB — wrapped in try/catch agar error DB tidak crash response ──
       try {
         await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
         await new Chat({

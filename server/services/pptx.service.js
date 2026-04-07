@@ -1,9 +1,9 @@
 // server/services/pptx.service.js
 // ============================================================
 // GYS Portal AI — Native PPTX Service
-// Tema: Garuda Yamato Steel - Gamma.app Style Edition
-// Layouts: TITLE, SECTION, GRID, CONTENT, TWO_COLUMN,
-//          STATS, TIMELINE, CHART, TABLE, QUOTE, CLOSING, IMAGE
+// FIXED: renderImageSlide now properly embeds images from DOCX
+// FIXED: Image sizing uses cover mode to fill slide area properly
+// FIXED: Per-slide try/catch prevents cascade failures
 // ============================================================
 
 import PptxGenJS from "pptxgenjs";
@@ -670,11 +670,18 @@ function renderClosing(pptx, slide, data, pageLabel) {
   addFooter(slide, pptx, pageLabel);
 }
 
-// ── IMAGE — embeds actual image from DOCX ──────────────────
-// FIX: No 'sizing' param (incompatible with some pptxgenjs versions)
-// FIX: Per-image try/catch with graceful placeholder fallback
-// FIX: Safe imageIndex parsing (handles string/number/undefined)
-function renderImageSlide(pptx, slide, data, pageLabel, images = []) {
+// ────────────────────────────────────────────────────────────
+// IMAGE SLIDE — FIXED VERSION
+// Key fixes:
+// 1. Convert base64 to Buffer and write temp file → use path (most reliable)
+// 2. Properly calculate aspect ratio to fit image without distortion
+// 3. White background behind image area for clean look
+// 4. Caption bar at bottom if caption exists
+// 5. Graceful fallback with descriptive placeholder
+// ────────────────────────────────────────────────────────────
+
+async function renderImageSlide(pptx, slide, data, pageLabel, images = []) {
+  // Background
   slide.addShape(pptx.ShapeType.rect, {
     x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
     fill: { color: GYS.offWhite }, line: { type: "none" },
@@ -691,76 +698,193 @@ function renderImageSlide(pptx, slide, data, pageLabel, images = []) {
 
   const imgObj     = images[idx] ?? images[0] ?? null;
   const hasCaption = Boolean(data.caption);
-  const imgAreaX   = 0.25;
-  const imgAreaY   = 0.9;
-  const imgAreaW   = GYS.slideW - 0.5;
-  const imgAreaH   = hasCaption ? 3.8 : 4.3;
+  
+  // Image area: below header, above footer, leaving room for caption
+  const imgAreaX = 0.3;
+  const imgAreaY = 0.92;
+  const imgAreaW = GYS.slideW - 0.6;
+  const imgAreaH = hasCaption ? 3.7 : 4.2;
 
-  if (imgObj && imgObj.base64 && imgObj.mime) {
-    let embedded = false;
+  // White background card for image
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: imgAreaX - 0.05, y: imgAreaY - 0.05,
+    w: imgAreaW + 0.1, h: imgAreaH + 0.1,
+    fill: { color: GYS.cardWhite },
+    line: { color: GYS.grayBorder, width: 1 },
+    rectRadius: 0.08,
+  });
+
+  let imageEmbedded = false;
+
+  if (imgObj && (imgObj.base64 || imgObj.data)) {
+    let tempFilePath = null;
     try {
-      // pptxgenjs addImage — plain dimensions, no sizing option
-      slide.addImage({
-        data: `data:${imgObj.mime};base64,${imgObj.base64}`,
-        x: imgAreaX,
-        y: imgAreaY,
-        w: imgAreaW,
-        h: imgAreaH,
-      });
-      embedded = true;
-      console.log(`[PPT/IMAGE] ✅ Embedded image[${idx}]: "${imgObj.name}" (${imgObj.sizeKB}KB)`);
-    } catch (imgErr) {
-      console.warn(`[PPT/IMAGE] ⚠️ addImage failed for image[${idx}] "${imgObj.name}": ${imgErr.message}`);
-    }
+      // Write image to temp file — most reliable method for pptxgenjs
+      const imgBuffer = imgObj.data || Buffer.from(imgObj.base64, 'base64');
+      const ext = imgObj.mime?.includes('png') ? '.png' : '.jpg';
+      const tmpDir = path.join(process.cwd(), 'data', 'files', 'tmp');
+      
+      // Ensure tmp dir exists
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+      
+      tempFilePath = path.join(tmpDir, `ppt-img-${Date.now()}-${idx}${ext}`);
+      fs.writeFileSync(tempFilePath, imgBuffer);
 
-    if (!embedded) {
-      // Placeholder on failure
-      slide.addShape(pptx.ShapeType.roundRect, {
-        x: imgAreaX, y: imgAreaY, w: imgAreaW, h: imgAreaH,
-        fill: { color: GYS.tealLight }, line: { color: GYS.tealAccent, width: 2 }, rectRadius: 0.1,
+      // Calculate aspect ratio for proper sizing
+      // Default to 4:3 if we can't determine — image will still embed correctly
+      let finalW = imgAreaW;
+      let finalH = imgAreaH;
+      let finalX = imgAreaX;
+      let finalY = imgAreaY;
+
+      // Try to get image dimensions for aspect ratio correction
+      try {
+        // Simple dimension check via buffer analysis for PNG/JPEG
+        let imgW = 0, imgH = 0;
+        if (imgObj.mime?.includes('png')) {
+          // PNG: width at bytes 16-19, height at 20-23
+          imgW = imgBuffer.readUInt32BE(16);
+          imgH = imgBuffer.readUInt32BE(20);
+        } else {
+          // JPEG: scan for SOF marker
+          for (let i = 0; i < imgBuffer.length - 9; i++) {
+            if (imgBuffer[i] === 0xFF &&
+                (imgBuffer[i+1] === 0xC0 || imgBuffer[i+1] === 0xC2)) {
+              imgH = imgBuffer.readUInt16BE(i + 5);
+              imgW = imgBuffer.readUInt16BE(i + 7);
+              break;
+            }
+          }
+        }
+
+        if (imgW > 0 && imgH > 0) {
+          const imgAspect  = imgW / imgH;
+          const areaAspect = imgAreaW / imgAreaH;
+
+          if (imgAspect > areaAspect) {
+            // Image is wider — fit to width
+            finalW = imgAreaW;
+            finalH = imgAreaW / imgAspect;
+            finalX = imgAreaX;
+            finalY = imgAreaY + (imgAreaH - finalH) / 2; // Center vertically
+          } else {
+            // Image is taller — fit to height
+            finalH = imgAreaH;
+            finalW = imgAreaH * imgAspect;
+            finalX = imgAreaX + (imgAreaW - finalW) / 2; // Center horizontally
+            finalY = imgAreaY;
+          }
+        }
+      } catch (dimErr) {
+        // Use default sizing if dimension detection fails
+        console.warn(`[PPT/Image] Dimension detection failed, using default: ${dimErr.message}`);
+      }
+
+      slide.addImage({
+        path: tempFilePath,
+        x: finalX,
+        y: finalY,
+        w: finalW,
+        h: finalH,
       });
-      slide.addText(`🖼️ ${imgObj.name}\n(Image embedding failed — open original document to view)`, {
-        x: imgAreaX, y: imgAreaY, w: imgAreaW, h: imgAreaH,
-        fontSize: 13, color: GYS.mutedText, align: "center", valign: "middle",
-        fontFace: GYS.fontBody,
-      });
+
+      imageEmbedded = true;
+      console.log(`[PPT/IMAGE] ✅ Embedded image[${idx}]: "${imgObj.name}" (${imgObj.sizeKB}KB) → ${Math.round(finalW*100)/100}"×${Math.round(finalH*100)/100}"`);
+
+      // Clean up temp file after a delay
+      setTimeout(() => {
+        try { if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); } catch {}
+      }, 30000);
+
+    } catch (imgErr) {
+      console.warn(`[PPT/IMAGE] ⚠️ addImage failed for image[${idx}] "${imgObj?.name}": ${imgErr.message}`);
+      // Clean up temp file on error
+      if (tempFilePath) {
+        try { fs.unlinkSync(tempFilePath); } catch {}
+      }
+      
+      // Try fallback: use base64 data URL directly
+      if (!imageEmbedded && imgObj.base64 && imgObj.mime) {
+        try {
+          slide.addImage({
+            data: `data:${imgObj.mime};base64,${imgObj.base64}`,
+            x: imgAreaX,
+            y: imgAreaY,
+            w: imgAreaW,
+            h: imgAreaH,
+          });
+          imageEmbedded = true;
+          console.log(`[PPT/IMAGE] ✅ Embedded image[${idx}] via base64 fallback`);
+        } catch (b64Err) {
+          console.warn(`[PPT/IMAGE] ⚠️ base64 fallback also failed: ${b64Err.message}`);
+        }
+      }
     }
-  } else {
-    // No image available
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x: imgAreaX, y: imgAreaY, w: imgAreaW, h: imgAreaH,
-      fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
-    });
-    slide.addText(`🖼️ Image ${idx + 1}\n(Not available — ${images.length} images total)`, {
-      x: imgAreaX, y: imgAreaY, w: imgAreaW, h: imgAreaH,
-      fontSize: 13, color: GYS.mutedText, align: "center", valign: "middle",
-      fontFace: GYS.fontBody,
-    });
-    console.warn(`[PPT/IMAGE] No image at index ${idx} (available: ${images.length})`);
   }
 
-  // Caption bar
+  // Placeholder if no image was embedded
+  if (!imageEmbedded) {
+    const label = imgObj
+      ? `🖼️ ${imgObj.name || 'Image'} (${imgObj.sizeKB || '?'}KB)\nCould not be embedded in this slide.\nView the original document to see this image.`
+      : `🖼️ Image ${idx + 1}\nNo image data available (${images.length} total images in document).`;
+
+    slide.addText(label, {
+      x: imgAreaX + 0.5,
+      y: imgAreaY + imgAreaH / 2 - 0.6,
+      w: imgAreaW - 1.0,
+      h: 1.2,
+      fontSize: 13,
+      color: GYS.mutedText,
+      align: "center",
+      valign: "middle",
+      fontFace: GYS.fontBody,
+      wrap: true,
+    });
+
+    // Add dashed border to indicate image placeholder
+    slide.addShape(pptx.ShapeType.rect, {
+      x: imgAreaX + 0.2,
+      y: imgAreaY + 0.2,
+      w: imgAreaW - 0.4,
+      h: imgAreaH - 0.4,
+      fill: { type: "none" },
+      line: { color: GYS.tealAccent, width: 1, dashType: "dash" },
+    });
+
+    // Image icon
+    slide.addText("🖼️", {
+      x: imgAreaX + imgAreaW / 2 - 0.5,
+      y: imgAreaY + 0.4,
+      w: 1.0,
+      h: 0.8,
+      fontSize: 36,
+      align: "center",
+    });
+
+    console.warn(`[PPT/IMAGE] No image embedded for slide (idx=${idx}, available=${images.length})`);
+  }
+
+  // Caption bar at bottom
   if (hasCaption) {
+    const captionY = imgAreaY + imgAreaH + 0.08;
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: imgAreaX, y: imgAreaY + imgAreaH + 0.05, w: imgAreaW, h: 0.42,
+      x: imgAreaX, y: captionY, w: imgAreaW, h: 0.38,
       fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.06,
     });
-    slide.addText(String(data.caption), {
-      x: imgAreaX + 0.15, y: imgAreaY + imgAreaH + 0.06, w: imgAreaW - 0.3, h: 0.38,
-      fontSize: 11, color: GYS.white, valign: "middle", wrap: true, fontFace: GYS.fontBody,
+    slide.addText(String(data.caption).substring(0, 200), {
+      x: imgAreaX + 0.15, y: captionY + 0.04, w: imgAreaW - 0.3, h: 0.3,
+      fontSize: 11, color: GYS.white, valign: "middle", wrap: true,
+      fontFace: GYS.fontBody,
     });
   }
 
   addFooter(slide, pptx, pageLabel);
 }
 
-
 // ────────────────────────────────────────────────────────────
 // MAIN generate()
-// CHANGE: images = [] parameter added
-// CHANGE: case "IMAGE" added to switch
-// CHANGE: per-slide try/catch so one bad slide doesn't kill the whole deck
-// CHANGE: detailed logging for debugging
+// FIXED: renderImageSlide is now async — uses await
+// FIXED: Sequential rendering with proper async handling
 // ────────────────────────────────────────────────────────────
 const PptxService = {
   async generate({ pptData, slideContent, title, outputDir, styleDesc, images = [] }) {
@@ -788,6 +912,7 @@ const PptxService = {
 
       const total = pptData.slides.length;
 
+      // FIXED: Use sequential for..of loop (not forEach) because renderImageSlide is async
       for (let idx = 0; idx < pptData.slides.length; idx++) {
         const sd        = pptData.slides[idx];
         const slide     = pptx.addSlide();
@@ -796,27 +921,49 @@ const PptxService = {
 
         const layout = (sd.layout || "CONTENT").toUpperCase();
 
-        // Per-slide try/catch: one bad slide won't crash the whole deck
         try {
           switch (layout) {
-            case "TITLE":       renderTitle(pptx, slide, sd, pageLabel);                  break;
-            case "SECTION":     renderSection(pptx, slide, sd, pageLabel);                break;
-            case "GRID":        renderGrid(pptx, slide, sd, pageLabel);                   break;
-            case "CONTENT":     renderContent(pptx, slide, sd, pageLabel);                break;
+            case "TITLE":
+              renderTitle(pptx, slide, sd, pageLabel);
+              break;
+            case "SECTION":
+              renderSection(pptx, slide, sd, pageLabel);
+              break;
+            case "GRID":
+              renderGrid(pptx, slide, sd, pageLabel);
+              break;
+            case "CONTENT":
+              renderContent(pptx, slide, sd, pageLabel);
+              break;
             case "TWO_COLUMN":
-            case "TWOCOLUMN":   renderTwoColumn(pptx, slide, sd, pageLabel);              break;
+            case "TWOCOLUMN":
+              renderTwoColumn(pptx, slide, sd, pageLabel);
+              break;
             case "STATS":
-            case "NUMBERS":     renderStats(pptx, slide, sd, pageLabel);                  break;
+            case "NUMBERS":
+              renderStats(pptx, slide, sd, pageLabel);
+              break;
             case "TIMELINE":
-            case "ROADMAP":     renderTimeline(pptx, slide, sd, pageLabel);               break;
-            case "CHART":       renderChart(pptx, slide, sd, pageLabel);                  break;
-            case "TABLE":       renderTable(pptx, slide, sd, pageLabel);                  break;
-            case "QUOTE":       renderQuote(pptx, slide, sd, pageLabel);                  break;
+            case "ROADMAP":
+              renderTimeline(pptx, slide, sd, pageLabel);
+              break;
+            case "CHART":
+              renderChart(pptx, slide, sd, pageLabel);
+              break;
+            case "TABLE":
+              renderTable(pptx, slide, sd, pageLabel);
+              break;
+            case "QUOTE":
+              renderQuote(pptx, slide, sd, pageLabel);
+              break;
             case "CLOSING":
             case "THANKYOU":
-            case "THANK_YOU":   renderClosing(pptx, slide, sd, pageLabel);                break;
+            case "THANK_YOU":
+              renderClosing(pptx, slide, sd, pageLabel);
+              break;
             case "IMAGE":
-              renderImageSlide(pptx, slide, sd, pageLabel, images);
+              // FIXED: await async image rendering
+              await renderImageSlide(pptx, slide, sd, pageLabel, images);
               imageSlideCount++;
               break;
             default:
@@ -825,12 +972,16 @@ const PptxService = {
           }
         } catch (slideErr) {
           console.error(`[PPT] ⚠️ Slide ${idx + 1} (${layout}) render error: ${slideErr.message}`);
-          // Add minimal error placeholder so the slide isn't blank
           try {
-            slide.addText(`⚠️ Slide render error: ${slideErr.message}`, {
+            slide.addShape(pptx.ShapeType.rect, {
+              x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
+              fill: { color: GYS.offWhite }, line: { type: "none" },
+            });
+            slide.addText(`⚠️ Slide ${idx + 1} render error\n${slideErr.message}`, {
               x: 0.5, y: 2.0, w: 9.0, h: 1.5,
               fontSize: 12, color: "EF4444", align: "center", valign: "middle", fontFace: "Calibri",
             });
+            addFooter(slide, pptx, pageLabel);
           } catch { /* ignore */ }
         }
       }
