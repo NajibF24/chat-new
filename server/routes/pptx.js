@@ -695,6 +695,9 @@ router.post('/from-document', requireAuth, docUpload.single('document'), async (
     }
 
     const userRequest = prompt || `Buat presentasi dari dokumen ini: ${fileName}`;
+    const imageConstraint = !hasImages 
+      ? '\n\nCRITICAL: This document has NO images. NEVER use LAYOUT: IMAGE. Only use: TITLE, SECTION, CONTENT, GRID, STATS, TIMELINE, TWO_COLUMN, CHART, TABLE, QUOTE, CLOSING.'
+      : `\n\nDocument has ${images.length} image(s). Use LAYOUT: IMAGE only for actual images.`;
     const title       = (prompt || fileName).replace(/\.(docx|pdf|xlsx|txt|md)$/i, '').substring(0, 60);
 
     const hasImages    = images.length > 0;
@@ -725,7 +728,7 @@ router.post('/from-document', requireAuth, docUpload.single('document'), async (
     } else {
       // No images or unsupported vision — text only
       const themeNote = gysThemeInstructions ? `\n\nGYS THEME:\n${gysThemeInstructions}\n` : '';
-      userContent = `${userRequest}\n${themeNote}\nDOCUMENT CONTENT:\n${docText.substring(0, 35000)}`;
+      userContent = `${userRequest}${imageConstraint}\n${themeNote}\nDOCUMENT CONTENT:\n${docText.substring(0, 35000)}`;
     }
 
     // ── Step 1: Generate slide content ───────────────────────

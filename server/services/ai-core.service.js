@@ -329,7 +329,7 @@ You MUST select the most impactful layout for each slide. Apply this decision tr
     → LAYOUT: CLOSING
  
   Does it show a screenshot, diagram, architecture, UI, or photo from the document?
-    → LAYOUT: IMAGE
+    → LAYOUT: IMAGE (ONLY if images were provided in this request!)
     → Set imageIndex to the 0-based position of the image (first image = 0, second = 1, etc.)
  
   Is it general narrative content?
@@ -641,7 +641,31 @@ class AICoreService {
         contextData += `\n\n=== SMARTSHEET DATA ===\n❌ Failed to load data: ${e.message}\n`;
       }
     }
-
+    if (bot.onedriveConfig?.enabled && 
+        bot.onedriveConfig?.folderUrl && 
+        bot.onedriveConfig?.tenantId && 
+        bot.onedriveConfig?.clientId && 
+        bot.onedriveConfig?.clientSecret) {
+      try {
+        const { default: OneDriveService } = await import('./onedrive.service.js');
+        const svc = new OneDriveService(
+          bot.onedriveConfig.tenantId,
+          bot.onedriveConfig.clientId,
+          bot.onedriveConfig.clientSecret
+        );
+        console.log(`[AICoreService] Fetching OneDrive context for: "${message?.substring(0, 50)}"`);
+        const oneDriveCtx = await svc.buildContext(bot.onedriveConfig.folderUrl, message || '');
+        if (oneDriveCtx) {
+          contextData += oneDriveCtx;
+          contextSources.push('onedrive');
+          console.log('[AICoreService] ✅ OneDrive context injected');
+        }
+      } catch (odErr) {
+        console.error('[AICoreService] OneDrive error:', odErr.message);
+        contextData += `\n\n=== 📁 ONEDRIVE (ERROR) ===\n⚠️ Gagal membaca dokumen OneDrive: ${odErr.message}\nSilakan hubungi IT jika masalah berlanjut.\n=== AKHIR ONEDRIVE ===\n`;
+      }
+    }
+    
     if (bot.knowledgeFiles?.length > 0 && bot.knowledgeMode !== 'disabled') {
       const knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
         bot.knowledgeFiles, message, bot.knowledgeMode || 'relevant'
@@ -863,15 +887,19 @@ Do NOT fabricate URLs.
           });
         }
       } else {
-        const contentUserMsg = `Generate a presentation.\nMatch language exactly.\n\n` +
-          (historicalContent ? `History:\n${historicalContent}\n\n` : '') +
-          (docxText ? `Document:\n${docxText.substring(0, 20000)}\n\n` : '') +
-          `Request: ${userRequest}`;
-
-        contentResult = await AIProviderService.generateCompletion({
-          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-          systemPrompt: PPT_CONTENT_SYSTEM_PROMPT, messages: [], userContent: contentUserMsg,
-        });
+        const noImageConstraint = !hasDocxImages 
+        ? `\n\nCRITICAL CONSTRAINT: This document has NO images or screenshots. You MUST NOT use LAYOUT: IMAGE for any slide. Allowed layouts ONLY: TITLE, SECTION, CONTENT, GRID, STATS, TIMELINE, TWO_COLUMN, CHART, TABLE, QUOTE, CLOSING.\n`
+        : `\n\nThis document contains ${docxImages.length} image(s). Only use LAYOUT: IMAGE for those specific images.\n`;
+ 
+      const contentUserMsg = `Generate a presentation.\nMatch language exactly.\n\n` +
+        (historicalContent ? `History:\n${historicalContent}\n\n` : '') +
+        (docxText ? `Document:\n${docxText.substring(0, 20000)}\n\n` : '') +
+        `Request: ${userRequest}${noImageConstraint}`;
+ 
+      contentResult = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: PPT_CONTENT_SYSTEM_PROMPT, messages: [], userContent: contentUserMsg,
+      });
       }
 
       const slideContent = contentResult.text;
