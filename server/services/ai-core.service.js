@@ -761,11 +761,23 @@ Do NOT fabricate URLs.
       });
     }
 
-    await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
-    await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
-    await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+    try {
+  await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+  await new Chat({
+    userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+    attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+  }).save();
+  await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+  } catch (saveErr) {
+  console.error('❌ [PPT] DB save error:', saveErr.message);
+  }
 
-    return { response: aiResponse, threadId, attachedFiles: savedAttachments };
+  return {
+    response: responseMarkdown, threadId,
+    attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+  };
+
+    
   }
 
   // ─────────────────────────────────────────────────────────────
