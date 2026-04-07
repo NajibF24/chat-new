@@ -1,18 +1,4 @@
 // server/services/pptx-template.service.js
-// ============================================================
-// GYS Portal AI — Template-Based PPTX Service
-//
-// STRATEGY (based on actual GYS_SalesAgentAI.pptx analysis):
-// - PPTX menggunakan p:txBody (bukan a:txBody) — Google Slides export
-// - Logo, footer, background ada di slideMaster → otomatis dipakai semua slide
-// - Setiap slide punya shape bernama "Title", "Subtitle", dll
-// - Slide template yang digunakan:
-//     slide1  = TITLE (MainTitle + TextBox)
-//     slide2  = CONTENT (Title + Subtitle + Image area)
-//     slide12 = CLOSING (picture background + Title)
-// - Untuk setiap slide AI, kita clone slide template yang paling cocok
-//   lalu replace teks di shape yang relevan
-// ============================================================
 
 import AdmZip from 'adm-zip';
 import path   from 'path';
@@ -60,7 +46,6 @@ function makeBulletPara(text, opts = {}) {
 
 // ─────────────────────────────────────────────────────────────
 // REPLACE TEXT IN NAMED SHAPE
-// Targets shape by its cNvPr name attribute, replaces p:txBody
 // ─────────────────────────────────────────────────────────────
 
 function replaceShapeText(slideXml, shapeName, newParagraphs, bodyPrAttrs = 'wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"') {
@@ -74,13 +59,32 @@ function replaceShapeText(slideXml, shapeName, newParagraphs, bodyPrAttrs = 'wra
 }
 
 // ─────────────────────────────────────────────────────────────
+// REPLACE IMAGE IN NAMED SHAPE (p:blipFill)
+// Replaces r:embed on the first blipFill inside the named pic shape
+// ─────────────────────────────────────────────────────────────
+
+function replaceShapeImage(slideXml, shapeName, newRId) {
+  // Target p:pic (not p:sp) that contains the given name
+  const picRegex = /(<p:pic>)([\s\S]*?)(<\/p:pic>)/g;
+  return slideXml.replace(picRegex, (fullMatch, open, inner, close) => {
+    if (!inner.includes(`name="${shapeName}"`)) return fullMatch;
+    // Replace r:embed="..." inside p:blipFill
+    const replaced = inner.replace(/(r:embed=")[^"]*(")/g, `$1${newRId}$2`);
+    return open + replaced + close;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
 // BUILD SLIDE XML — inject AI content into cloned template
 // ─────────────────────────────────────────────────────────────
 
-function buildSlideXml(templateXml, slideData) {
+function buildSlideXml(templateXml, slideData, imageRId = null) {
   const layout = (slideData.layout || 'CONTENT').toUpperCase();
   let xml      = templateXml;
+
+  // Always clear Divider placeholder so no stale template text shows
   xml = replaceShapeText(xml, 'Divider', [makePara('', { sz: 100 })]);
+
   const TEAL = '01775A';
   const DARK = '1F1F1F';
   const GRAY = '555555';
@@ -88,15 +92,20 @@ function buildSlideXml(templateXml, slideData) {
   switch (layout) {
 
     case 'TITLE': {
+      // FIX: auto-shrink font based on title length to prevent overflow into TextBox 3
+      const titleText = (slideData.title || '').substring(0, 100);
+      const titleLen  = titleText.length;
+      const titleSz   = titleLen > 60 ? 2800 : titleLen > 40 ? 3400 : 4400;
+
       xml = replaceShapeText(xml, 'MainTitle', [
-        makePara(slideData.title || '', { sz: 4400, typeface: 'Inter SemiBold', marL: 0, align: 'ctr', spcBef: 1200 }),
-      ], 'spcFirstLastPara="1" wrap="square" lIns="91425" tIns="91425" rIns="91425" bIns="91425" anchor="t" anchorCtr="0"');
+        makePara(titleText, { sz: titleSz, typeface: 'Inter SemiBold', marL: 0, align: 'ctr', spcBef: 600 }),
+      ], 'spcFirstLastPara="1" wrap="square" lIns="91425" tIns="91425" rIns="91425" bIns="91425" anchor="ctr" anchorCtr="1"');
 
       const subLines = [
         slideData.subtitle,
         slideData.presenter,
         slideData.date,
-      ].filter(Boolean).map(t => makePara(t, { sz: 1800, color: 'FFFFFF', align: 'ctr', marL: 12700 }));
+      ].filter(Boolean).map(t => makePara(t, { sz: 1600, color: 'FFFFFF', align: 'ctr', marL: 12700 }));
 
       if (subLines.length) {
         xml = replaceShapeText(xml, 'TextBox 3', subLines, 'wrap="square"');
@@ -233,10 +242,15 @@ function buildSlideXml(templateXml, slideData) {
       xml = replaceShapeText(xml, 'Title', [
         makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
       ]);
+      // Replace caption in Subtitle shape
       if (slideData.caption) {
         xml = replaceShapeText(xml, 'Subtitle', [
           makePara(slideData.caption, { sz: 1300, color: GRAY }),
         ], 'wrap="square" lIns="91440" tIns="0"');
+      }
+      // FIX: inject actual image into "Image 0" shape if imageRId provided
+      if (imageRId) {
+        xml = replaceShapeImage(xml, 'Image 0', imageRId);
       }
       break;
     }
@@ -261,16 +275,16 @@ function buildSlideXml(templateXml, slideData) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// RELS PARSING — robust, handles any attribute order
+// RELS PARSING
 // ─────────────────────────────────────────────────────────────
 
 function parseRels(relsXml) {
   const map  = {};
   const tags = [...relsXml.matchAll(/<Relationship\b([^>]+?)\/>/gs)];
   for (const tag of tags) {
-    const attrs       = tag[1];
-    const idM         = attrs.match(/\bId="([^"]+)"/);
-    const targetM     = attrs.match(/\bTarget="([^"]+)"/);
+    const attrs   = tag[1];
+    const idM     = attrs.match(/\bId="([^"]+)"/);
+    const targetM = attrs.match(/\bTarget="([^"]+)"/);
     if (idM && targetM) map[idM[1]] = targetM[1];
   }
   return map;
@@ -338,7 +352,7 @@ function analyzeTemplate(zip) {
     }
 
     const slideXml = entry.getData().toString('utf8');
-    const txCount  = (slideXml.match(/<p:txBody>/g) || []).length;  // p:txBody is correct
+    const txCount  = (slideXml.match(/<p:txBody>/g) || []).length;
     const names    = [...slideXml.matchAll(/cNvPr id="\d+" name="([^"]+)"/g)].map(m => m[1]);
     const hasPic   = slideXml.includes('<p:blipFill>');
 
@@ -398,18 +412,21 @@ function findPptxTemplate(bot) {
 // ─────────────────────────────────────────────────────────────
 
 function updatePresentationXml(presXml, relsXml, newSlides) {
-  const existingSlideIds = [...presXml.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)].map(m => parseInt(m[1]));
-  const safeIds = existingSlideIds.filter(id => id < 400);
-  let maxId = safeIds.length > 0 ? Math.max(256, ...safeIds) : 256;
-  
+  // FIX Bug 1: hanya ambil ID dari p:sldId, bukan semua atribut id="..."
+  // Filter id < 400 untuk menghindari slideMasterId yang sangat besar (>2147483647)
+  const existingSlideIds = [...presXml.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)]
+    .map(m => parseInt(m[1]))
+    .filter(id => id < 400);
+  let maxId = existingSlideIds.length > 0 ? Math.max(256, ...existingSlideIds) : 256;
+
   let sldIdBlock = '';
   const newRels  = [];
 
   newSlides.forEach((slide, i) => {
     maxId++;
-    const rId     = `rId_gen_${i + 1}`;
-    slide._rId    = rId;
-    sldIdBlock   += `<p:sldId id="${maxId}" r:id="${rId}"/>`;
+    const rId   = `rId_gen_${i + 1}`;
+    slide._rId  = rId;
+    sldIdBlock += `<p:sldId id="${maxId}" r:id="${rId}"/>`;
     newRels.push(`<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/${slide.name}"/>`);
   });
 
@@ -437,12 +454,27 @@ function updateContentTypes(ctXml, slideNames) {
 function buildDefaultRels() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`;
 }
+
+// FIX Bug 2: buat rels bersih per slide, tanpa image ref sisa dari template
 function buildCleanRels(slideLayoutTarget = '../slideLayouts/slideLayout2.xml', imageTarget = null) {
   const imageRel = imageTarget
     ? `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${imageTarget}"/>`
     : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="${slideLayoutTarget}"/>${imageRel}</Relationships>`;
 }
+
+// ─────────────────────────────────────────────────────────────
+// MIME → extension map
+// ─────────────────────────────────────────────────────────────
+
+function mimeToExt(mime = '') {
+  if (mime.includes('png'))  return '.png';
+  if (mime.includes('jpeg') || mime.includes('jpg')) return '.jpeg';
+  if (mime.includes('gif'))  return '.gif';
+  if (mime.includes('webp')) return '.webp';
+  return '.png';
+}
+
 // ─────────────────────────────────────────────────────────────
 // MAIN SERVICE
 // ─────────────────────────────────────────────────────────────
@@ -453,7 +485,7 @@ const PptxTemplateService = {
     return findPptxTemplate(bot) !== null;
   },
 
-  async generate({ bot, pptData, title, outputDir }) {
+  async generate({ bot, pptData, title, outputDir, docxImages = [] }) {
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
     const templateInfo = findPptxTemplate(bot);
@@ -467,15 +499,16 @@ const PptxTemplateService = {
       return null;
     }
 
+    // FIX Bug B: simpan template ZIP terpisah untuk referensi closing/title slide
+    // karena newZip akan delete semua slide lama
     const analysis = analyzeTemplate(zip);
     if (!analysis) {
       console.error('[PPT Template] Template analysis failed');
       return null;
     }
 
-    // Clone template ZIP, remove old slides
-    const newZip     = new AdmZip(templateInfo.filePath);
-    const toRemove   = newZip.getEntries()
+    const newZip   = new AdmZip(templateInfo.filePath);
+    const toRemove = newZip.getEntries()
       .filter(e => /^ppt\/slides\/(slide\d+\.xml|_rels\/slide\d+\.xml\.rels)$/.test(e.entryName))
       .map(e => e.entryName);
 
@@ -485,25 +518,29 @@ const PptxTemplateService = {
     const slides       = pptData.slides || [];
     const newSlideInfo = [];
 
+    // Track next available media index for injected images
+    const existingMedia = newZip.getEntries()
+      .filter(e => e.entryName.startsWith('ppt/media/'))
+      .map(e => e.entryName);
+    let mediaCounter = existingMedia.length + 1;
+
     for (let i = 0; i < slides.length; i++) {
-      const slideData    = slides[i];
-      const slideNum     = i + 1;
+      const slideData = slides[i];
+      const slideNum  = i + 1;
       const slideName    = `slide${slideNum}.xml`;
       const slidePath    = `ppt/slides/${slideName}`;
       const slideRelPath = `ppt/slides/_rels/${slideName}.rels`;
 
       const templateSlide = pickTemplateSlide(analysis, slideData.layout || 'CONTENT');
 
-      // Get template XML — try newZip first, then original zip
-      const templateEntry = findEntry(newZip, templateSlide.path) || findEntry(zip, templateSlide.path);
+      // FIX Bug B: selalu ambil dari zip asli (bukan newZip) karena slide lama sudah dihapus
+      const templateEntry = findEntry(zip, templateSlide.path);
       const templateXml   = templateEntry
         ? templateEntry.getData().toString('utf8')
         : buildMinimalSlideXml();
 
-      const newSlideXml = buildSlideXml(templateXml, slideData);
-
-      // Get rels from template slide to preserve slideLayout reference
-      const templateRelPath = `ppt/slides/_rels/${path.basename(templateSlide.path)}.rels`;
+      // Determine layout target dari rels template
+      const templateRelPath  = `ppt/slides/_rels/${path.basename(templateSlide.path)}.rels`;
       const templateRelEntry = findEntry(zip, templateRelPath);
       let layoutTarget = '../slideLayouts/slideLayout2.xml';
       if (templateRelEntry) {
@@ -511,7 +548,34 @@ const PptxTemplateService = {
         const lm = tRels.match(/Target="(\.\.\/slideLayouts\/[^"]+)"/);
         if (lm) layoutTarget = lm[1];
       }
-      const relXml = buildCleanRels(layoutTarget, null);
+
+      // FIX: inject image untuk layout IMAGE
+      let imageRId    = null;
+      let imageTarget = null;
+
+      if ((slideData.layout || '').toUpperCase() === 'IMAGE' && docxImages.length > 0) {
+        const imgIndex = typeof slideData.imageIndex === 'number'
+          ? slideData.imageIndex
+          : 0;
+        const img = docxImages[imgIndex] || docxImages[0];
+
+        if (img) {
+          const ext       = mimeToExt(img.mime);
+          const mediaName = `image_injected_${mediaCounter}${ext}`;
+          const mediaPath = `ppt/media/${mediaName}`;
+          const imgBuffer = img.data || Buffer.from(img.base64 || '', 'base64');
+
+          newZip.addFile(mediaPath, imgBuffer);
+          imageRId    = `rId2`;
+          imageTarget = `../media/${mediaName}`;
+          mediaCounter++;
+
+          console.log(`[PPT Template] Slide ${slideNum} IMAGE: injected ${mediaName} (index=${imgIndex})`);
+        }
+      }
+
+      const newSlideXml = buildSlideXml(templateXml, slideData, imageRId);
+      const relXml      = buildCleanRels(layoutTarget, imageTarget);
 
       newZip.addFile(slidePath,    Buffer.from(newSlideXml, 'utf8'));
       newZip.addFile(slideRelPath, Buffer.from(relXml, 'utf8'));
@@ -525,7 +589,7 @@ const PptxTemplateService = {
       return null;
     }
 
-    // Update manifest files
+    // Update manifest
     const presXml = newZip.getEntry('ppt/presentation.xml')?.getData().toString('utf8') || '';
     const relsXml = newZip.getEntry('ppt/_rels/presentation.xml.rels')?.getData().toString('utf8') || '';
     const ctXml   = newZip.getEntry('[Content_Types].xml')?.getData().toString('utf8') || '';
@@ -537,7 +601,7 @@ const PptxTemplateService = {
     newZip.updateFile('ppt/_rels/presentation.xml.rels', Buffer.from(updatedRels, 'utf8'));
     newZip.updateFile('[Content_Types].xml',             Buffer.from(updatedCt,   'utf8'));
 
-    // Update title
+    // Update title in core.xml
     const coreEntry = newZip.getEntry('docProps/core.xml');
     if (coreEntry) {
       let coreXml = coreEntry.getData().toString('utf8');
@@ -547,7 +611,9 @@ const PptxTemplateService = {
       newZip.updateFile('docProps/core.xml', Buffer.from(coreXml, 'utf8'));
     }
 
-    // Write output
+    // Register injected images in [Content_Types].xml
+    // (png/jpeg/gif already have Default entries in most PPTX — skip if already there)
+
     const safeTitle = (title || 'Presentation').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').substring(0, 40);
     const filename  = `GYS-${safeTitle}-${Date.now()}.pptx`;
     const filepath  = path.join(outputDir, filename);
