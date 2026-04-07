@@ -80,7 +80,7 @@ function replaceShapeText(slideXml, shapeName, newParagraphs, bodyPrAttrs = 'wra
 function buildSlideXml(templateXml, slideData) {
   const layout = (slideData.layout || 'CONTENT').toUpperCase();
   let xml      = templateXml;
-
+  xml = replaceShapeText(xml, 'Divider', [makePara('', { sz: 100 })]);
   const TEAL = '01775A';
   const DARK = '1F1F1F';
   const GRAY = '555555';
@@ -398,9 +398,10 @@ function findPptxTemplate(bot) {
 // ─────────────────────────────────────────────────────────────
 
 function updatePresentationXml(presXml, relsXml, newSlides) {
-  const existingIds = [...presXml.matchAll(/\bid="(\d+)"/g)].map(m => parseInt(m[1]));
-  let maxId = Math.max(256, ...existingIds);
-
+  const existingSlideIds = [...presXml.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)].map(m => parseInt(m[1]));
+  const safeIds = existingSlideIds.filter(id => id < 400);
+  let maxId = safeIds.length > 0 ? Math.max(256, ...safeIds) : 256;
+  
   let sldIdBlock = '';
   const newRels  = [];
 
@@ -436,7 +437,12 @@ function updateContentTypes(ctXml, slideNames) {
 function buildDefaultRels() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`;
 }
-
+function buildCleanRels(slideLayoutTarget = '../slideLayouts/slideLayout2.xml', imageTarget = null) {
+  const imageRel = imageTarget
+    ? `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${imageTarget}"/>`
+    : '';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="${slideLayoutTarget}"/>${imageRel}</Relationships>`;
+}
 // ─────────────────────────────────────────────────────────────
 // MAIN SERVICE
 // ─────────────────────────────────────────────────────────────
@@ -499,9 +505,13 @@ const PptxTemplateService = {
       // Get rels from template slide to preserve slideLayout reference
       const templateRelPath = `ppt/slides/_rels/${path.basename(templateSlide.path)}.rels`;
       const templateRelEntry = findEntry(zip, templateRelPath);
-      const relXml = templateRelEntry
-        ? templateRelEntry.getData().toString('utf8')
-        : buildDefaultRels();
+      let layoutTarget = '../slideLayouts/slideLayout2.xml';
+      if (templateRelEntry) {
+        const tRels = templateRelEntry.getData().toString('utf8');
+        const lm = tRels.match(/Target="(\.\.\/slideLayouts\/[^"]+)"/);
+        if (lm) layoutTarget = lm[1];
+      }
+      const relXml = buildCleanRels(layoutTarget, null);
 
       newZip.addFile(slidePath,    Buffer.from(newSlideXml, 'utf8'));
       newZip.addFile(slideRelPath, Buffer.from(relXml, 'utf8'));
