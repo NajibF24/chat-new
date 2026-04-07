@@ -382,7 +382,7 @@ class AIProviderService {
           'anthropic-version': '2023-06-01',
           'content-type':      'application/json',
         },
-        timeout: 60000,
+        timeout: 180000,
       }
     );
 
@@ -412,7 +412,7 @@ class AIProviderService {
         contents,
         generationConfig: { temperature: temp, maxOutputTokens: maxTok },
       },
-      { timeout: 60000 }
+      { timeout: 180000 }
     );
 
     const text = response.data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
