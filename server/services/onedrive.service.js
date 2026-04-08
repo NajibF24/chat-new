@@ -1,20 +1,17 @@
 // server/services/onedrive.service.js
-// ROOT CAUSE FIX:
-//   File "001.POL.IT.GYS-IT Hardware.pdf" has score=0 for query "laptop supervisor"
-//   because neither word appears in the filename.
-//   Old fallback: only read 5 newest files → wrong files → generic answer.
-//
-// FIX: Score by FOLDER PATH using a keyword→folder map.
-//   "laptop" → maps to IT folder → reads ALL files in IT folder.
-//   This way the IT Hardware policy gets read even though its name has no "laptop".
+// UPDATED: buildContext() now uses local index + content cache.
+//   - First call: lists files from OneDrive, saves index (fast ~1-2s)
+//   - Subsequent calls: uses cached index, only fetches content for relevant files
+//   - Content cached per-file based on lastModified → no unnecessary re-downloads
+//   - Storage stays small (see onedrive-index.service.js for limits)
 
-import axios from 'axios';
+import axios   from 'axios';
+import odIndex from './onedrive-index.service.js';
 
 const SUPPORTED_EXT = ['pdf','docx','doc','xlsx','xls','txt','csv','md','pptx','ppt'];
 
-// Maps query keywords → folder name fragments to look for
+// Maps query keywords → folder name fragments to prioritize
 const FOLDER_KEYWORD_MAP = {
-  // IT
   'it':         ['it system', 'it'],
   'laptop':     ['it system', 'it'],
   'komputer':   ['it system', 'it'],
@@ -28,7 +25,6 @@ const FOLDER_KEYWORD_MAP = {
   'sistem':     ['it system', 'it'],
   'system':     ['it system', 'it'],
   'standarisasi': ['it system', 'it', 'hrga'],
-  // HRGA
   'hr':         ['hrga'],
   'hrd':        ['hrga'],
   'hrga':       ['hrga'],
@@ -40,32 +36,26 @@ const FOLDER_KEYWORD_MAP = {
   'salary':     ['hrga'],
   'absensi':    ['hrga'],
   'attendance': ['hrga'],
-  // Finance
   'finance':    ['finance', 'accounting'],
   'keuangan':   ['finance', 'accounting'],
   'akuntansi':  ['finance', 'accounting'],
   'invoice':    ['finance', 'accounting'],
   'pembayaran': ['finance', 'accounting'],
   'budget':     ['finance', 'accounting'],
-  // Procurement
   'procurement':['procurement', 'prc'],
   'pengadaan':  ['procurement', 'prc'],
   'vendor':     ['procurement', 'prc'],
   'purchase':   ['procurement', 'prc'],
-  // QA/QC
   'quality':    ['qaqc', 'qa', 'qc', 'iso'],
   'kualitas':   ['qaqc', 'qa', 'qc'],
   'iso':        ['iso', 'qaqc'],
-  // Legal
   'legal':      ['legal', 'lgl'],
   'kontrak':    ['legal', 'lgl'],
   'contract':   ['legal', 'lgl'],
-  // SCM
   'scm':        ['scm', 'gdu'],
   'logistik':   ['scm', 'gdu'],
   'warehouse':  ['scm', 'gdu'],
   'gudang':     ['scm', 'gdu'],
-  // Sales
   'sales':      ['sales', 'sls'],
   'penjualan':  ['sales', 'sls'],
 };
@@ -79,6 +69,7 @@ class OneDriveService {
     this.tokenExpiry  = null;
   }
 
+  // ── Auth ──────────────────────────────────────────────────
   async getAccessToken() {
     if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry - 300_000) {
       return this.accessToken;
@@ -90,17 +81,13 @@ class OneDriveService {
       client_secret: this.clientSecret,
       scope:         'https://graph.microsoft.com/.default',
     });
-    try {
-      const r = await axios.post(tokenUrl, params.toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 15_000,
-      });
-      this.accessToken = r.data.access_token;
-      this.tokenExpiry = Date.now() + r.data.expires_in * 1000;
-      return this.accessToken;
-    } catch (err) {
-      throw new Error(`Azure AD auth failed: ${err.response?.data?.error_description || err.message}`);
-    }
+    const r = await axios.post(tokenUrl, params.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 15_000,
+    });
+    this.accessToken = r.data.access_token;
+    this.tokenExpiry = Date.now() + r.data.expires_in * 1000;
+    return this.accessToken;
   }
 
   async graphGet(endpoint, params = {}) {
@@ -113,6 +100,7 @@ class OneDriveService {
     return r.data;
   }
 
+  // ── URL parsing ───────────────────────────────────────────
   async parseFolderUrl(folderUrl) {
     const url      = new URL(folderUrl);
     const hostname = url.hostname;
@@ -159,6 +147,7 @@ class OneDriveService {
     throw new Error(`Format URL tidak dikenali.`);
   }
 
+  // ── File listing ──────────────────────────────────────────
   async _listFolderItems(driveId, folderPath) {
     const endpoint = folderPath
       ? `/drives/${driveId}/root:/${folderPath}:/children`
@@ -185,9 +174,12 @@ class OneDriveService {
         const ext = (item.name.split('.').pop() || '').toLowerCase();
         if (SUPPORTED_EXT.includes(ext)) {
           files.push({
-            id: item.id, name: item.name, size: item.size || 0,
+            id:           item.id,
+            name:         item.name,
+            size:         item.size || 0,
             lastModified: item.lastModifiedDateTime,
-            webUrl: item.webUrl, folderPath: folderPath || '/',
+            webUrl:       item.webUrl,
+            folderPath:   folderPath || '/',
           });
         }
       } else if (item.folder && depth < maxDepth) {
@@ -197,7 +189,9 @@ class OneDriveService {
     for (let i = 0; i < subFolders.length; i += 5) {
       const chunk = subFolders.slice(i, i + 5);
       const results = await Promise.allSettled(
-        chunk.map(name => this._listFilesRecursive(driveId, folderPath ? `${folderPath}/${name}` : name, depth + 1, maxDepth))
+        chunk.map(name => this._listFilesRecursive(
+          driveId, folderPath ? `${folderPath}/${name}` : name, depth + 1, maxDepth
+        ))
       );
       for (const r of results) {
         if (r.status === 'fulfilled') files.push(...r.value);
@@ -206,11 +200,13 @@ class OneDriveService {
     return files;
   }
 
+  // ── File listing (public) ─────────────────────────────────
   async listFiles(folderUrl) {
     const { driveId, folderPath } = await this.parseFolderUrl(folderUrl);
     return await this._listFilesRecursive(driveId, folderPath);
   }
 
+  // ── Content extraction ────────────────────────────────────
   async readFileContent(driveId, fileId, fileName) {
     const token = await this.getAccessToken();
     const ext   = (fileName || '').split('.').pop().toLowerCase();
@@ -223,20 +219,18 @@ class OneDriveService {
       timeout: 60_000,
       headers: { Authorization: `Bearer ${token}` },
     });
-    const buffer   = Buffer.from(fileRes.data);
+    const buffer    = Buffer.from(fileRes.data);
     const MAX_CHARS = 80_000;
 
     try {
       if (ext === 'pdf') {
         const { default: pdfParse } = await import('pdf-parse');
         const data = await pdfParse(buffer);
-        console.log(`[OneDrive] PDF "${fileName}": ${(data.text||'').length} chars`);
         return (data.text || '').substring(0, MAX_CHARS);
       }
       if (['docx','doc'].includes(ext)) {
         const { default: mammoth } = await import('mammoth');
         const r = await mammoth.extractRawText({ buffer });
-        console.log(`[OneDrive] DOCX "${fileName}": ${(r.value||'').length} chars`);
         return (r.value || '').substring(0, MAX_CHARS);
       }
       if (['xlsx','xls'].includes(ext)) {
@@ -265,28 +259,7 @@ class OneDriveService {
     }
   }
 
-  // Score a file using BOTH filename AND folder path
-  _scoreFile(file, keywords) {
-    const name   = file.name.toLowerCase();
-    const folder = (file.folderPath || '').toLowerCase();
-    let score = 0;
-
-    for (const kw of keywords) {
-      if (name.includes(kw))   score += 8;
-      if (folder.includes(kw)) score += 4;
-
-      // Check keyword→folder mapping
-      for (const fragment of (FOLDER_KEYWORD_MAP[kw] || [])) {
-        if (folder.includes(fragment)) { score += 6; break; }
-      }
-
-      // Partial word match in name
-      const parts = name.split(/[\s\-_.()]+/);
-      if (parts.some(p => p === kw || p.startsWith(kw))) score += 3;
-    }
-    return score;
-  }
-
+  // ── Keyword extraction ────────────────────────────────────
   _extractKeywords(msg) {
     const stop = new Set([
       'yang','dan','atau','di','ke','dari','ini','itu','untuk','dengan','dalam',
@@ -304,21 +277,24 @@ class OneDriveService {
       .filter((w, i, a) => a.indexOf(w) === i);
   }
 
-  // Find which folder categories are relevant for the query
+  // ── Score file by metadata + cached keywords ──────────────
+  _scoreFile(file, keywords, cachedKws = []) {
+    return odIndex.scoreFile(file, keywords, cachedKws);
+  }
+
+  // ── Get relevant folder prefixes ──────────────────────────
   _getRelevantFolderPrefixes(files, keywords) {
-    const allFolderPrefixes = new Set(
+    const allPrefixes = new Set(
       files.map(f => (f.folderPath || '/').split('/')[0].toLowerCase())
     );
     const relevant = new Set();
 
     for (const kw of keywords) {
-      // Direct folder name contains keyword
-      for (const prefix of allFolderPrefixes) {
+      for (const prefix of allPrefixes) {
         if (prefix.includes(kw)) relevant.add(prefix);
       }
-      // Keyword→folder mapping
       for (const fragment of (FOLDER_KEYWORD_MAP[kw] || [])) {
-        for (const prefix of allFolderPrefixes) {
+        for (const prefix of allPrefixes) {
           if (prefix.includes(fragment)) relevant.add(prefix);
         }
       }
@@ -326,93 +302,141 @@ class OneDriveService {
     return relevant;
   }
 
+  // ── Force rebuild index (call e.g. from admin route) ──────
+  async buildIndex(folderUrl) {
+    const { driveId, folderPath } = await this.parseFolderUrl(folderUrl);
+    odIndex.invalidate(this.tenantId, folderUrl);
+    const files = await this._listFilesRecursive(driveId, folderPath);
+    const hash  = odIndex.saveIndex(
+      odIndex.hash(this.tenantId, folderUrl),
+      folderUrl,
+      files
+    );
+    return { hash, fileCount: files.length };
+  }
+
+  // ── Main context builder (INDEX-POWERED) ──────────────────
   async buildContext(folderUrl, userMessage) {
     try {
-      const files = await this.listFiles(folderUrl);
-      if (!files.length) {
-        return `\n\n=== 📁 ONEDRIVE ===\nFolder kosong.\n=== AKHIR ONEDRIVE ===\n`;
+      // Step 1: get driveId (needed for content reads)
+      const { driveId, folderPath } = await this.parseFolderUrl(folderUrl);
+
+      // Step 2: get/refresh file list
+      let { hash, index } = odIndex.loadIndex(this.tenantId, folderUrl);
+      let allFiles;
+
+      if (index && odIndex.isIndexFresh(index)) {
+        allFiles = index.files;
+        console.log(`[OneDrive] Using index (${allFiles.length} files, hash=${hash})`);
+      } else {
+        console.log(`[OneDrive] Index stale/missing — refreshing file list...`);
+        allFiles = await this._listFilesRecursive(driveId, folderPath);
+        hash     = odIndex.saveIndex(
+          odIndex.hash(this.tenantId, folderUrl),
+          folderUrl,
+          allFiles
+        );
+        console.log(`[OneDrive] Index refreshed: ${allFiles.length} files`);
       }
 
+      if (!allFiles.length) {
+        return `\n\n=== 📁 ONEDRIVE ===\nFolder kosong atau tidak ada file yang didukung.\n=== AKHIR ONEDRIVE ===\n`;
+      }
+
+      // Step 3: score files by metadata + cached keywords
       const keywords = this._extractKeywords(userMessage);
-      console.log(`[OneDrive] Keywords: [${keywords.join(', ')}] | Files: ${files.length}`);
+      const scored   = allFiles.map(f => {
+        const cachedKws = odIndex.getKeywords(hash, f.id);
+        return { ...f, score: this._scoreFile(f, keywords, cachedKws) };
+      }).sort((a, b) => b.score - a.score || new Date(b.lastModified) - new Date(a.lastModified));
 
-      // Score all files
-      const scored = files.map(f => ({ ...f, score: this._scoreFile(f, keywords) }))
-        .sort((a, b) => b.score - a.score || new Date(b.lastModified) - new Date(a.lastModified));
-
-      // Find relevant folder prefixes (top-level folder names)
-      const relevantPrefixes = this._getRelevantFolderPrefixes(files, keywords);
-      console.log(`[OneDrive] Relevant folder prefixes: [${[...relevantPrefixes].join(', ')}]`);
-
-      let toRead = [];
+      // Step 4: determine which files to read
+      const relevantPrefixes = this._getRelevantFolderPrefixes(allFiles, keywords);
+      let toFetch = [];
 
       if (relevantPrefixes.size > 0) {
-        // Read ALL files from matched folders
-        const folderFiles = scored.filter(f => {
+        const folderMatches = scored.filter(f => {
           const prefix = (f.folderPath || '/').split('/')[0].toLowerCase();
           return relevantPrefixes.has(prefix);
-        });
-        // Plus top-scored files from other folders
-        const otherFiles = scored.filter(f => {
+        }).slice(0, 15);
+
+        const otherMatches = scored.filter(f => {
           const prefix = (f.folderPath || '/').split('/')[0].toLowerCase();
           return !relevantPrefixes.has(prefix) && f.score > 0;
         }).slice(0, 5);
 
-        toRead = [...folderFiles, ...otherFiles].slice(0, 20);
-        console.log(`[OneDrive] Reading ${folderFiles.length} folder-matched + ${Math.min(otherFiles.length,5)} other files`);
+        toFetch = [...folderMatches, ...otherMatches];
+        console.log(`[OneDrive] ${folderMatches.length} folder-match + ${otherMatches.length} other-match files to read`);
       } else {
-        // Fallback: top scored, or newest
         const hasScore = scored.some(f => f.score > 0);
-        toRead = hasScore ? scored.filter(f => f.score > 0).slice(0, 15) : scored.slice(0, 10);
-        console.log(`[OneDrive] Fallback: reading top ${toRead.length} files`);
+        toFetch = hasScore ? scored.filter(f => f.score > 0).slice(0, 12) : scored.slice(0, 8);
+        console.log(`[OneDrive] Fallback: reading top ${toFetch.length} files`);
       }
 
-      let context = `\n\n=== 📁 ONEDRIVE / SHAREPOINT ===\n`;
-      context    += `Total file tersedia: ${files.length} | Membaca: ${toRead.length} file relevan\n\n`;
+      // Step 5: build context
+      let context  = `\n\n=== 📁 ONEDRIVE / SHAREPOINT ===\n`;
+      context     += `Total file: ${allFiles.length} | Memuat konten: ${toFetch.length} file relevan\n\n`;
 
-      context += `**Daftar Semua File:**\n`;
-      for (const f of files) {
-        const size = f.size > 1_048_576
-          ? `${(f.size/1_048_576).toFixed(1)} MB` : `${Math.round(f.size/1024)} KB`;
-        const date = new Date(f.lastModified).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' });
-        const p    = f.folderPath && f.folderPath !== '/' ? `📂 ${f.folderPath}/` : '';
-        context   += `📄 ${p}${f.name} (${size}, ${date})\n`;
+      // File list (just names, no content)
+      context += `**Daftar File Tersedia:**\n`;
+      for (const f of allFiles) {
+        const sizeStr = f.size > 1_048_576
+          ? `${(f.size / 1_048_576).toFixed(1)}MB`
+          : `${Math.round(f.size / 1024)}KB`;
+        const date = f.lastModified
+          ? new Date(f.lastModified).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+          : '';
+        const prefix = f.folderPath && f.folderPath !== '/'
+          ? `📂 ${f.folderPath}/` : '';
+        context += `📄 ${prefix}${f.name} (${sizeStr}${date ? ', ' + date : ''})\n`;
       }
 
-      if (toRead.length > 0) {
+      // Relevant file contents
+      if (toFetch.length > 0) {
         context += `\n${'═'.repeat(60)}\n`;
-        context += `ISI DOKUMEN RELEVAN (${toRead.length} file)\n`;
+        context += `ISI DOKUMEN RELEVAN (${toFetch.length} file)\n`;
         context += `${'═'.repeat(60)}\n`;
-        context += `
-[INSTRUKSI WAJIB UNTUK AI]:
-Berikut adalah ISI LENGKAP dari dokumen-dokumen yang relevan dengan pertanyaan user.
-WAJIB menjawab BERDASARKAN isi dokumen berikut ini secara SPESIFIK dan DETAIL.
-Sebutkan spesifikasi, angka, persyaratan, prosedur secara lengkap dari dokumen.
-DILARANG menjawab dengan kalimat generik seperti "silakan hubungi IT" atau "lihat dokumen".
-Jika ada spesifikasi laptop/perangkat → sebutkan merk, RAM, storage, processor, dll.
-Cantumkan nama file sumber di akhir jawaban.
-\n`;
+        context += `[INSTRUKSI WAJIB]: Jawab BERDASARKAN isi dokumen berikut secara SPESIFIK.\n`;
+        context += `Sebutkan angka, spesifikasi, prosedur, persyaratan dari dokumen.\n`;
+        context += `Cantumkan nama file sumber di akhir jawaban.\n\n`;
 
-        const { driveId } = await this.parseFolderUrl(folderUrl);
         let totalChars = 0;
-        const MAX_TOTAL = 200_000;
+        const MAX_TOTAL = 160_000;
 
-        for (const file of toRead) {
+        for (const file of toFetch) {
           if (totalChars >= MAX_TOTAL) {
-            context += `\n[Budget konteks tercapai]\n`;
+            context += `\n[Budget konteks tercapai, ${toFetch.length - toFetch.indexOf(file)} file tidak ditampilkan]\n`;
             break;
           }
-          try {
-            const content = await this.readFileContent(driveId, file.id, file.name);
-            const label   = file.folderPath && file.folderPath !== '/'
-              ? `${file.folderPath}/${file.name}` : file.name;
-            const block   = `\n${'─'.repeat(60)}\n📄 FILE: ${label}\n${'─'.repeat(60)}\n${content}\n`;
-            context      += block;
-            totalChars   += block.length;
-            console.log(`[OneDrive] ✅ "${file.name}": ${content.length} chars (total: ${totalChars})`);
-          } catch (e) {
-            context += `\n[❌ Gagal baca "${file.name}": ${e.message}]\n`;
+
+          let content = null;
+
+          // Check content cache first
+          if (odIndex.isContentFresh(hash, file.id, file.lastModified)) {
+            content = odIndex.getContent(hash, file.id);
+            if (content) {
+              console.log(`[OneDrive] Cache hit: "${file.name}"`);
+            }
           }
+
+          // Fetch from OneDrive if not cached / stale
+          if (!content) {
+            try {
+              console.log(`[OneDrive] Fetching: "${file.name}"...`);
+              content = await this.readFileContent(driveId, file.id, file.name);
+              odIndex.saveContent(hash, file.id, file.lastModified, content);
+              console.log(`[OneDrive] Fetched & cached: "${file.name}" (${content.length} chars)`);
+            } catch (e) {
+              console.warn(`[OneDrive] Read failed "${file.name}": ${e.message}`);
+              continue;
+            }
+          }
+
+          const label = file.folderPath && file.folderPath !== '/'
+            ? `${file.folderPath}/${file.name}` : file.name;
+          const block = `\n${'─'.repeat(50)}\n📄 FILE: ${label}\n${'─'.repeat(50)}\n${content}\n`;
+          context    += block;
+          totalChars += block.length;
         }
       }
 
@@ -425,19 +449,22 @@ Cantumkan nama file sumber di akhir jawaban.
     }
   }
 
+  // ── Test connection ───────────────────────────────────────
   async testConnection(folderUrl) {
     await this.getAccessToken();
     const files = await this.listFiles(folderUrl);
+    const stats = odIndex.getStats(this.tenantId, folderUrl);
     return {
       ok: true,
       fileCount: files.length,
+      indexStats: stats,
       files: files.slice(0, 15).map(f => {
         const folder = f.folderPath && f.folderPath !== '/' ? `${f.folderPath}/` : '';
         return `${folder}${f.name}`;
       }),
       message: files.length === 0
         ? 'Koneksi berhasil, tapi tidak ada file yang didukung.'
-        : `Berhasil menemukan ${files.length} file.`,
+        : `Berhasil menemukan ${files.length} file. Index: ${stats.totalKB}KB`,
     };
   }
 }

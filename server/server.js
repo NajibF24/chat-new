@@ -84,6 +84,7 @@ console.log('🖼️  Serving avatars from:', avatarsPath);
     await fs.mkdir(generatedPath,{ recursive: true });
     await fs.mkdir(avatarsPath,  { recursive: true }); // ✅ pastikan folder avatar ada
     await fs.mkdir(path.join(process.cwd(), 'data', 'tmp'), { recursive: true }); // ← TAMBAHAN BARU: untuk temp file PPTX
+    await fs.mkdir(path.join(process.cwd(), 'data', 'onedrive-index'), { recursive: true });
     console.log('✅ Directories ensured');
   } catch (e) {
     console.error('❌ Failed to create directories:', e);
