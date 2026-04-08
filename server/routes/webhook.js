@@ -292,13 +292,27 @@ router.post('/waha/:botId', async (req, res) => {
     const phoneNumber   = payload.from || payload.chatId;
     if (!phoneNumber) return;
 
+    // Dengan ini:
     const incomingText  = (payload.body || '').trim();
     const hasMedia      = Boolean(payload.hasMedia || payload.media || payload.mediaUrl);
     const mediaMimeType = payload.mimetype || payload.media?.mimetype || '';
     const mediaFilename = payload.filename || payload.media?.filename || 'attachment';
     const displayName   = payload._data?.notifyName || payload.pushName || phoneNumber;
+    const isGroupMessage = phoneNumber.endsWith('@g.us');
 
-    console.log(`[WA Webhook] From: ${phoneNumber} | Text: "${incomingText}" | hasMedia: ${hasMedia}`);
+    // ── Untuk grup: hanya balas jika bot di-tag (@mention) ──────
+    if (isGroupMessage) {
+      const mentionedIds = payload.mentionedIds || payload._data?.mentionedJidList || [];
+      const bodyText = payload.body || '';
+      // Cek apakah ada mention di pesan (format: @628xxx atau @nomor)
+      const hasMention = mentionedIds.length > 0 || /@\d+/.test(bodyText) || bodyText.startsWith('@');
+      if (!hasMention) {
+        console.log(`[WA Webhook] Group message without mention — skipping`);
+        return;
+      }
+    }
+
+    console.log(`[WA Webhook] From: ${phoneNumber} | Text: "${incomingText}" | hasMedia: ${hasMedia} | isGroup: ${isGroupMessage}`);
 
     // ── 2. Load Bot ──────────────────────────────────────────
     const bot = await Bot.findById(botId).lean();

@@ -183,14 +183,9 @@ export async function forwardChatToWaha(bot, username, userMessage, aiResponse) 
 
   if (chatIds.length === 0) return;
 
-  const wibTime = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
-  const text = [
-      `🤖 *BOT CHAT LOG:* ${bot.name}`,
-      `🕐 *Time (WIB):* ${wibTime}`,
-      `👤 *User:* ${username || 'Unknown'}`,
-      `💬 *Question:*\n${userMessage}`,
-      `🤖 *Answer:*\n${aiResponse}`,
-  ].join('\n');
+  // const wibTime = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
+  // Dengan ini (kirim jawaban langsung saja):
+  const text = aiResponse;
 
   for (const chatId of chatIds) {
     try {
