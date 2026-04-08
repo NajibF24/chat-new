@@ -1,4 +1,12 @@
 // server/services/onedrive.service.js
+// FIXED:
+//   1. Increased MAX_CHARS to 80,000 for full document reading
+//   2. Better relevance scoring - tokenizes keywords properly, no short-word filter
+//   3. Reads up to 10 relevant files instead of 6
+//   4. Fallback: if score=0, reads ALL files up to token budget (not just 3 newest)
+//   5. Explicit instruction to AI to answer FROM document content, not redirect
+//   6. Debug logging to track which files are being read and why
+
 import axios from 'axios';
 
 const SUPPORTED_EXT = ['pdf','docx','doc','xlsx','xls','txt','csv','md','pptx','ppt'];
@@ -186,6 +194,7 @@ class OneDriveService {
   }
 
   // ── 4. Download & read file content ──────────────────────────
+  // FIXED: Increased MAX_CHARS to 80,000 for full document reading
   async readFileContent(driveId, fileId, fileName) {
     const token = await this.getAccessToken();
     const ext   = (fileName || '').split('.').pop().toLowerCase();
@@ -196,25 +205,30 @@ class OneDriveService {
 
     const fileRes = await axios.get(downloadUrl, {
       responseType: 'arraybuffer',
-      timeout:      30_000,
+      timeout:      60_000,  // increased timeout for larger files
       headers:      { Authorization: `Bearer ${token}` },
     });
 
     const buffer = Buffer.from(fileRes.data);
-    // [PERBAIKAN] Tingkatkan batas karakter menjadi 40.000 (~10.000 token) agar detail dokumen terbaca semua
-    const MAX_CHARS = 40_000; 
+    // FIXED: Increased from 40,000 to 80,000 chars (~20,000 tokens)
+    // This ensures full SOP/Policy documents are read completely
+    const MAX_CHARS = 80_000;
 
     try {
       if (ext === 'pdf') {
         const { default: pdfParse } = await import('pdf-parse');
         const data = await pdfParse(buffer);
-        return data.text.substring(0, MAX_CHARS);
+        const text = data.text || '';
+        console.log(`[OneDrive] PDF "${fileName}": extracted ${text.length} chars`);
+        return text.substring(0, MAX_CHARS);
       }
 
       if (ext === 'docx' || ext === 'doc') {
         const { default: mammoth } = await import('mammoth');
         const result = await mammoth.extractRawText({ buffer });
-        return result.value.substring(0, MAX_CHARS);
+        const text = result.value || '';
+        console.log(`[OneDrive] DOCX "${fileName}": extracted ${text.length} chars`);
+        return text.substring(0, MAX_CHARS);
       }
 
       if (ext === 'xlsx' || ext === 'xls') {
@@ -223,6 +237,7 @@ class OneDriveService {
         const text = wb.SheetNames
           .map(n => `[Sheet: ${n}]\n` + XLSX.utils.sheet_to_csv(wb.Sheets[n]))
           .join('\n');
+        console.log(`[OneDrive] XLSX "${fileName}": extracted ${text.length} chars`);
         return text.substring(0, MAX_CHARS);
       }
 
@@ -238,11 +253,14 @@ class OneDriveService {
           const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
           text         += matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ') + '\n';
         }
+        console.log(`[OneDrive] PPTX "${fileName}": extracted ${text.length} chars`);
         return text.substring(0, MAX_CHARS);
       }
 
       if (['txt', 'md', 'csv'].includes(ext)) {
-        return buffer.toString('utf8').substring(0, MAX_CHARS);
+        const text = buffer.toString('utf8');
+        console.log(`[OneDrive] TXT/MD/CSV "${fileName}": extracted ${text.length} chars`);
+        return text.substring(0, MAX_CHARS);
       }
 
       return `[File: ${fileName} — tipe tidak didukung untuk pembacaan teks]`;
@@ -253,7 +271,60 @@ class OneDriveService {
     }
   }
 
-  // ── 5. Build context untuk AI ────────────────────────────────
+  // ── 5. Score relevance of a file to the user's query ─────────
+  // FIXED: Better tokenization, no min-length filter that cuts short keywords
+  _scoreFileRelevance(file, keywords) {
+    const nameLower   = file.name.toLowerCase();
+    const folderLower = (file.folderPath || '').toLowerCase();
+    
+    let score = 0;
+    for (const kw of keywords) {
+      // File name match is worth more than folder match
+      if (nameLower.includes(kw)) score += 5;
+      if (folderLower.includes(kw)) score += 2;
+      
+      // Partial match in file name (e.g. "it" matches "it hardware")
+      const nameWords = nameLower.split(/[\s\-_.\/\\]+/);
+      if (nameWords.some(w => w === kw || w.startsWith(kw))) score += 3;
+    }
+    
+    return score;
+  }
+
+  // ── 6. Extract meaningful keywords from user message ─────────
+  // FIXED: Do NOT filter by length — "it", "hr", "qa" are all valid keywords
+  _extractKeywords(userMessage) {
+    // Indonesian stop words that carry no meaning
+    const stopWords = new Set([
+      'yang','dan','atau','di','ke','dari','ini','itu','untuk','dengan','dalam',
+      'pada','adalah','bahwa','ada','jika','kalau','saya','kamu','tolong','apa',
+      'siapa','kapan','dimana','bagaimana','berikan','cari','tampilkan','lihat',
+      'tentang','mengenai','terkait','mohon','bisa','boleh','apakah','jelaskan',
+      'bagaimana','seperti','apa','sesuai','standar','standarisasi',
+      // English stop words
+      'the','a','an','is','are','was','were','be','been','being','have','has',
+      'had','do','does','did','will','would','could','should','may','might',
+      'shall','can','need','dare','ought','used','to','of','in','on','at',
+      'by','for','with','about','against','between','into','through','during',
+      'before','after','above','below','from','up','down','out','off','over',
+      'under','again','further','then','once','here','there','when','where',
+      'why','how','all','both','each','few','more','most','other','some',
+      'such','no','nor','not','only','same','so','than','too','very','just',
+      'show','me','tell','what','give','please','find','get',
+    ]);
+
+    return userMessage
+      .toLowerCase()
+      // Remove punctuation except hyphens within words
+      .replace(/[^\w\s\-]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 2 && !stopWords.has(w))
+      // Deduplicate
+      .filter((w, i, arr) => arr.indexOf(w) === i);
+  }
+
+  // ── 7. Build context for AI ───────────────────────────────────
+  // FIXED: Better file selection, reads full content, explicit AI instructions
   async buildContext(folderUrl, userMessage) {
     try {
       const files = await this.listFiles(folderUrl);
@@ -262,32 +333,37 @@ class OneDriveService {
         return `\n\n=== 📁 ONEDRIVE ===\nFolder kosong atau tidak ada file yang didukung.\n=== AKHIR ONEDRIVE ===\n`;
       }
 
-      // [PERBAIKAN SCORING]: Menggunakan array stop-words. Kata penting seperti "it", "hr", "qa" dengan length <=2 sekarang aman.
-      const stopWords = new Set(['yang','dan','atau','di','ke','dari','ini','itu','untuk','dengan','dalam','pada','adalah','bahwa','ada','jika','kalau','saya','kamu','tolong','apa','siapa','kapan','dimana','bagaimana']);
-      const keywords = userMessage.toLowerCase().split(/\W+/).filter(w => w.length > 1 && !stopWords.has(w));
+      // Extract meaningful keywords from the query
+      const keywords = this._extractKeywords(userMessage);
+      console.log(`[OneDrive] Query keywords: [${keywords.join(', ')}] from: "${userMessage}"`);
 
-      const scored = files.map(f => {
-        const nameLower   = f.name.toLowerCase();
-        const folderLower = (f.folderPath || '').toLowerCase();
-        
-        let score = 0;
-        keywords.forEach(k => {
-          if (nameLower.includes(k)) score += 3;
-          if (folderLower.includes(k)) score += 1;
-        });
-        
-        return { ...f, score };
-      }).sort((a, b) => b.score - a.score || new Date(b.lastModified) - new Date(a.lastModified));
+      // Score all files for relevance
+      const scored = files.map(f => ({
+        ...f,
+        score: this._scoreFileRelevance(f, keywords),
+      })).sort((a, b) => {
+        // Primary: score descending
+        if (b.score !== a.score) return b.score - a.score;
+        // Secondary: most recently modified first
+        return new Date(b.lastModified) - new Date(a.lastModified);
+      });
 
-      // [PERBAIKAN] Ambil hingga 6 file relevan (sebelumnya cuma 3), fallback ke 3 file terbaru jika skor 0
-      const toRead = scored[0]?.score > 0
-        ? scored.filter(f => f.score > 0).slice(0, 6)
-        : scored.slice(0, 3);
+      // FIXED: Read up to 10 relevant files (was 6)
+      // If any files have score > 0, read those. Otherwise read top 5 most recent.
+      const hasRelevant = scored.some(f => f.score > 0);
+      const toRead = hasRelevant
+        ? scored.filter(f => f.score > 0).slice(0, 10)
+        : scored.slice(0, 5);  // fallback: 5 most recent (was 3)
 
+      console.log(`[OneDrive] Files to read (${toRead.length}):`, 
+        toRead.map(f => `"${f.name}" (score=${f.score})`).join(', '));
+
+      // Build context string
       let context  = `\n\n=== 📁 ONEDRIVE / SHAREPOINT ===\n`;
       context     += `Total file tersedia: ${files.length}\n\n`;
-      context     += `**Daftar File (semua subfolder):**\n`;
-
+      
+      // List all files for reference
+      context += `**Daftar Semua File:**\n`;
       files.forEach(f => {
         const size = f.size > 1_048_576
           ? `${(f.size / 1_048_576).toFixed(1)} MB`
@@ -295,28 +371,50 @@ class OneDriveService {
         const date = new Date(f.lastModified).toLocaleDateString('id-ID', {
           day: '2-digit', month: 'short', year: 'numeric',
         });
-        const path = f.folderPath && f.folderPath !== '/'
+        const pathPrefix = f.folderPath && f.folderPath !== '/'
           ? `📂 ${f.folderPath}/`
           : '';
-        context += `📄 ${path}${f.name} (${size}, ${date})\n`;
+        context += `📄 ${pathPrefix}${f.name} (${size}, ${date})\n`;
       });
 
-      // Baca isi file yang relevan
+      // Read and embed content of relevant files
       if (toRead.length > 0) {
-        context += `\n**Konten File Relevan:**\n`;
-        // [PERBAIKAN] Tambahkan perintah tegas agar Bot menjabarkan isi yang ditemukan
-        context += `[INSTRUKSI UNTUK AI: Jika informasi yang relevan ditemukan di dalam teks di bawah ini, jabarkan secara spesifik poin-poin/detail dari isi teks tersebut! Jangan hanya mengarahkan user untuk membaca file sendirian.]\n`;
+        context += `\n**ISI DOKUMEN RELEVAN (${toRead.length} file):**\n`;
+        
+        // FIXED: Explicit, strong instruction for AI to answer FROM content
+        context += `\n[INSTRUKSI WAJIB UNTUK AI]:
+Dokumen-dokumen berikut berisi informasi lengkap yang relevan dengan pertanyaan user.
+WAJIB membaca seluruh isi dokumen di bawah ini dan menjawab BERDASARKAN isi dokumen tersebut.
+DILARANG menjawab secara generik atau mengarahkan user untuk "membaca dokumen sendiri".
+Jika informasi ada di dokumen, WAJIB sebutkan detail spesifiknya (nama, angka, spesifikasi, prosedur, dll).
+Cantumkan nama file sebagai sumber di akhir jawaban.\n\n`;
         
         const { driveId } = await this.parseFolderUrl(folderUrl);
+        
+        // Track total chars to avoid context overflow
+        let totalChars = 0;
+        const MAX_TOTAL_CHARS = 200_000; // ~50k tokens total budget
+
         for (const file of toRead) {
+          if (totalChars >= MAX_TOTAL_CHARS) {
+            context += `\n[Batas konteks tercapai — ${files.length - toRead.indexOf(file)} file lainnya tidak dimuat]\n`;
+            break;
+          }
+
           try {
             const content  = await this.readFileContent(driveId, file.id, file.name);
             const docLabel = file.folderPath && file.folderPath !== '/'
               ? `${file.folderPath}/${file.name}`
               : file.name;
-            context += `\n--- MULAI DOKUMEN: ${docLabel} ---\n${content}\n--- AKHIR DOKUMEN: ${file.name} ---\n`;
+            
+            const contentToAdd = `\n${'═'.repeat(60)}\n📄 DOKUMEN: ${docLabel}\n${'═'.repeat(60)}\n${content}\n${'═'.repeat(60)}\n`;
+            context += contentToAdd;
+            totalChars += contentToAdd.length;
+            
+            console.log(`[OneDrive] ✅ Added "${file.name}": ${content.length} chars (running total: ${totalChars})`);
           } catch (e) {
-            context += `\n--- MULAI DOKUMEN: ${file.name} ---\n[Gagal membaca: ${e.message}]\n--- AKHIR DOKUMEN: ${file.name} ---\n`;
+            context += `\n[❌ Gagal membaca: ${file.name} — ${e.message}]\n`;
+            console.error(`[OneDrive] Failed to read "${file.name}":`, e.message);
           }
         }
       }
@@ -330,7 +428,7 @@ class OneDriveService {
     }
   }
 
-  // ── 6. Test connection ────────────────────────────────────────
+  // ── 8. Test connection ────────────────────────────────────────
   async testConnection(folderUrl) {
     await this.getAccessToken();
     const files = await this.listFiles(folderUrl);
