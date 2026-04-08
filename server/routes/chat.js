@@ -10,7 +10,7 @@ import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import AuditService from '../services/audit.service.js';
 import AIProviderService from '../services/ai-provider.service.js';
-import { forwardChatToWaha } from '../services/wahaScheduler.js';
+// import { forwardChatToWaha } from '../services/wahaScheduler.js';
 
 const router = express.Router();
 
@@ -150,7 +150,7 @@ router.post('/message', requireAuth, async (req, res) => {
     const durationMs = Date.now() - startTime;
 
     // ── WAHA Forward (fire & forget) — uses new multi-target helper ──
-    forwardChatToWaha(bot, sessionUsername, message, result?.response || '').catch(() => {});
+    // forwardChatToWaha(bot, sessionUsername, message, result?.response || '').catch(() => {});
 
     // ── Audit Log ────────────────────────────────────────────
     const usage = normalizeUsage(result?.usage, model);
@@ -233,7 +233,7 @@ router.post('/external', async (req, res) => {
     const durationMs  = Date.now() - startTime;
     const responseText = aiResponse?.text || aiResponse?.response || '';
 
-    forwardChatToWaha(bot, callerUsername, message, responseText).catch(() => {});
+    // forwardChatToWaha(bot, callerUsername, message, responseText).catch(() => {});
 
     const usage = normalizeUsage(aiResponse?.usage, model);
     await AuditService.log({

@@ -11,11 +11,13 @@ import AIProviderService from './ai-provider.service.js';
 
 // ── Send a single message to a WAHA target ───────────────────
 async function sendWahaMessage(wahaConfig, chatId, botName, triggerPrompt, aiText) {
+  const wibTime = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
   const formattedMessage =
-    `🤖 *LOG CHAT BOT:* ${botName}\n` +
-    `👤 *User:* system.scheduler\n\n` +
-    `💬 *Pertanyaan:*\n${triggerPrompt}\n\n` +
-    `🤖 *Jawaban:*\n${aiText}`;
+      `🤖 *BOT SCHEDULED MESSAGE:* ${botName}\n` +
+      `🕐 *Time (WIB):* ${wibTime}\n` +
+      `👤 *Triggered by:* scheduler\n\n` +
+      `💬 *Prompt:*\n${triggerPrompt}\n\n` +
+      `🤖 *Response:*\n${aiText}`;
 
   const payload = {
     session: wahaConfig.session || 'default',
@@ -181,11 +183,13 @@ export async function forwardChatToWaha(bot, username, userMessage, aiResponse) 
 
   if (chatIds.length === 0) return;
 
+  const wibTime = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
   const text = [
-    `🤖 *LOG CHAT BOT:* ${bot.name}`,
-    `👤 *User:* ${username || 'Unknown'}`,
-    `💬 *Pertanyaan:*\n${userMessage}`,
-    `🤖 *Jawaban:*\n${aiResponse}`,
+      `🤖 *BOT CHAT LOG:* ${bot.name}`,
+      `🕐 *Time (WIB):* ${wibTime}`,
+      `👤 *User:* ${username || 'Unknown'}`,
+      `💬 *Question:*\n${userMessage}`,
+      `🤖 *Answer:*\n${aiResponse}`,
   ].join('\n');
 
   for (const chatId of chatIds) {
