@@ -1,4 +1,8 @@
 // server/services/pptx-template.service.js
+// FIXED:
+//  1. Slide IMAGE tanpa gambar → hapus shape Image 0, render sebagai CONTENT biasa
+//  2. Slide NON-IMAGE → hapus semua p:pic agar tidak ada broken image dari template
+//  3. Font/teks tidak tertutup gambar
 
 import AdmZip from 'adm-zip';
 import path   from 'path';
@@ -59,16 +63,47 @@ function replaceShapeText(slideXml, shapeName, newParagraphs, bodyPrAttrs = 'wra
 }
 
 // ─────────────────────────────────────────────────────────────
-// REPLACE IMAGE IN NAMED SHAPE (p:blipFill)
-// Replaces r:embed on the first blipFill inside the named pic shape
+// FIX 1: REMOVE SHAPE BY NAME (p:sp atau p:pic)
+// Digunakan untuk hapus "Image 0" saat tidak ada gambar
+// ─────────────────────────────────────────────────────────────
+
+function removeShapeByName(slideXml, shapeName) {
+  // Hapus p:sp dengan name tertentu
+  let result = slideXml.replace(
+    /(<p:sp>)([\s\S]*?)(<\/p:sp>)/g,
+    (fullMatch, open, inner, close) => {
+      if (inner.includes(`name="${shapeName}"`)) return '';
+      return fullMatch;
+    }
+  );
+  // Hapus p:pic dengan name tertentu
+  result = result.replace(
+    /(<p:pic>)([\s\S]*?)(<\/p:pic>)/g,
+    (fullMatch, open, inner, close) => {
+      if (inner.includes(`name="${shapeName}"`)) return '';
+      return fullMatch;
+    }
+  );
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────
+// FIX 2: REMOVE ALL p:pic SHAPES FROM SLIDE
+// Untuk non-IMAGE slides agar tidak ada broken image dari template
+// ─────────────────────────────────────────────────────────────
+
+function removeAllPicShapes(slideXml) {
+  return slideXml.replace(/<p:pic>[\s\S]*?<\/p:pic>/g, '');
+}
+
+// ─────────────────────────────────────────────────────────────
+// REPLACE IMAGE IN NAMED p:pic SHAPE (r:embed)
 // ─────────────────────────────────────────────────────────────
 
 function replaceShapeImage(slideXml, shapeName, newRId) {
-  // Target p:pic (not p:sp) that contains the given name
   const picRegex = /(<p:pic>)([\s\S]*?)(<\/p:pic>)/g;
   return slideXml.replace(picRegex, (fullMatch, open, inner, close) => {
     if (!inner.includes(`name="${shapeName}"`)) return fullMatch;
-    // Replace r:embed="..." inside p:blipFill
     const replaced = inner.replace(/(r:embed=")[^"]*(")/g, `$1${newRId}$2`);
     return open + replaced + close;
   });
@@ -82,7 +117,7 @@ function buildSlideXml(templateXml, slideData, imageRId = null) {
   const layout = (slideData.layout || 'CONTENT').toUpperCase();
   let xml      = templateXml;
 
-  // Always clear Divider placeholder so no stale template text shows
+  // Always clear Divider placeholder
   xml = replaceShapeText(xml, 'Divider', [makePara('', { sz: 100 })]);
 
   const TEAL = '01775A';
@@ -92,7 +127,6 @@ function buildSlideXml(templateXml, slideData, imageRId = null) {
   switch (layout) {
 
     case 'TITLE': {
-      // FIX: auto-shrink font based on title length to prevent overflow into TextBox 3
       const titleText = (slideData.title || '').substring(0, 100);
       const titleLen  = titleText.length;
       const titleSz   = titleLen > 60 ? 2800 : titleLen > 40 ? 3400 : 4400;
@@ -239,18 +273,38 @@ function buildSlideXml(templateXml, slideData, imageRId = null) {
     }
 
     case 'IMAGE': {
+      // Selalu isi Title
       xml = replaceShapeText(xml, 'Title', [
         makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
       ]);
-      // Replace caption in Subtitle shape
-      if (slideData.caption) {
-        xml = replaceShapeText(xml, 'Subtitle', [
-          makePara(slideData.caption, { sz: 1300, color: GRAY }),
-        ], 'wrap="square" lIns="91440" tIns="0"');
-      }
-      // FIX: inject actual image into "Image 0" shape if imageRId provided
+
       if (imageRId) {
+        // ADA GAMBAR: inject ke shape Image 0
         xml = replaceShapeImage(xml, 'Image 0', imageRId);
+        // Caption di Subtitle
+        if (slideData.caption) {
+          xml = replaceShapeText(xml, 'Subtitle', [
+            makePara(slideData.caption, { sz: 1300, color: GRAY }),
+          ], 'wrap="square" lIns="91440" tIns="0"');
+        }
+      } else {
+        // TIDAK ADA GAMBAR: hapus shape Image 0, render sebagai CONTENT biasa
+        // Hapus semua p:pic dari slide
+        xml = removeAllPicShapes(xml);
+        // Juga hapus shape bernama "Image 0" jika masih ada sebagai p:sp
+        xml = removeShapeByName(xml, 'Image 0');
+        xml = removeShapeByName(xml, 'Image 1');
+        xml = removeShapeByName(xml, 'Image 2');
+
+        // Render caption/body/bullets sebagai konten teks biasa
+        const content = slideData.caption || slideData.body || '';
+        const bullets = slideData.bullets || [];
+        const bodyParas = bullets.length > 0
+          ? bullets.map(b => makeBulletPara(String(b)))
+          : content
+            ? [makePara(content, { sz: 1400, color: GRAY, marL: 91440 })]
+            : [makePara('', { sz: 1400 })];
+        xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
       }
       break;
     }
@@ -269,6 +323,14 @@ function buildSlideXml(templateXml, slideData, imageRId = null) {
       }
       break;
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // FIX UTAMA: Untuk semua layout NON-IMAGE, hapus semua p:pic
+  // agar tidak ada broken image dari template yang menempel
+  // ─────────────────────────────────────────────────────────────
+  if (layout !== 'IMAGE') {
+    xml = removeAllPicShapes(xml);
   }
 
   return xml;
@@ -369,19 +431,23 @@ function analyzeTemplate(zip) {
                     || (slides.length > 1 ? slides[1] : slides[0]);
 
   console.log(`[PPT Template] TITLE=slide${titleSlide.index+1}(${titleSlide.path}) CONTENT=slide${contentSlide.index+1}(${contentSlide.path}) CLOSING=slide${closingSlide.index+1}(${closingSlide.path})`);
+
+  // Cari slide dengan Image 0 shape untuk template IMAGE
   const imageSlide = slides.find(s => s.hasPic && s.names.includes('Image 0'))
                || slides.find(s => s.hasPic)
                || contentSlide;
 
   return { slides, titleSlide, contentSlide, closingSlide, imageSlide };
-
 }
 
 function pickTemplateSlide(analysis, layout) {
   const L = layout.toUpperCase();
   if (L === 'TITLE')   return analysis.titleSlide;
   if (L === 'CLOSING') return analysis.closingSlide;
-  if (L === 'IMAGE')   return analysis.imageSlide; 
+  // Untuk IMAGE: gunakan imageSlide HANYA jika ada gambar yang akan di-inject
+  // Jika tidak ada gambar, gunakan contentSlide biasa
+  // Keputusan ini diambil di generate() bukan di sini
+  if (L === 'IMAGE')   return analysis.imageSlide;
   return analysis.contentSlide;
 }
 
@@ -417,8 +483,6 @@ function findPptxTemplate(bot) {
 // ─────────────────────────────────────────────────────────────
 
 function updatePresentationXml(presXml, relsXml, newSlides) {
-  // FIX Bug 1: hanya ambil ID dari p:sldId, bukan semua atribut id="..."
-  // Filter id < 400 untuk menghindari slideMasterId yang sangat besar (>2147483647)
   const existingSlideIds = [...presXml.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)]
     .map(m => parseInt(m[1]))
     .filter(id => id < 400);
@@ -456,11 +520,6 @@ function updateContentTypes(ctXml, slideNames) {
   return updated.replace('</Types>', overrides + '\n</Types>');
 }
 
-function buildDefaultRels() {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`;
-}
-
-// FIX Bug 2: buat rels bersih per slide, tanpa image ref sisa dari template
 function buildCleanRels(slideLayoutTarget = '../slideLayouts/slideLayout2.xml', imageTarget = null) {
   const imageRel = imageTarget
     ? `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${imageTarget}"/>`
@@ -504,8 +563,6 @@ const PptxTemplateService = {
       return null;
     }
 
-    // FIX Bug B: simpan template ZIP terpisah untuk referensi closing/title slide
-    // karena newZip akan delete semua slide lama
     const analysis = analyzeTemplate(zip);
     if (!analysis) {
       console.error('[PPT Template] Template analysis failed');
@@ -523,7 +580,6 @@ const PptxTemplateService = {
     const slides       = pptData.slides || [];
     const newSlideInfo = [];
 
-    // Track next available media index for injected images
     const existingMedia = newZip.getEntries()
       .filter(e => e.entryName.startsWith('ppt/media/'))
       .map(e => e.entryName);
@@ -536,15 +592,29 @@ const PptxTemplateService = {
       const slidePath    = `ppt/slides/${slideName}`;
       const slideRelPath = `ppt/slides/_rels/${slideName}.rels`;
 
-      const templateSlide = pickTemplateSlide(analysis, slideData.layout || 'CONTENT');
+      const isImageLayout = (slideData.layout || '').toUpperCase() === 'IMAGE';
 
-      // FIX Bug B: selalu ambil dari zip asli (bukan newZip) karena slide lama sudah dihapus
+      // Untuk IMAGE dengan gambar: pakai imageSlide template
+      // Untuk IMAGE tanpa gambar: pakai contentSlide (tidak ada broken image)
+      // Untuk layout lain: pakai template yang sesuai
+      let templateSlide;
+      if (isImageLayout && docxImages.length > 0) {
+        // Cek apakah ada gambar valid untuk slide ini
+        const imgIndex = typeof slideData.imageIndex === 'number' ? slideData.imageIndex : 0;
+        const imgObj   = docxImages[imgIndex] || docxImages[0];
+        templateSlide  = imgObj ? analysis.imageSlide : analysis.contentSlide;
+      } else if (isImageLayout) {
+        // Tidak ada gambar sama sekali → gunakan contentSlide
+        templateSlide = analysis.contentSlide;
+      } else {
+        templateSlide = pickTemplateSlide(analysis, slideData.layout || 'CONTENT');
+      }
+
       const templateEntry = findEntry(zip, templateSlide.path);
       const templateXml   = templateEntry
         ? templateEntry.getData().toString('utf8')
         : buildMinimalSlideXml();
 
-      // Determine layout target dari rels template
       const templateRelPath  = `ppt/slides/_rels/${path.basename(templateSlide.path)}.rels`;
       const templateRelEntry = findEntry(zip, templateRelPath);
       let layoutTarget = '../slideLayouts/slideLayout2.xml';
@@ -554,11 +624,11 @@ const PptxTemplateService = {
         if (lm) layoutTarget = lm[1];
       }
 
-      // FIX: inject image untuk layout IMAGE
+      // Inject image untuk layout IMAGE (hanya jika ada gambar)
       let imageRId    = null;
       let imageTarget = null;
 
-      if ((slideData.layout || '').toUpperCase() === 'IMAGE' && docxImages.length > 0) {
+      if (isImageLayout && docxImages.length > 0) {
         const imgIndex = typeof slideData.imageIndex === 'number'
           ? slideData.imageIndex
           : 0;
@@ -580,13 +650,15 @@ const PptxTemplateService = {
       }
 
       const newSlideXml = buildSlideXml(templateXml, slideData, imageRId);
-      const relXml      = buildCleanRels(layoutTarget, imageTarget);
+      // Untuk rels: hanya tambahkan image rel jika benar-benar ada gambar
+      const relXml = buildCleanRels(layoutTarget, imageTarget);
 
       newZip.addFile(slidePath,    Buffer.from(newSlideXml, 'utf8'));
       newZip.addFile(slideRelPath, Buffer.from(relXml, 'utf8'));
       newSlideInfo.push({ name: slideName });
 
-      console.log(`[PPT Template] Slide ${slideNum} (${slideData.layout || 'CONTENT'}) ← ${path.basename(templateSlide.path)}`);
+      const layoutLabel = isImageLayout && !imageRId ? 'IMAGE→CONTENT' : (slideData.layout || 'CONTENT');
+      console.log(`[PPT Template] Slide ${slideNum} (${layoutLabel}) ← ${path.basename(templateSlide.path)}`);
     }
 
     if (!newSlideInfo.length) {
@@ -615,9 +687,6 @@ const PptxTemplateService = {
         : coreXml.replace('</cp:coreProperties>', `<dc:title>${escapeXml(title)}</dc:title></cp:coreProperties>`);
       newZip.updateFile('docProps/core.xml', Buffer.from(coreXml, 'utf8'));
     }
-
-    // Register injected images in [Content_Types].xml
-    // (png/jpeg/gif already have Default entries in most PPTX — skip if already there)
 
     const safeTitle = (title || 'Presentation').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').substring(0, 40);
     const filename  = `GYS-${safeTitle}-${Date.now()}.pptx`;
