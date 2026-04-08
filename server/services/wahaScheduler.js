@@ -13,11 +13,11 @@ import AIProviderService from './ai-provider.service.js';
 async function sendWahaMessage(wahaConfig, chatId, botName, triggerPrompt, aiText) {
   const wibTime = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
   const formattedMessage =
-      `🤖 *BOT SCHEDULED MESSAGE:* ${botName}\n` +
-      `🕐 *Time (WIB):* ${wibTime}\n` +
-      `👤 *Triggered by:* scheduler\n\n` +
-      `💬 *Prompt:*\n${triggerPrompt}\n\n` +
-      `🤖 *Response:*\n${aiText}`;
+      // `🤖 *BOT SCHEDULED MESSAGE:* ${botName}\n` +
+      // `🕐 *Time (WIB):* ${wibTime}\n` +
+      // `👤 *Triggered by:* scheduler\n\n` +
+      // `💬 *Prompt:*\n${triggerPrompt}\n\n` +
+      `${aiText}`;
 
   const payload = {
     session: wahaConfig.session || 'default',
