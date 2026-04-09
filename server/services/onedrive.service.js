@@ -1,10 +1,9 @@
 // server/services/onedrive.service.js
-// UPDATED: buildContext() now uses local index + content cache.
 // FIXES:
 //   - readFileContent: gunakan /content endpoint langsung
-//   - MAX_TOTAL dikurangi 160K → 50K agar AI tidak kehabisan token output
-//   - MAX per file 8K chars
-//   - MAX files to fetch: 5 (dari 12)
+//   - HAPUS daftar 194 file dari context (buang ~15K token sia-sia)
+//   - MAX_TOTAL 50K, MAX per file 8K, MAX files 5
+//   - Context lebih bersih dan fokus ke isi dokumen
 
 import axios   from 'axios';
 import odIndex from './onedrive-index.service.js';
@@ -71,10 +70,9 @@ const FOLDER_KEYWORD_MAP = {
   'asset':        ['it system', 'it'],
 };
 
-// ✅ KUNCI FIX: Batasi ukuran context agar AI punya cukup token untuk output
-const MAX_TOTAL_CHARS    = 50_000;  // total semua file (≈12K token)
-const MAX_PER_FILE_CHARS = 8_000;   // per file (≈2K token)
-const MAX_FILES_TO_FETCH = 5;       // max file yang dibaca isinya
+const MAX_TOTAL_CHARS    = 50_000;
+const MAX_PER_FILE_CHARS = 8_000;
+const MAX_FILES_TO_FETCH = 5;
 
 class OneDriveService {
   constructor(tenantId, clientId, clientSecret) {
@@ -218,17 +216,15 @@ class OneDriveService {
     return await this._listFilesRecursive(driveId, folderPath);
   }
 
-  // ── Content extraction (FIXED) ────────────────────────────
   async readFileContent(driveId, fileId, fileName) {
     const token = await this.getAccessToken();
     const ext   = (fileName || '').split('.').pop().toLowerCase();
 
-    // ✅ FIX: Gunakan /content endpoint langsung
     const directUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/content`;
     let fileRes;
 
     try {
-      console.log(`[OneDrive] Downloading: "${fileName}" via /content endpoint...`);
+      console.log(`[OneDrive] Downloading: "${fileName}"...`);
       fileRes = await axios.get(directUrl, {
         responseType: 'arraybuffer',
         timeout: 60_000,
@@ -265,7 +261,7 @@ class OneDriveService {
         const data = await pdfParse(buffer, { max: 0 });
         const text = (data.text || '').trim();
         if (!text || text.length < 50) {
-          return `[PDF "${fileName}" (${buffer.length} bytes) tidak ada teks — kemungkinan scan/gambar. Halaman: ${data.numpages || '?'}]`;
+          return `[PDF "${fileName}" tidak ada teks — kemungkinan scan/gambar. Halaman: ${data.numpages || '?'}]`;
         }
         console.log(`[OneDrive] PDF parsed: "${fileName}" — ${text.length} chars, ${data.numpages} pages`);
         return text.substring(0, MAX_CHARS);
@@ -354,11 +350,11 @@ class OneDriveService {
     return { hash, fileCount: files.length };
   }
 
-  // ── Main context builder ──────────────────────────────────
   async buildContext(folderUrl, userMessage) {
     try {
       const { driveId, folderPath } = await this.parseFolderUrl(folderUrl);
 
+      // Step 1: get/refresh file list
       let { hash, index } = odIndex.loadIndex(this.tenantId, folderUrl);
       let allFiles;
 
@@ -373,9 +369,10 @@ class OneDriveService {
       }
 
       if (!allFiles.length) {
-        return `\n\n=== 📁 ONEDRIVE ===\nFolder kosong.\n=== AKHIR ONEDRIVE ===\n`;
+        return `\n\n=== ONEDRIVE ===\nFolder kosong.\n=== AKHIR ONEDRIVE ===\n`;
       }
 
+      // Step 2: score & rank files
       const keywords = this._extractKeywords(userMessage);
       console.log(`[OneDrive] Search keywords: [${keywords.join(', ')}]`);
 
@@ -384,7 +381,7 @@ class OneDriveService {
         return { ...f, score: this._scoreFile(f, keywords, cachedKws) };
       }).sort((a, b) => b.score - a.score || new Date(b.lastModified) - new Date(a.lastModified));
 
-      // ✅ Pilih MAX_FILES_TO_FETCH file paling relevan
+      // Step 3: pilih file paling relevan
       const relevantPrefixes = this._getRelevantFolderPrefixes(allFiles, keywords);
       let toFetch = [];
 
@@ -402,78 +399,74 @@ class OneDriveService {
         console.log(`[OneDrive] Fallback: ${toFetch.length} files`);
       }
 
-      // Build context
-      let context  = `\n\n=== 📁 ONEDRIVE / SHAREPOINT ===\n`;
-      context     += `Total file: ${allFiles.length} | Memuat konten: ${toFetch.length} file\n\n`;
-      context     += `**Daftar File Tersedia:**\n`;
-      for (const f of allFiles) {
-        const prefix = f.folderPath && f.folderPath !== '/' ? `📂 ${f.folderPath}/` : '';
-        context += `📄 ${prefix}${f.name}\n`;
-      }
+      // Step 4: build context
+      // ✅ FIX UTAMA: TIDAK lagi tampilkan daftar 194 file
+      // Langsung ke konten yang relevan saja
+      let context  = `\n\n=== DOKUMEN INTERNAL GYS (OneDrive) ===\n`;
+      context     += `Dokumen yang dimuat: ${toFetch.map(f => f.name).join(', ')}\n\n`;
 
-      if (toFetch.length > 0) {
-        context += `\n${'═'.repeat(60)}\n`;
-        context += `ISI DOKUMEN RELEVAN\n`;
-        context += `${'═'.repeat(60)}\n`;
-        context += `INSTRUKSI PENTING: Isi bagian Key Points dan Prosedur dengan detail dari dokumen berikut.\n`;
-        context += `Jangan biarkan kosong — ambil informasi spesifik dari isi dokumen.\n\n`;
+      let totalChars = 0;
+      let fetchSuccess = 0;
+      let fetchFail    = 0;
 
-        let totalChars = 0;
-        let fetchSuccess = 0;
-        let fetchFail    = 0;
-
-        for (const file of toFetch) {
-          if (totalChars >= MAX_TOTAL_CHARS) {
-            context += `\n[Budget konteks tercapai]\n`;
-            break;
-          }
-
-          let content = null;
-
-          if (odIndex.isContentFresh(hash, file.id, file.lastModified)) {
-            content = odIndex.getContent(hash, file.id);
-            if (content) console.log(`[OneDrive] Cache hit: "${file.name}" (${content.length} chars)`);
-          }
-
-          if (!content) {
-            try {
-              content = await this.readFileContent(driveId, file.id, file.name);
-              if (content && !content.startsWith('[') && content.length > 50) {
-                odIndex.saveContent(hash, file.id, file.lastModified, content);
-                console.log(`[OneDrive] ✅ Fetched & cached: "${file.name}" (${content.length} chars)`);
-                fetchSuccess++;
-              } else {
-                fetchFail++;
-              }
-            } catch (e) {
-              console.error(`[OneDrive] ❌ Read failed "${file.name}": ${e.message}`);
-              content = `[GAGAL MEMBACA: "${file.name}" — ${e.message}]`;
-              fetchFail++;
-            }
-          }
-
-          // ✅ Potong tiap file agar tidak mendominasi context
-          const truncated = content && content.length > MAX_PER_FILE_CHARS
-            ? content.substring(0, MAX_PER_FILE_CHARS) + `\n...[dipotong dari ${content.length} chars]`
-            : (content || '[Konten kosong]');
-
-          const label = file.folderPath && file.folderPath !== '/'
-            ? `${file.folderPath}/${file.name}` : file.name;
-          const block = `\n${'─'.repeat(50)}\n📄 FILE: ${label}\n${'─'.repeat(50)}\n${truncated}\n`;
-          context    += block;
-          totalChars += block.length;
+      for (const file of toFetch) {
+        if (totalChars >= MAX_TOTAL_CHARS) {
+          context += `\n[Budget konteks tercapai]\n`;
+          break;
         }
 
-        console.log(`[OneDrive] Context built — success: ${fetchSuccess}, fail: ${fetchFail}, chars: ${totalChars}`);
+        let content = null;
+
+        // Cek cache
+        if (odIndex.isContentFresh(hash, file.id, file.lastModified)) {
+          content = odIndex.getContent(hash, file.id);
+          if (content) console.log(`[OneDrive] Cache hit: "${file.name}" (${content.length} chars)`);
+        }
+
+        // Fetch jika belum ada
+        if (!content) {
+          try {
+            content = await this.readFileContent(driveId, file.id, file.name);
+            if (content && !content.startsWith('[') && content.length > 50) {
+              odIndex.saveContent(hash, file.id, file.lastModified, content);
+              console.log(`[OneDrive] ✅ Cached: "${file.name}" (${content.length} chars)`);
+              fetchSuccess++;
+            } else {
+              fetchFail++;
+            }
+          } catch (e) {
+            console.error(`[OneDrive] ❌ Failed "${file.name}": ${e.message}`);
+            content = `[GAGAL MEMBACA: ${e.message}]`;
+            fetchFail++;
+          }
+        }
+
+        // ✅ Potong per file agar tidak mendominasi
+        const truncated = content && content.length > MAX_PER_FILE_CHARS
+          ? content.substring(0, MAX_PER_FILE_CHARS) + `\n...[dipotong, total ${content.length} chars]`
+          : (content || '[Konten kosong]');
+
+        const label = file.folderPath && file.folderPath !== '/'
+          ? `${file.folderPath}/${file.name}` : file.name;
+
+        context += `${'─'.repeat(60)}\n`;
+        context += `DOKUMEN: ${label}\n`;
+        context += `${'─'.repeat(60)}\n`;
+        context += `${truncated}\n\n`;
+
+        totalChars += truncated.length;
       }
 
-      context += `\n=== AKHIR ONEDRIVE ===\n`;
+      context += `=== AKHIR DOKUMEN ===\n`;
+
+      console.log(`[OneDrive] Context built — success: ${fetchSuccess}, fail: ${fetchFail}, chars: ${totalChars}`);
       console.log(`[OneDrive] Final context length: ${context.length} chars`);
+
       return context;
 
     } catch (err) {
       console.error('[OneDrive] buildContext error:', err.message);
-      return `\n\n=== 📁 ONEDRIVE (ERROR) ===\n⚠️ Gagal memuat dokumen: ${err.message}\n=== AKHIR ONEDRIVE ===\n`;
+      return `\n\n=== ONEDRIVE ERROR ===\n⚠️ Gagal memuat dokumen: ${err.message}\n=== AKHIR ===\n`;
     }
   }
 
@@ -489,7 +482,7 @@ class OneDriveService {
         const testContent = await this.readFileContent(driveId, testFile.id, testFile.name);
         readTestResult = testContent && !testContent.startsWith('[') && testContent.length > 50
           ? `✅ OK — "${testFile.name}" (${testContent.length} chars)`
-          : `⚠️ Konten kosong/error: ${testContent?.substring(0, 100)}`;
+          : `⚠️ Konten kosong: ${testContent?.substring(0, 100)}`;
       } catch (e) {
         readTestResult = `❌ GAGAL: ${e.message}`;
       }
