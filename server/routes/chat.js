@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import AICoreService from '../services/ai-core.service.js';
 import { generateImage } from '../services/image.service.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -48,9 +49,12 @@ function normalizeUsage(usage, model = '') {
 router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
-    filename: req.file.filename, originalname: req.file.originalname,
-    path: req.file.path, mimetype: req.file.mimetype,
-    url: `/api/files/${req.file.filename}`, size: req.file.size,
+    filename: req.file.filename,
+    originalname: req.file.originalname,
+    path: req.file.path,
+    mimetype: req.file.mimetype,
+    url: `/api/files/${req.file.filename}`,
+    size: req.file.size,
   });
 });
 
@@ -142,9 +146,44 @@ router.post('/message', requireAuth, async (req, res) => {
     }
 
     // ── Normal AI Message ────────────────────────────────────
+
+    // ✅ FIX: Reconstruct physical server path untuk attachedFile
+    // Frontend hanya mengirim { url, filename, originalname, mimetype, size }
+    // tapi extractFileContent di AICoreService butuh path fisik di server
+    let resolvedAttachedFile = null;
+    if (attachedFile?.filename) {
+      const serverPath = path.join(process.cwd(), 'data', 'files', attachedFile.filename);
+      resolvedAttachedFile = {
+        ...attachedFile,
+        path:       serverPath,
+        serverPath: serverPath,
+      };
+      const fileExists = fs.existsSync(serverPath);
+      console.log(`[Chat] File upload resolved:`);
+      console.log(`  originalname : ${attachedFile.originalname}`);
+      console.log(`  filename     : ${attachedFile.filename}`);
+      console.log(`  serverPath   : ${serverPath}`);
+      console.log(`  exists       : ${fileExists}`);
+      if (!fileExists) {
+        console.warn(`[Chat] ⚠️  File tidak ditemukan di path! Cek folder data/files/`);
+        // List files in data/files to help debug
+        try {
+          const filesInDir = fs.readdirSync(path.join(process.cwd(), 'data', 'files'));
+          const matching   = filesInDir.filter(f => f.includes(attachedFile.filename?.split('---')[0]));
+          console.warn(`[Chat] Files in data/files (matching prefix):`, matching.slice(0, 5));
+        } catch (listErr) {
+          console.warn(`[Chat] Could not list data/files:`, listErr.message);
+        }
+      }
+    }
+
     const startTime = Date.now();
     const result = await AICoreService.processMessage({
-      userId, botId, message, attachedFile, threadId,
+      userId,
+      botId,
+      message,
+      attachedFile: resolvedAttachedFile,
+      threadId,
       history: (history || []).map(m => ({ role: m.role, content: m.content })),
     });
     const durationMs = Date.now() - startTime;
@@ -183,7 +222,7 @@ router.post('/message', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Chat Error:', error.message);
-    console.error('Chat Error stack:', error.stack);   // ← TAMBAHKAN baris ini
+    console.error('Chat Error stack:', error.stack);
     await AuditService.log({
       req, category: 'chat', action: 'AI_RESPONSE_ERROR', status: 'failed',
       targetName: req.body?.botId || 'unknown',

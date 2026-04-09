@@ -4,6 +4,7 @@
 // ✅ FIXED: Instruksi AI jauh lebih kuat ketika ada OneDrive/Knowledge context
 // ✅ FIXED: Deteksi hasOneDriveContext — paksa AI kutip isi dokumen
 // ✅ FIXED: Tidak lagi katakan "tidak menemukan informasi" jika dokumen sudah ada
+// ✅ FIXED: extractFileContent sekarang punya debug log + path validation
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -540,26 +541,83 @@ class AICoreService {
     return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // ✅ FIXED: extractFileContent — now with full debug logging
+  // ─────────────────────────────────────────────────────────────
   async extractFileContent(attachedFile) {
-    const physicalPath = attachedFile.serverPath || attachedFile.path;
-    if (!physicalPath || !fs.existsSync(physicalPath)) return '';
-    const originalName = attachedFile.originalname || '';
-    const ext = path.extname(originalName).toLowerCase();
+    console.log(`[AICoreService] extractFileContent called`);
+    console.log(`  keys       : ${Object.keys(attachedFile || {}).join(', ')}`);
+    console.log(`  serverPath : ${attachedFile?.serverPath}`);
+    console.log(`  path       : ${attachedFile?.path}`);
+    console.log(`  filename   : ${attachedFile?.filename}`);
+    console.log(`  originalname: ${attachedFile?.originalname}`);
+    console.log(`  mimetype   : ${attachedFile?.mimetype}`);
+
+    const physicalPath = attachedFile?.serverPath || attachedFile?.path;
+
+    if (!physicalPath) {
+      console.warn(`[AICoreService] ⚠️  No physical path available for file extraction`);
+      console.warn(`  Received keys: ${Object.keys(attachedFile || {}).join(', ')}`);
+      return '';
+    }
+
+    if (!fs.existsSync(physicalPath)) {
+      console.warn(`[AICoreService] ⚠️  File tidak ditemukan di: ${physicalPath}`);
+      // Try alternative paths
+      const altPaths = [
+        path.join(process.cwd(), 'data', 'files', path.basename(physicalPath)),
+        path.join(process.cwd(), physicalPath.replace(/^\//, '')),
+      ];
+      let foundPath = null;
+      for (const alt of altPaths) {
+        if (fs.existsSync(alt)) {
+          foundPath = alt;
+          console.log(`[AICoreService] ✅ Found file at alternative path: ${alt}`);
+          break;
+        }
+      }
+      if (!foundPath) {
+        console.warn(`[AICoreService] ❌ File not found at any path. Alt paths tried:`, altPaths);
+        return '';
+      }
+      // Use the found path
+      return this._readFileContent(foundPath, attachedFile?.originalname || path.basename(physicalPath));
+    }
+
+    console.log(`[AICoreService] ✅ Reading file: ${physicalPath}`);
+    return this._readFileContent(physicalPath, attachedFile?.originalname || path.basename(physicalPath));
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Internal: actually read and extract text from file
+  // ─────────────────────────────────────────────────────────────
+  async _readFileContent(physicalPath, originalName) {
+    const ext = path.extname(originalName || physicalPath).toLowerCase();
     try {
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
-        return `\n\n[FILE CONTENT: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
-      } else if (ext === '.docx') {
+        const text = data.text || '';
+        console.log(`[AICoreService] PDF extracted: ${text.length} chars, ${data.numpages} pages`);
+        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
+      } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
-        return `\n\n[FILE CONTENT: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
+        const text = result.value || '';
+        console.log(`[AICoreService] DOCX extracted: ${text.length} chars`);
+        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
         const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
+        console.log(`[AICoreService] XLSX extracted: ${content.length} chars`);
         return `\n\n[FILE CONTENT: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
       } else {
-        return `\n\n[FILE CONTENT: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
+        const text = fs.readFileSync(physicalPath, 'utf8');
+        console.log(`[AICoreService] Text file extracted: ${text.length} chars`);
+        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
       }
-    } catch { return ''; }
+    } catch (err) {
+      console.error(`[AICoreService] ❌ Failed to read file "${originalName}": ${err.message}`);
+      return '';
+    }
   }
 
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
@@ -672,16 +730,31 @@ class AICoreService {
     const userContent = [];
     if (message) userContent.push({ type: 'text', text: message });
 
+    // ✅ Handle attached file
     if (attachedFile) {
+      console.log(`[AICoreService] Processing attachedFile: ${attachedFile.originalname || attachedFile.filename}`);
       if (attachedFile.mimetype?.startsWith('image/') && bot.aiProvider?.provider === 'openai') {
-        const imgBuffer = fs.readFileSync(attachedFile.path);
-        userContent.push({
-          type: 'image_url',
-          image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` },
-        });
+        const imgPath = attachedFile.serverPath || attachedFile.path;
+        if (imgPath && fs.existsSync(imgPath)) {
+          const imgBuffer = fs.readFileSync(imgPath);
+          userContent.push({
+            type: 'image_url',
+            image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` },
+          });
+          console.log(`[AICoreService] ✅ Image attached as base64 (${attachedFile.mimetype})`);
+        } else {
+          console.warn(`[AICoreService] ⚠️ Image file not found at path for base64 encoding`);
+        }
       } else {
         const text = await this.extractFileContent(attachedFile);
-        if (text) userContent.push({ type: 'text', text });
+        if (text) {
+          userContent.push({ type: 'text', text });
+          console.log(`[AICoreService] ✅ File content extracted: ${text.length} chars`);
+        } else {
+          console.warn(`[AICoreService] ⚠️ File content extraction returned empty string`);
+          // Still inform the AI about the file even if we can't read it
+          userContent.push({ type: 'text', text: `[User attached a file: ${attachedFile.originalname || attachedFile.filename} but content could not be extracted]` });
+        }
       }
     }
 
@@ -699,7 +772,6 @@ class AICoreService {
     let citationInstruction = '';
 
     if (hasOneDriveContext) {
-      // ✅ KUNCI UTAMA: Instruksi tegas untuk baca dan kutip isi dokumen
       citationInstruction = `
 🔴 INSTRUKSI WAJIB — JANGAN DIABAIKAN:
 Kamu telah diberikan akses ke DOKUMEN INTERNAL perusahaan yang SUDAH DIBACA dan tersedia di bawah.
@@ -740,7 +812,6 @@ Do NOT fabricate URLs.
       `[TODAY: ${today}]`,
       citationInstruction,
       contextData,
-      // ✅ FIX: Reminder di akhir system prompt jika ada konteks
       hasOneDriveContext
         ? `\n\n🔴 REMINDER TERAKHIR: Jawab pertanyaan "${(message || '').substring(0, 100)}" dengan DETAIL PENUH berdasarkan konten dokumen di atas. Kutip informasi spesifik. JANGAN katakan tidak ada informasi.`
         : hasAnyContext
@@ -765,7 +836,6 @@ Do NOT fabricate URLs.
     if (!hasEmbeddedCitations) {
       const skipCitation = shouldSkipCitation(message || '', aiResponse, bot.capabilities || {});
       
-      // ✅ FIX: Jika ada OneDrive context, skip web citation (tidak perlu)
       if (!skipCitation && !hasOneDriveContext) {
         try {
           const searchTopic = extractSearchTopic(message || '', history.slice(-6));
@@ -803,7 +873,7 @@ Do NOT fabricate URLs.
       savedAttachments.push({
         name: attachedFile.originalname || attachedFile.filename,
         path: `/api/files/${attachedFile.filename}`,
-        serverPath: attachedFile.path,
+        serverPath: attachedFile.serverPath || attachedFile.path,
         type: attachedFile.mimetype?.includes('image') ? 'image'
           : attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file',
       });
