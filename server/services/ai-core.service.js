@@ -6,6 +6,8 @@
 // ✅ FIXED: Tidak lagi katakan "tidak menemukan informasi" jika dokumen sudah ada
 // ✅ FIXED: extractFileContent sekarang punya debug log + path validation
 // ✅ FIXED: substring(0, 8000) → substring(0, 50000) agar file tidak terpotong
+// ✅ FIXED: Perbaikan format userContent agar teks dokumen dikirim natural tanpa stringify JSON
+// ✅ FIXED: Pembuatan PPT sekarang mengekstrak teks dari SEMUA jenis file (PDF, Excel, dll)
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -196,7 +198,7 @@ function formatCitationsBlock(citations) {
   const webCitations = citations.filter(c => c.url);
   if (webCitations.length === 0) return '';
   const payload = webCitations.map(c => ({ url: c.url, title: c.title || c.url }));
-  return `\n\n<!--CITATIONS_START-->\n${JSON.stringify(payload)}\n<!--CITATIONS_END-->`;
+  return `\n\n\n${JSON.stringify(payload)}\n`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -266,8 +268,7 @@ function extractSearchTopic(message = '', history = []) {
   const recentHistory = [...history].reverse();
   for (const h of recentHistory) {
     const content = h.content || h.text || '';
-    if (content.length > 80 && !content.includes('<!--CITATIONS')) {
-      const clean = content.replace(/<!--CITATIONS_START-->[\s\S]*?<!--CITATIONS_END-->/g, '').trim();
+    if (content.length > 80 && !content.includes('[\s\S]*?/g, '').trim();
       if (clean.length > 50) return clean.substring(0, 180);
     }
   }
@@ -551,7 +552,7 @@ class AICoreService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // ✅ FIXED: extractFileContent — now with full debug logging
+  // extractFileContent — now with full debug logging
   // ─────────────────────────────────────────────────────────────
   async extractFileContent(attachedFile) {
     console.log(`[AICoreService] extractFileContent called`);
@@ -591,7 +592,7 @@ class AICoreService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // ✅ FIXED _readFileContent — ALL substring now use MAX_FILE_CONTENT_CHARS
+  // _readFileContent — ALL substring now use MAX_FILE_CONTENT_CHARS
   // ─────────────────────────────────────────────────────────────
   async _readFileContent(physicalPath, originalName) {
     const ext = path.extname(originalName || physicalPath).toLowerCase();
@@ -615,7 +616,6 @@ class AICoreService {
           );
         }
         console.log(`[AICoreService] PDF extracted: ${text.length} chars, ${data.numpages} pages`);
-        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
         return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
 
       } else if (ext === '.docx' || ext === '.doc') {
@@ -634,7 +634,6 @@ class AICoreService {
           );
         }
         console.log(`[AICoreService] DOCX extracted: ${text.length} chars`);
-        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
         return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
 
       } else if (ext === '.xlsx' || ext === '.xls') {
@@ -654,13 +653,11 @@ class AICoreService {
           );
         }
         console.log(`[AICoreService] XLSX extracted: ${trimmed.length} chars`);
-        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
         return `\n\n[FILE CONTENT: ${originalName}]\n${trimmed.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
 
       } else {
         const text = fs.readFileSync(physicalPath, 'utf8').trim();
         console.log(`[AICoreService] Text file extracted: ${text.length} chars`);
-        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
         return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
       }
 
@@ -859,7 +856,7 @@ Do NOT fabricate URLs.
 `;
     }
 
-    const systemPrompt = [
+    let finalSystemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
       citationInstruction,
@@ -871,19 +868,37 @@ Do NOT fabricate URLs.
         : '',
     ].filter(Boolean).join('\n\n');
 
+    // ─────────────────────────────────────────────────────────────
+    // ✅ FIX: GABUNGKAN ARRAY TEKS MENJADI STRING BERSIH
+    // Mencegah JSON.stringify mengirim escape character kotor ke model
+    // ─────────────────────────────────────────────────────────────
+    const hasImage = userContent.some(c => c.type === 'image_url' || c.type === 'image');
+    let cleanUserContent;
+
+    if (hasImage) {
+      // Jika mengandung Vision/Gambar, biarkan formatnya Array
+      cleanUserContent = userContent;
+    } else {
+      // Jika murni teks, join semua elemen (pesan chat & isi dokumen) jadi 1 string natural
+      cleanUserContent = userContent.map(c => c.text).join('\n\n--- LAMPIRAN DOKUMEN ---\n\n');
+    }
+
+    // ✅ Paksa instruksi detail jika dokumen diupload langsung (bukan dari onedrive)
+    if (attachedFile && !hasOneDriveContext && !isPptCommand(message)) {
+      finalSystemPrompt += `\n\n🔴 PENTING: User melampirkan sebuah dokumen di pesan mereka. Jawablah permintaan user secara SANGAT LENGKAP dan DETAIL berdasarkan isi dokumen tersebut. Jangan menyingkat jawaban kecuali diminta secara eksplisit. Kutip poin-poin krusial dari dokumen secara utuh.`;
+    }
+
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-      systemPrompt,
+      systemPrompt: finalSystemPrompt,
       messages: history.slice(-6),
-      userContent: userContent.length === 1 && userContent[0].type === 'text'
-        ? userContent[0].text
-        : userContent,
+      userContent: cleanUserContent, // ✅ Kirimkan data yang sudah dibersihkan
       capabilities: bot.capabilities || {},
     });
 
     let aiResponse = result.text;
 
-    const hasEmbeddedCitations = aiResponse.includes('<!--CITATIONS_START-->');
+    const hasEmbeddedCitations = aiResponse.includes('');
 
     if (!hasEmbeddedCitations) {
       const skipCitation = shouldSkipCitation(message || '', aiResponse, bot.capabilities || {});
@@ -972,23 +987,23 @@ Do NOT fabricate URLs.
       console.log('[PPT] Step 1 — generating smart content with auto layout detection...');
 
       let docxImages    = [];
-      let docxText      = '';
+      let fileText      = ''; // ✅ FIX: Ganti docxText jadi fileText
       let hasDocxImages = false;
 
       if (attachedFile) {
+        // ✅ 1. Ekstrak TEKS dari semua jenis file (PDF, Excel, Word, dll)
+        fileText = await this.extractFileContent(attachedFile);
+
+        // ✅ 2. Ekstrak GAMBAR hanya jika filenya adalah DOCX
         const attachedExt = path.extname(
           attachedFile.originalname || attachedFile.filename || ''
         ).toLowerCase();
+        
         if (attachedExt === '.docx' || attachedFile.mimetype?.includes('wordprocessingml')) {
           const physPath = attachedFile.serverPath || attachedFile.path;
           if (physPath && fs.existsSync(physPath)) {
             docxImages    = await extractDocxImagesForChat(physPath);
             hasDocxImages = docxImages.length > 0;
-            try {
-              const mammothMod = await import('mammoth');
-              const result = await mammothMod.default.extractRawText({ path: physPath });
-              docxText = result.value || '';
-            } catch (e) { console.warn('[PPT] DOCX text error:', e.message); }
           }
         }
       }
@@ -1004,7 +1019,7 @@ Do NOT fabricate URLs.
 
         const contextText = [
           historicalContent ? `CONVERSATION:\n${historicalContent}\n\n` : '',
-          docxText ? `DOCUMENT:\n${docxText.substring(0, 25000)}\n\n` : '',
+          fileText ? `DOCUMENT:\n${fileText.substring(0, 25000)}\n\n` : '', // ✅ Gunakan fileText
           `REQUEST: ${userRequest}`,
           `\nMatch language exactly. ${docxImages.length} images attached below.`,
         ].filter(Boolean).join('');
@@ -1039,7 +1054,7 @@ Do NOT fabricate URLs.
  
       const contentUserMsg = `Generate a presentation.\nMatch language exactly.\n\n` +
         (historicalContent ? `History:\n${historicalContent}\n\n` : '') +
-        (docxText ? `Document:\n${docxText.substring(0, 20000)}\n\n` : '') +
+        (fileText ? `Document:\n${fileText.substring(0, 20000)}\n\n` : '') + // ✅ Gunakan fileText
         `Request: ${userRequest}${noImageConstraint}`;
  
       contentResult = await AIProviderService.generateCompletion({
