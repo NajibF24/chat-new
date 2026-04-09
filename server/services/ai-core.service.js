@@ -438,276 +438,212 @@ class AICoreService {
   }
 
   // ─────────────────────────────────────────────────────────
-  // PPT COMMAND HANDLER
+  // PPT COMMAND HANDLER (class method — no 'function' keyword)
   // ─────────────────────────────────────────────────────────
-  async function _handlePptCommand_UPDATED({ userId, botId, bot, message, threadId, history = [] }) {
-  // [Import references — these will be resolved in the actual file]
-  const AIProviderService    = (await import('./ai-provider.service.js')).default;
-  const KnowledgeBaseService = (await import('./knowledge-base.service.js')).default;
-  const PptxService          = (await import('./pptx.service.js')).default;
-  const Chat                 = (await import('../models/Chat.js')).default;
-  const Thread               = (await import('../models/Thread.js')).default;
-  const Bot                  = (await import('../models/Bot.js')).default;
-  const pathMod              = await import('path');
-  const fsMod                = await import('fs');
- 
-  const PPT_RESPONSE_MARKERS = [
-    '✅ **Presentasi berhasil', '✅ **GYS Presentation successfully',
-    '⬇️ Download', '/api/files/', '.pptx',
-  ];
- 
-  const PPT_CONTENT_SYSTEM_PROMPT = `You are an expert Presentation Strategist for PT Garuda Yamato Steel (GYS).
-Your job is to produce polished, visually rich slide content.
- 
-RULE #1 — FOLLOW USER INSTRUCTIONS EXACTLY
-RULE #2 — SMART LAYOUT AUTO-DETECTION (MANDATORY):
-  Opening slide → LAYOUT: TITLE
-  Section divider → LAYOUT: SECTION
-  2–4 strategic pillars/features → LAYOUT: GRID
-  KPIs, metrics, percentages → LAYOUT: STATS
-  Timeline, roadmap, schedule → LAYOUT: TIMELINE (ALWAYS for time-based)
-  Compare two things → LAYOUT: TWO_COLUMN
-  Data table → LAYOUT: TABLE
-  Chart/trend data → LAYOUT: CHART
-  Quote/mission → LAYOUT: QUOTE
-  Final/closing → LAYOUT: CLOSING
-  General narrative → LAYOUT: CONTENT
- 
-RULE #3 — RICH CONTENT STANDARDS
-- GRID items: emoji icon + title (3–5 words) + 20+ word description
-- STATS: emoji + value + label + context
-- TIMELINE: 3–6 steps with time label, title, description
-- CONTENT bullets: minimum 4 bullets, each 10+ words
- 
-OUTPUT FORMAT:
-# [Presentation Title]
-## [Slide Title]
-LAYOUT: [TYPE]
-[content fields...]
-`;
- 
-  const PPT_JSON_SYSTEM_PROMPT = `You are a strict JSON converter for a PowerPoint generator.
-Return ONLY valid JSON. No markdown fences. No explanation.
- 
-SCHEMA per layout type:
-TITLE: { "layout": "TITLE", "title": "...", "subtitle": "...", "date": "...", "presenter": "..." }
-SECTION: { "layout": "SECTION", "title": "...", "subtitle": "...", "sectionNumber": "01" }
-CONTENT: { "layout": "CONTENT", "title": "...", "bullets": ["..."] }
-GRID: { "layout": "GRID", "title": "...", "items": [{ "icon": "🚀", "title": "...", "text": "..." }] }
-STATS: { "layout": "STATS", "title": "...", "stats": [{ "icon": "📈", "value": "...", "label": "...", "sub": "..." }] }
-TIMELINE: { "layout": "TIMELINE", "title": "...", "steps": [{ "time": "...", "title": "...", "text": "..." }] }
-TWO_COLUMN: { "layout": "TWO_COLUMN", "title": "...", "leftTitle": "...", "leftBullets": ["..."], "rightTitle": "...", "rightBullets": ["..."] }
-CHART: { "layout": "CHART", "title": "...", "insightText": "...", "chartConfig": { "type": "bar", "isStacked": false, "showDataLabels": true, "data": [{ "name": "...", "labels": ["..."], "values": [0] }] } }
-TABLE: { "layout": "TABLE", "title": "...", "tableHeaders": ["..."], "tableRows": [["..."]] }
-QUOTE: { "layout": "QUOTE", "quote": "...", "author": "..." }
-CLOSING: { "layout": "CLOSING", "title": "Thank You", "subtitle": "...", "contact": "..." }
- 
-Output: { "slides": [ {...}, {...} ] }
-`;
- 
-  try {
-    // ── STEP 0: Load DB history ──────────────────────────────
-    let dbHistory = [];
+  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
     try {
-      if (threadId) {
-        dbHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(30).lean();
-        dbHistory = dbHistory.filter(h =>
-          h.content && !PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))
+      // ── STEP 0: Load DB history ──────────────────────────────
+      let dbHistory = [];
+      try {
+        if (threadId) {
+          dbHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(30).lean();
+          dbHistory = dbHistory.filter(h =>
+            h.content && !PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))
+          );
+        }
+      } catch (e) { console.warn('[PPT] DB history error:', e.message); }
+
+      // ── STEP 0.5: Find template & extract images from knowledge base ──
+      const freshBot = await Bot.findById(botId).lean();
+      const knowledgeFiles = freshBot?.knowledgeFiles || [];
+
+      // Find template PPTX if configured
+      let templatePath = null;
+      if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
+        const templateFile = knowledgeFiles.find(f =>
+          String(f._id) === freshBot.pptTemplateFileId &&
+          (f.originalName?.endsWith('.pptx') || f.mimetype?.includes('presentationml'))
         );
+        if (templateFile && fs.existsSync(templateFile.path)) {
+          templatePath = templateFile.path;
+          console.log(`[PPT] Using template: ${templateFile.originalName}`);
+        }
       }
-    } catch (e) { console.warn('[PPT] DB history error:', e.message); }
- 
-    // ── STEP 0.5: Find template & extract images from knowledge base ──
-    // ✅ NEW: Load fresh bot to get knowledge files with extractedImages
-    const freshBot = await Bot.findById(botId).lean();
-    const knowledgeFiles = freshBot?.knowledgeFiles || [];
- 
-    // Find template PPTX if configured
-    let templatePath = null;
-    if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
-      const templateFile = knowledgeFiles.find(f =>
-        String(f._id) === freshBot.pptTemplateFileId &&
-        (f.originalName?.endsWith('.pptx') || f.mimetype?.includes('presentationml'))
-      );
-      if (templateFile && fsMod.existsSync(templateFile.path)) {
-        templatePath = templateFile.path;
-        console.log(`[PPT] Using template: ${templateFile.originalName}`);
+
+      // If no explicit template, auto-detect any .pptx in knowledge base
+      if (!templatePath) {
+        const pptxFile = knowledgeFiles.find(f =>
+          f.originalName?.toLowerCase().endsWith('.pptx') &&
+          f.path && fs.existsSync(f.path)
+        );
+        if (pptxFile) {
+          templatePath = pptxFile.path;
+          console.log(`[PPT] Auto-detected template: ${pptxFile.originalName}`);
+        }
       }
-    }
- 
-    // If no explicit template, auto-detect any .pptx in knowledge base
-    if (!templatePath) {
-      const pptxFile = knowledgeFiles.find(f =>
-        f.originalName?.toLowerCase().endsWith('.pptx') &&
-        f.path && fsMod.existsSync(f.path)
-      );
-      if (pptxFile) {
-        templatePath = pptxFile.path;
-        console.log(`[PPT] Auto-detected template: ${pptxFile.originalName}`);
-      }
-    }
- 
-    // Get extracted images from relevant knowledge files (Word/PPTX)
-    const extractedImages = KnowledgeBaseService.getExtractedImages(
-      knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
-    );
-    console.log(`[PPT] Found ${extractedImages.length} extracted images from knowledge base`);
- 
-    // Build knowledge context for AI content generation
-    let knowledgeCtx = '';
-    if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
-      knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
+
+      // Get extracted images from relevant knowledge files (Word/PPTX)
+      const extractedImages = KnowledgeBaseService.getExtractedImages(
         knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
       );
-    }
- 
-    // ── STEP 1: User request context ────────────────────────
-    const userRequest = message || '';
-    const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
- 
-    let historicalContent = '';
-    if (refersToHistory && dbHistory.length > 0) {
-      historicalContent = dbHistory
-        .filter(h => h.content && h.content.length > 100)
-        .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
-        .join('\n\n---\n\n')
-        .substring(0, 8000);
-    }
- 
-    // ── STEP 2: CONTENT GENERATION ──────────────────────────
-    console.log('[PPT] Step 1 — generating content...');
- 
-    let contentUserMsg = '';
-    if (historicalContent) {
-      contentUserMsg = `Generate a professional presentation based on this conversation and knowledge base context.\nIMPORTANT: Match language exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\n`;
-    } else {
-      contentUserMsg = `Generate a professional presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout.\n\n`;
-    }
- 
-    if (knowledgeCtx) {
-      contentUserMsg += `KNOWLEDGE BASE CONTEXT (use this as main content source):\n${knowledgeCtx.substring(0, 6000)}\n\n`;
-    }
- 
-    contentUserMsg += `User request: ${userRequest}`;
- 
-    const contentResult = await AIProviderService.generateCompletion({
-      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-      systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
-      messages: [],
-      userContent: contentUserMsg,
-    });
- 
-    const slideContent = contentResult.text;
-    if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
- 
-    const titleMatch = slideContent.match(/^#\s+(.+)/m);
-    const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
- 
-    console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars | Images: ${extractedImages.length}`);
- 
-    // ── STEP 3: JSON CONVERSION ──────────────────────────────
-    console.log('[PPT] Step 2 — converting to JSON...');
- 
-    const jsonResult = await AIProviderService.generateCompletion({
-      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-      systemPrompt: PPT_JSON_SYSTEM_PROMPT,
-      messages: [],
-      userContent: `Convert this presentation to JSON:\n\n${slideContent}`,
-    });
- 
-    let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-    const jsonStart = rawJson.indexOf('{');
-    const jsonEnd   = rawJson.lastIndexOf('}');
-    if (jsonStart !== -1 && jsonEnd !== -1) rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
- 
-    let pptData;
-    try {
-      pptData = JSON.parse(rawJson);
-    } catch (parseErr) {
-      throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
-    }
- 
-    if (!pptData?.slides?.length) throw new Error('JSON tidak memiliki slides.');
- 
-    const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
-    console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
- 
-    // ── STEP 4: RENDER PPTX ──────────────────────────────────
-    const outputDir = pathMod.join(process.cwd(), 'data', 'files');
-    const result = await PptxService.generate({
-      pptData,
-      slideContent,
-      title,
-      outputDir,
-      styleDesc: templatePath ? 'Custom Template' : 'GYS Gamma Style',
-      templatePath,       // ✅ NEW: pass template
-      extractedImages,    // ✅ NEW: pass extracted images
-    });
- 
-    // ── STEP 5: BUILD RESPONSE ───────────────────────────────
-    const reqLower = userRequest.toLowerCase();
-    const reqEng   = reqLower.includes('english') || reqLower.includes('inggris');
-    const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
-    const indWords = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
-    const isEnglish = reqEng || engWords.length > indWords.length;
- 
-    const layoutIcons = {
-      TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
-      TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
-      TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯', IMAGE_SLIDE: '🖼️',
-    };
- 
-    const layoutSummary = pptData.slides
-      .map((s, i) => {
-        const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
-        return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
-      })
-      .join('\n');
- 
-    const templateNote = result.usedTemplate
-      ? '\n🎨 **Template:** Custom template from knowledge base applied'
-      : '';
-    const imageNote = extractedImages.length > 0
-      ? `\n🖼️ **Gambar:** ${extractedImages.length} gambar dari dokumen knowledge base diintegrasikan`
-      : '';
- 
-    const responseMarkdown = isEnglish
-      ? `✅ **GYS Presentation successfully generated!**
- 
+      console.log(`[PPT] Found ${extractedImages.length} extracted images from knowledge base`);
+
+      // Build knowledge context for AI content generation
+      let knowledgeCtx = '';
+      if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
+        knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
+          knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
+        );
+      }
+
+      // ── STEP 1: User request context ────────────────────────
+      const userRequest = message || '';
+      const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
+
+      let historicalContent = '';
+      if (refersToHistory && dbHistory.length > 0) {
+        historicalContent = dbHistory
+          .filter(h => h.content && h.content.length > 100)
+          .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
+          .join('\n\n---\n\n')
+          .substring(0, 8000);
+      }
+
+      // ── STEP 2: CONTENT GENERATION ──────────────────────────
+      console.log('[PPT] Step 1 — generating content...');
+
+      let contentUserMsg = '';
+      if (historicalContent) {
+        contentUserMsg = `Generate a professional presentation based on this conversation and knowledge base context.\nIMPORTANT: Match language exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\n`;
+      } else {
+        contentUserMsg = `Generate a professional presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout.\n\n`;
+      }
+
+      if (knowledgeCtx) {
+        contentUserMsg += `KNOWLEDGE BASE CONTEXT (use this as main content source):\n${knowledgeCtx.substring(0, 6000)}\n\n`;
+      }
+
+      contentUserMsg += `User request: ${userRequest}`;
+
+      const contentResult = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
+        messages: [],
+        userContent: contentUserMsg,
+      });
+
+      const slideContent = contentResult.text;
+      if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
+
+      const titleMatch = slideContent.match(/^#\s+(.+)/m);
+      const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
+
+      console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars | Images: ${extractedImages.length}`);
+
+      // ── STEP 3: JSON CONVERSION ──────────────────────────────
+      console.log('[PPT] Step 2 — converting to JSON...');
+
+      const jsonResult = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: PPT_JSON_SYSTEM_PROMPT,
+        messages: [],
+        userContent: `Convert this presentation to JSON:\n\n${slideContent}`,
+      });
+
+      let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+      const jsonStart = rawJson.indexOf('{');
+      const jsonEnd   = rawJson.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1) rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+
+      let pptData;
+      try {
+        pptData = JSON.parse(rawJson);
+      } catch (parseErr) {
+        throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
+      }
+
+      if (!pptData?.slides?.length) throw new Error('JSON tidak memiliki slides.');
+
+      const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
+      console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
+
+      // ── STEP 4: RENDER PPTX ──────────────────────────────────
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      const result = await PptxService.generate({
+        pptData,
+        slideContent,
+        title,
+        outputDir,
+        styleDesc: templatePath ? 'Custom Template' : 'GYS Gamma Style',
+        templatePath,
+        extractedImages,
+      });
+
+      // ── STEP 5: BUILD RESPONSE ───────────────────────────────
+      const reqLower = userRequest.toLowerCase();
+      const reqEng   = reqLower.includes('english') || reqLower.includes('inggris');
+      const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
+      const indWords = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
+      const isEnglish = reqEng || engWords.length > indWords.length;
+
+      const layoutIcons = {
+        TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
+        TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
+        TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯', IMAGE_SLIDE: '🖼️',
+      };
+
+      const layoutSummary = pptData.slides
+        .map((s, i) => {
+          const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
+          return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
+        })
+        .join('\n');
+
+      const templateNote = result.usedTemplate
+        ? '\n🎨 **Template:** Custom template from knowledge base applied'
+        : '';
+      const imageNote = extractedImages.length > 0
+        ? `\n🖼️ **Gambar:** ${extractedImages.length} gambar dari dokumen knowledge base diintegrasikan`
+        : '';
+
+      const responseMarkdown = isEnglish
+        ? `✅ **GYS Presentation successfully generated!**
+
 📊 **Title:** ${title}
 📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}
- 
+
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
- 
+
 **Auto-detected slide layouts:**
 ${layoutSummary}`
-      : `✅ **Presentasi GYS berhasil dibuat!**
- 
+        : `✅ **Presentasi GYS berhasil dibuat!**
+
 📊 **Judul:** ${title}
 📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}
- 
+
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
- 
+
 **Layout yang dipilih per slide:**
 ${layoutSummary}`;
- 
-    await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
-    await new Chat({
-      userId, botId, threadId, role: 'assistant', content: responseMarkdown,
-      attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
-    }).save();
-    await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
- 
-    return {
-      response: responseMarkdown, threadId,
-      attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
-    };
- 
-  } catch (error) {
-    console.error('❌ [PPT Command]', error);
-    throw new Error(`Gagal membuat presentasi: ${error.message}`);
+
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+      };
+
+    } catch (error) {
+      console.error('❌ [PPT Command]', error);
+      throw new Error(`Gagal membuat presentasi: ${error.message}`);
+    }
   }
 }
 
