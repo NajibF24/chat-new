@@ -544,43 +544,39 @@ class AICoreService {
   // ─────────────────────────────────────────────────────────────
   // ✅ FIXED: extractFileContent — now with full debug logging
   // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
+// ✅ FIXED extractFileContent — debug log lebih lengkap + path validation
+// ─────────────────────────────────────────────────────────────
   async extractFileContent(attachedFile) {
     console.log(`[AICoreService] extractFileContent called`);
-    console.log(`  keys       : ${Object.keys(attachedFile || {}).join(', ')}`);
-    console.log(`  serverPath : ${attachedFile?.serverPath}`);
-    console.log(`  path       : ${attachedFile?.path}`);
-    console.log(`  filename   : ${attachedFile?.filename}`);
+    console.log(`  keys        : ${Object.keys(attachedFile || {}).join(', ')}`);
+    console.log(`  serverPath  : ${attachedFile?.serverPath}`);
+    console.log(`  path        : ${attachedFile?.path}`);
+    console.log(`  filename    : ${attachedFile?.filename}`);
     console.log(`  originalname: ${attachedFile?.originalname}`);
-    console.log(`  mimetype   : ${attachedFile?.mimetype}`);
+    console.log(`  mimetype    : ${attachedFile?.mimetype}`);
 
     const physicalPath = attachedFile?.serverPath || attachedFile?.path;
 
     if (!physicalPath) {
-      console.warn(`[AICoreService] ⚠️  No physical path available for file extraction`);
-      console.warn(`  Received keys: ${Object.keys(attachedFile || {}).join(', ')}`);
+      console.warn(`[AICoreService] ⚠️ No physical path available`);
       return '';
     }
 
     if (!fs.existsSync(physicalPath)) {
-      console.warn(`[AICoreService] ⚠️  File tidak ditemukan di: ${physicalPath}`);
-      // Try alternative paths
+      console.warn(`[AICoreService] ⚠️ File tidak ditemukan di: ${physicalPath}`);
       const altPaths = [
         path.join(process.cwd(), 'data', 'files', path.basename(physicalPath)),
         path.join(process.cwd(), physicalPath.replace(/^\//, '')),
       ];
       let foundPath = null;
       for (const alt of altPaths) {
-        if (fs.existsSync(alt)) {
-          foundPath = alt;
-          console.log(`[AICoreService] ✅ Found file at alternative path: ${alt}`);
-          break;
-        }
+        if (fs.existsSync(alt)) { foundPath = alt; break; }
       }
       if (!foundPath) {
-        console.warn(`[AICoreService] ❌ File not found at any path. Alt paths tried:`, altPaths);
+        console.warn(`[AICoreService] ❌ File not found anywhere`);
         return '';
       }
-      // Use the found path
       return this._readFileContent(foundPath, attachedFile?.originalname || path.basename(physicalPath));
     }
 
@@ -588,35 +584,87 @@ class AICoreService {
     return this._readFileContent(physicalPath, attachedFile?.originalname || path.basename(physicalPath));
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Internal: actually read and extract text from file
-  // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// ✅ FIXED _readFileContent — validasi konten tidak kosong setelah ekstraksi
+// ─────────────────────────────────────────────────────────────
   async _readFileContent(physicalPath, originalName) {
     const ext = path.extname(originalName || physicalPath).toLowerCase();
     try {
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
-        const text = data.text || '';
+        const text = (data.text || '').trim();
+
+        // ✅ FIX: jika PDF kosong, beri pesan jelas — jangan wrap kosong
+        if (!text || text.length < 30) {
+          const pages = data.numpages || '?';
+          console.warn(`[AICoreService] PDF "${originalName}" teks kosong (${text.length} chars, ${pages} halaman)`);
+          return (
+            `\n\n[PERINGATAN FILE: "${originalName}"]\n` +
+            `File PDF ini (${pages} halaman) tidak mengandung teks yang dapat diekstrak otomatis.\n` +
+            `Kemungkinan PDF ini adalah hasil scan/foto atau terproteksi.\n` +
+            `INSTRUKSI: Beritahu user bahwa PDF ini tidak bisa dibaca otomatis. ` +
+            `Sarankan user untuk: (1) paste isi teks langsung ke chat, ` +
+            `(2) konversi PDF ke Word (.docx) lalu upload ulang, atau ` +
+            `(3) pastikan PDF bukan hasil scan.\n` +
+            `[END PERINGATAN]\n`
+          );
+        }
         console.log(`[AICoreService] PDF extracted: ${text.length} chars, ${data.numpages} pages`);
         return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
+
       } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
-        const text = result.value || '';
+        const text   = (result.value || '').trim();
+
+        // ✅ FIX: validasi isi DOCX tidak kosong
+        if (!text || text.length < 10) {
+          console.warn(`[AICoreService] DOCX "${originalName}" teks kosong (${text.length} chars)`);
+          return (
+            `\n\n[PERINGATAN FILE: "${originalName}"]\n` +
+            `File Word ini tidak mengandung teks yang dapat dibaca ` +
+            `(kemungkinan hanya gambar, kosong, atau terproteksi).\n` +
+            `INSTRUKSI: Beritahu user bahwa file Word ini tidak bisa dibaca. ` +
+            `Sarankan user untuk copy-paste isi dokumen langsung ke chat.\n` +
+            `[END PERINGATAN]\n`
+          );
+        }
         console.log(`[AICoreService] DOCX extracted: ${text.length} chars`);
         return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
+
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
-        const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
-        console.log(`[AICoreService] XLSX extracted: ${content.length} chars`);
-        return `\n\n[FILE CONTENT: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+        const content  = workbook.SheetNames
+          .map(n => `[Sheet: ${n}]\n${XLSX.utils.sheet_to_csv(workbook.Sheets[n])}`)
+          .join('\n\n');
+        const trimmed  = content.trim();
+
+        if (!trimmed || trimmed.length < 5) {
+          console.warn(`[AICoreService] XLSX "${originalName}" konten kosong`);
+          return (
+            `\n\n[PERINGATAN FILE: "${originalName}"]\n` +
+            `File Excel ini kosong atau tidak mengandung data.\n` +
+            `INSTRUKSI: Beritahu user bahwa file Excel ini tidak bisa dibaca.\n` +
+            `[END PERINGATAN]\n`
+          );
+        }
+        console.log(`[AICoreService] XLSX extracted: ${trimmed.length} chars`);
+        return `\n\n[FILE CONTENT: ${originalName}]\n${trimmed.substring(0, 8000)}\n[END FILE]\n`;
+
       } else {
-        const text = fs.readFileSync(physicalPath, 'utf8');
+        const text = fs.readFileSync(physicalPath, 'utf8').trim();
         console.log(`[AICoreService] Text file extracted: ${text.length} chars`);
         return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
       }
+
     } catch (err) {
-      console.error(`[AICoreService] ❌ Failed to read file "${originalName}": ${err.message}`);
-      return '';
+      console.error(`[AICoreService] ❌ Failed to read "${originalName}": ${err.message}`);
+      // ✅ FIX: return pesan error yang jelas, bukan string kosong
+      return (
+        `\n\n[PERINGATAN FILE: "${originalName}"]\n` +
+        `Terjadi error saat membaca file: ${err.message}\n` +
+        `INSTRUKSI: Beritahu user bahwa file gagal dibaca karena error teknis.\n` +
+        `[END PERINGATAN]\n`
+      );
     }
   }
 

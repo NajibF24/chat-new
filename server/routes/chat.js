@@ -11,11 +11,9 @@ import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import AuditService from '../services/audit.service.js';
 import AIProviderService from '../services/ai-provider.service.js';
-// import { forwardChatToWaha } from '../services/wahaScheduler.js';
 
 const router = express.Router();
 
-// Config Upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => { cb(null, 'data/files'); },
   filename: (req, file, cb) => {
@@ -25,10 +23,8 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-// ── Helper: detect reasoning/GPT-5 model ─────────────────────
 const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(model);
 
-// ── Helper: normalize usage across providers ──────────────────
 function normalizeUsage(usage, model = '') {
   if (!usage) return null;
   const promptTokens     = usage.prompt_tokens       ?? usage.input_tokens      ?? usage.promptTokenCount     ?? 0;
@@ -41,20 +37,16 @@ function normalizeUsage(usage, model = '') {
   return { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens };
 }
 
-// ─────────────────────────────────────────────────────────────
-// ENDPOINTS
-// ─────────────────────────────────────────────────────────────
-
 // 1. Upload File
 router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
-    filename: req.file.filename,
+    filename:     req.file.filename,
     originalname: req.file.originalname,
-    path: req.file.path,
-    mimetype: req.file.mimetype,
-    url: `/api/files/${req.file.filename}`,
-    size: req.file.size,
+    path:         req.file.path,
+    mimetype:     req.file.mimetype,
+    url:          `/api/files/${req.file.filename}`,
+    size:         req.file.size,
   });
 });
 
@@ -145,35 +137,78 @@ router.post('/message', requireAuth, async (req, res) => {
       }
     }
 
-    // ── Normal AI Message ────────────────────────────────────
-
-    // ✅ FIX: Reconstruct physical server path untuk attachedFile
-    // Frontend hanya mengirim { url, filename, originalname, mimetype, size }
-    // tapi extractFileContent di AICoreService butuh path fisik di server
+    // ── ✅ FIX UTAMA: Resolve physical server path untuk attachedFile ──
+    // Bug sebelumnya: hanya cek attachedFile?.filename
+    // Jika frontend kirim field dengan nama berbeda (name, file_name, dll)
+    // maka resolvedAttachedFile = null dan file tidak diproses sama sekali
     let resolvedAttachedFile = null;
-    if (attachedFile?.filename) {
-      const serverPath = path.join(process.cwd(), 'data', 'files', attachedFile.filename);
-      resolvedAttachedFile = {
-        ...attachedFile,
-        path:       serverPath,
-        serverPath: serverPath,
-      };
-      const fileExists = fs.existsSync(serverPath);
-      console.log(`[Chat] File upload resolved:`);
-      console.log(`  originalname : ${attachedFile.originalname}`);
-      console.log(`  filename     : ${attachedFile.filename}`);
-      console.log(`  serverPath   : ${serverPath}`);
-      console.log(`  exists       : ${fileExists}`);
-      if (!fileExists) {
-        console.warn(`[Chat] ⚠️  File tidak ditemukan di path! Cek folder data/files/`);
-        // List files in data/files to help debug
-        try {
-          const filesInDir = fs.readdirSync(path.join(process.cwd(), 'data', 'files'));
-          const matching   = filesInDir.filter(f => f.includes(attachedFile.filename?.split('---')[0]));
-          console.warn(`[Chat] Files in data/files (matching prefix):`, matching.slice(0, 5));
-        } catch (listErr) {
-          console.warn(`[Chat] Could not list data/files:`, listErr.message);
+
+    if (attachedFile) {
+      // ✅ Ekstrak filename dari berbagai kemungkinan field name yang dikirim frontend
+      const rawFilename = attachedFile.filename        // format standar dari /upload
+        || attachedFile.name                           // beberapa frontend pakai 'name'
+        || attachedFile.file_name                      // variasi lain
+        || (attachedFile.url && attachedFile.url.startsWith('/api/files/')
+            ? attachedFile.url.replace('/api/files/', '')  // ekstrak dari URL
+            : null);
+
+      if (rawFilename) {
+        const serverPath = path.join(process.cwd(), 'data', 'files', rawFilename);
+
+        // ✅ Cek apakah file benar-benar ada di disk
+        const fileExists = fs.existsSync(serverPath);
+
+        console.log(`[Chat] attachedFile received:`);
+        console.log(`  rawFilename  : ${rawFilename}`);
+        console.log(`  originalname : ${attachedFile.originalname || attachedFile.originalName || 'unknown'}`);
+        console.log(`  mimetype     : ${attachedFile.mimetype || attachedFile.type || 'unknown'}`);
+        console.log(`  serverPath   : ${serverPath}`);
+        console.log(`  fileExists   : ${fileExists}`);
+
+        if (fileExists) {
+          resolvedAttachedFile = {
+            // Normalize semua field name agar konsisten
+            filename:     rawFilename,
+            originalname: attachedFile.originalname || attachedFile.originalName || rawFilename,
+            mimetype:     attachedFile.mimetype || attachedFile.type || 'application/octet-stream',
+            size:         attachedFile.size || 0,
+            url:          attachedFile.url || `/api/files/${rawFilename}`,
+            path:         serverPath,
+            serverPath:   serverPath,
+          };
+        } else {
+          console.warn(`[Chat] ⚠️ File tidak ditemukan di disk: ${serverPath}`);
+          // Coba cari file dengan prefix yang cocok (fallback jika nama sedikit beda)
+          try {
+            const filesDir = path.join(process.cwd(), 'data', 'files');
+            const allFiles = fs.readdirSync(filesDir);
+            // Cari file yang mengandung bagian dari originalname
+            const origName = attachedFile.originalname || attachedFile.originalName || '';
+            const matchingFile = allFiles.find(f =>
+              f.includes(origName) || f.endsWith('---' + origName)
+            );
+            if (matchingFile) {
+              const altPath = path.join(filesDir, matchingFile);
+              console.log(`[Chat] ✅ Found via scan: ${matchingFile}`);
+              resolvedAttachedFile = {
+                filename:     matchingFile,
+                originalname: origName || matchingFile,
+                mimetype:     attachedFile.mimetype || attachedFile.type || 'application/octet-stream',
+                size:         attachedFile.size || 0,
+                url:          `/api/files/${matchingFile}`,
+                path:         altPath,
+                serverPath:   altPath,
+              };
+            }
+          } catch (scanErr) {
+            console.warn(`[Chat] File scan error: ${scanErr.message}`);
+          }
         }
+      } else {
+        // ✅ Tidak ada filename sama sekali — log agar mudah debug
+        console.warn(`[Chat] ⚠️ attachedFile diterima tapi tidak ada field filename/name/url:`);
+        console.warn(`  Fields yang ada: ${Object.keys(attachedFile).join(', ')}`);
+        console.warn(`  Value: ${JSON.stringify(attachedFile).substring(0, 200)}`);
       }
     }
 
@@ -188,13 +223,11 @@ router.post('/message', requireAuth, async (req, res) => {
     });
     const durationMs = Date.now() - startTime;
 
-    // ── WAHA Forward (fire & forget) — uses new multi-target helper ──
-    // forwardChatToWaha(bot, sessionUsername, message, result?.response || '').catch(() => {});
-
-    // ── Audit Log ────────────────────────────────────────────
     const usage = normalizeUsage(result?.usage, model);
     const auditDetail = {
       bot: botName, model, provider, durationMs, maxTokensConfig: maxTokens,
+      hasAttachment: Boolean(resolvedAttachedFile),
+      attachmentName: resolvedAttachedFile?.originalname || null,
       tokens: usage ? {
         prompt:     usage.promptTokens,
         completion: usage.completionTokens,
@@ -202,7 +235,7 @@ router.post('/message', requireAuth, async (req, res) => {
         ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
       } : null,
       ...(usage?.warningMaxTokens && {
-        warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
+        warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}).`,
       }),
       ...((!result?.response || result.response.trim() === '') && {
         emptyResponse: true,
@@ -271,8 +304,6 @@ router.post('/external', async (req, res) => {
 
     const durationMs  = Date.now() - startTime;
     const responseText = aiResponse?.text || aiResponse?.response || '';
-
-    // forwardChatToWaha(bot, callerUsername, message, responseText).catch(() => {});
 
     const usage = normalizeUsage(aiResponse?.usage, model);
     await AuditService.log({
