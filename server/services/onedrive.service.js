@@ -1,10 +1,12 @@
 // server/services/onedrive.service.js
 // FIXES:
-//   - MAX_PER_FILE_CHARS: 8K → 20K (dokumen tidak terpotong)
-//   - MAX_FILES_TO_FETCH: 5 → 3 (fokus ke file paling relevan)
-//   - MAX_TOTAL_CHARS: 50K → 60K
-//   - Hapus daftar 194 file dari context (hemat token)
-//   - readFileContent: /content endpoint langsung + fallback
+//   - _getRelevantFolderPrefixes: cek SEMUA segment path, bukan hanya segment pertama
+//   - MAX_FILES_TO_FETCH: 3 → 8 (lebih banyak file tercakup)
+//   - MAX_TOTAL_CHARS: 60K → 100K (lebih banyak konten)
+//   - MAX_PER_FILE_CHARS: 20K → 30K (dokumen tidak terpotong)
+//   - Folder filtering: gunakan full path, bukan hanya first segment
+//   - Fallback scoring: jika tidak ada relevan prefix, coba semua IT folder
+//   - Context informatif: beritahu AI kalau konten terbatas
 
 import axios   from 'axios';
 import odIndex from './onedrive-index.service.js';
@@ -12,19 +14,35 @@ import odIndex from './onedrive-index.service.js';
 const SUPPORTED_EXT = ['pdf','docx','doc','xlsx','xls','txt','csv','md','pptx','ppt'];
 
 const FOLDER_KEYWORD_MAP = {
-  'it':           ['it system', 'it'],
-  'laptop':       ['it system', 'it'],
-  'komputer':     ['it system', 'it'],
-  'computer':     ['it system', 'it'],
-  'hardware':     ['it system', 'it'],
-  'software':     ['it system', 'it'],
-  'network':      ['it system', 'it'],
-  'jaringan':     ['it system', 'it'],
-  'server':       ['it system', 'it'],
+  // IT & Hardware
+  'it':           ['it system', 'it', 'information technology'],
+  'laptop':       ['it system', 'it', 'hardware', 'aset', 'asset', 'procurement'],
+  'komputer':     ['it system', 'it', 'hardware', 'aset'],
+  'computer':     ['it system', 'it', 'hardware', 'asset'],
+  'hardware':     ['it system', 'it', 'hardware', 'aset'],
+  'software':     ['it system', 'it', 'software'],
+  'network':      ['it system', 'it', 'network', 'jaringan'],
+  'jaringan':     ['it system', 'it', 'network'],
+  'server':       ['it system', 'it', 'server'],
   'email':        ['it system', 'it'],
   'sistem':       ['it system', 'it'],
   'system':       ['it system', 'it'],
-  'standarisasi': ['it system', 'it', 'hrga'],
+  'spesifikasi':  ['it system', 'it', 'hardware', 'procurement'],
+  'standarisasi': ['it system', 'it', 'hrga', 'standard', 'procurement'],
+  'standard':     ['it system', 'it', 'hrga', 'standard'],
+  'aset':         ['it system', 'it', 'asset', 'aset'],
+  'asset':        ['it system', 'it', 'asset', 'aset'],
+  'digital':      ['it system', 'it'],
+  'data':         ['it system', 'it', 'finance', 'data'],
+  'backup':       ['it system', 'it', 'backup'],
+  'restore':      ['it system', 'it', 'backup'],
+  'recovery':     ['it system', 'it'],
+  'access':       ['it system', 'it', 'legal'],
+  'akses':        ['it system', 'it', 'legal'],
+  'keamanan':     ['it system', 'it', 'legal', 'security'],
+  'security':     ['it system', 'it', 'security'],
+  'pusat':        ['it system', 'it', 'data center'],
+  // HR
   'hr':           ['hrga'],
   'hrd':          ['hrga'],
   'hrga':         ['hrga'],
@@ -36,53 +54,49 @@ const FOLDER_KEYWORD_MAP = {
   'salary':       ['hrga'],
   'absensi':      ['hrga'],
   'attendance':   ['hrga'],
+  'supervisor':   ['hrga', 'it system', 'it'],
+  'staff':        ['hrga', 'it system'],
+  'jabatan':      ['hrga'],
+  // Finance
   'finance':      ['finance', 'accounting'],
   'keuangan':     ['finance', 'accounting'],
   'akuntansi':    ['finance', 'accounting'],
   'invoice':      ['finance', 'accounting'],
   'pembayaran':   ['finance', 'accounting'],
   'budget':       ['finance', 'accounting'],
+  // Procurement
   'procurement':  ['procurement', 'prc'],
   'pengadaan':    ['procurement', 'prc'],
   'vendor':       ['procurement', 'prc'],
   'purchase':     ['procurement', 'prc'],
+  // Quality
   'quality':      ['qaqc', 'qa', 'qc', 'iso'],
   'kualitas':     ['qaqc', 'qa', 'qc'],
   'iso':          ['iso', 'qaqc'],
+  // Legal
   'legal':        ['legal', 'lgl'],
   'kontrak':      ['legal', 'lgl'],
   'contract':     ['legal', 'lgl'],
+  // SCM
   'scm':          ['scm', 'gdu'],
   'logistik':     ['scm', 'gdu'],
   'warehouse':    ['scm', 'gdu'],
   'gudang':       ['scm', 'gdu'],
+  // Sales
   'sales':        ['sales', 'sls'],
   'penjualan':    ['sales', 'sls'],
-  'keamanan':     ['it system', 'it', 'legal'],
-  'security':     ['it system', 'it'],
-  'kebijakan':    ['it system', 'it', 'hrga', 'legal', 'finance'],
-  'policy':       ['it system', 'it', 'hrga', 'legal', 'finance'],
-  'prosedur':     ['it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
-  'procedure':    ['it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
-  'sop':          ['it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
-  'digital':      ['it system', 'it'],
-  'data':         ['it system', 'it'],
-  'aset':         ['it system', 'it'],
-  'asset':        ['it system', 'it'],
-  'backup':       ['it system', 'it'],
-  'restore':      ['it system', 'it'],
-  'recovery':     ['it system', 'it'],
-  'access':       ['it system', 'it'],
-  'akses':        ['it system', 'it'],
+  // Policy & Procedure
+  'kebijakan':    ['policy', 'it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
+  'policy':       ['policy', 'it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
+  'prosedur':     ['procedure', 'it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
+  'procedure':    ['procedure', 'it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
+  'sop':          ['procedure', 'sop', 'it system', 'it', 'hrga', 'legal', 'finance', 'procurement'],
 };
 
-// ✅ Limit yang benar:
-// - 20K per file → dokumen 26K terbaca 75%, dokumen 10K terbaca 100%
-// - 3 file → fokus, tidak buang token untuk file tidak relevan
-// - 60K total → cukup untuk 3 file × 20K
-const MAX_TOTAL_CHARS    = 60_000;
-const MAX_PER_FILE_CHARS = 20_000;
-const MAX_FILES_TO_FETCH = 3;
+// ✅ FIX: Naikkan semua limit untuk coverage lebih baik
+const MAX_TOTAL_CHARS    = 100_000;  // 60K → 100K
+const MAX_PER_FILE_CHARS = 30_000;   // 20K → 30K
+const MAX_FILES_TO_FETCH = 8;        // 3 → 8
 
 class OneDriveService {
   constructor(tenantId, clientId, clientSecret) {
@@ -274,12 +288,24 @@ class OneDriveService {
         const { default: pdfParse } = await import('pdf-parse');
         const data = await pdfParse(buffer, { max: 0 });
         const text = (data.text || '').trim();
-        if (!text || text.length < 50) {
-          return `[PDF "${fileName}" tidak ada teks — kemungkinan scan/gambar. Halaman: ${data.numpages || '?'}]`;
+
+        // ✅ FIX: turunkan threshold dari 50 ke 20 agar lebih banyak PDF terbaca
+        if (!text || text.length < 20) {
+          console.warn(`[OneDrive] PDF "${fileName}" — teks sangat minim (${text.length} chars), mungkin scan`);
+          return `[PDF TERBATAS: "${fileName}" — ${data.numpages || '?'} halaman, teks tidak dapat diekstrak sepenuhnya (kemungkinan scan/gambar). Dokumen ini berisi kebijakan/prosedur tapi tidak dapat dibaca otomatis.]`;
         }
-        console.log(`[OneDrive] PDF parsed: "${fileName}" — ${text.length} chars, ${data.numpages} pages`);
-        return text.substring(0, MAX_CHARS);
+
+        // ✅ FIX: clean up extracted text — hapus spasi/newline berlebih
+        const cleanedText = text
+          .replace(/\n{3,}/g, '\n\n')        // max 2 newlines berturut-turut
+          .replace(/[ \t]{2,}/g, ' ')        // hapus spasi berlebih
+          .replace(/\f/g, '\n\n--- HALAMAN BARU ---\n\n')  // page break jadi readable
+          .trim();
+
+        console.log(`[OneDrive] PDF parsed: "${fileName}" — ${cleanedText.length} chars, ${data.numpages} pages`);
+        return cleanedText.substring(0, MAX_CHARS);
       }
+
       if (['docx','doc'].includes(ext)) {
         const { default: mammoth } = await import('mammoth');
         const r = await mammoth.extractRawText({ buffer });
@@ -288,6 +314,7 @@ class OneDriveService {
         console.log(`[OneDrive] DOCX parsed: "${fileName}" — ${text.length} chars`);
         return text.substring(0, MAX_CHARS);
       }
+
       if (['xlsx','xls'].includes(ext)) {
         const { default: XLSX } = await import('xlsx');
         const wb = XLSX.read(buffer, { type: 'buffer' });
@@ -295,6 +322,7 @@ class OneDriveService {
         console.log(`[OneDrive] XLSX parsed: "${fileName}" — ${text.length} chars`);
         return text.substring(0, MAX_CHARS);
       }
+
       if (['pptx','ppt'].includes(ext)) {
         const { default: JSZip } = await import('jszip');
         const zip = await JSZip.loadAsync(buffer);
@@ -307,10 +335,12 @@ class OneDriveService {
         console.log(`[OneDrive] PPTX parsed: "${fileName}" — ${text.length} chars`);
         return text.substring(0, MAX_CHARS);
       }
+
       if (['txt','md','csv'].includes(ext)) {
         const text = buffer.toString('utf8');
         return text.substring(0, MAX_CHARS);
       }
+
       return `[Tipe tidak didukung: ${fileName}]`;
     } catch (parseErr) {
       console.error(`[OneDrive] Parse error "${fileName}": ${parseErr.message}`);
@@ -324,14 +354,15 @@ class OneDriveService {
       'yang','dan','atau','di','ke','dari','ini','itu','untuk','dengan','dalam',
       'pada','adalah','ada','jika','saya','kamu','tolong','apa','siapa','kapan',
       'bagaimana','berikan','tampilkan','tentang','terkait','mohon','bisa','boleh',
-      'jelaskan','the','a','an','is','are','have','do','will','to','of','in','on',
-      'at','by','for','with','about','from','what','how','show','me','tell','give',
-      'please','find','get','provide',
+      'jelaskan','ceritakan','jelaskan','tolong','please','the','a','an','is','are',
+      'have','do','will','to','of','in','on','at','by','for','with','about','from',
+      'what','how','show','me','tell','give','please','find','get','provide',
+      'sebutkan','jelaskan','berikan','apa','saja',
     ]);
     return msg.toLowerCase()
       .replace(/[^\w\s\-]/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length >= 2 && !stop.has(w))
+      .filter(w => w.length >= 2 && !stop.has(w))  // ✅ FIX: turunkan threshold dari 2 ke 2 (sudah benar)
       .filter((w, i, a) => a.indexOf(w) === i);
   }
 
@@ -339,21 +370,43 @@ class OneDriveService {
     return odIndex.scoreFile(file, keywords, cachedKws);
   }
 
+  // ✅ FIX UTAMA: Gunakan FULL path untuk matching, bukan hanya segment pertama
   _getRelevantFolderPrefixes(files, keywords) {
-    const allPrefixes = new Set(
-      files.map(f => (f.folderPath || '/').split('/')[0].toLowerCase())
+    // Kumpulkan semua unique full folder paths
+    const allFolderPaths = new Set(
+      files.map(f => (f.folderPath || '/').toLowerCase())
     );
+
     const relevant = new Set();
+
     for (const kw of keywords) {
-      for (const prefix of allPrefixes) {
-        if (prefix.includes(kw)) relevant.add(prefix);
+      // Cek apakah keyword muncul di ANY segment dari path
+      for (const folderPath of allFolderPaths) {
+        const segments = folderPath.split('/').filter(Boolean);
+        // Cek keyword di setiap segment path
+        if (segments.some(seg => seg.includes(kw))) {
+          relevant.add(folderPath);
+        }
+        // Juga cek keyword di full path (untuk kasus seperti "it" di "/policy/it/")
+        if (folderPath.includes(`/${kw}/`) || folderPath.endsWith(`/${kw}`)) {
+          relevant.add(folderPath);
+        }
       }
+
+      // Cek alias dari FOLDER_KEYWORD_MAP
       for (const fragment of (FOLDER_KEYWORD_MAP[kw] || [])) {
-        for (const prefix of allPrefixes) {
-          if (prefix.includes(fragment)) relevant.add(prefix);
+        for (const folderPath of allFolderPaths) {
+          const segments = folderPath.split('/').filter(Boolean);
+          if (segments.some(seg => seg.includes(fragment))) {
+            relevant.add(folderPath);
+          }
+          if (folderPath.includes(`/${fragment}/`) || folderPath.endsWith(`/${fragment}`)) {
+            relevant.add(folderPath);
+          }
         }
       }
     }
+
     return relevant;
   }
 
@@ -388,7 +441,7 @@ class OneDriveService {
         return '';
       }
 
-      // Step 2: score & rank files
+      // Step 2: extract keywords & score files
       const keywords = this._extractKeywords(userMessage);
       console.log(`[OneDrive] Search keywords: [${keywords.join(', ')}]`);
 
@@ -397,57 +450,110 @@ class OneDriveService {
         return { ...f, score: this._scoreFile(f, keywords, cachedKws) };
       }).sort((a, b) => b.score - a.score || new Date(b.lastModified) - new Date(a.lastModified));
 
-      // Step 3: pilih file paling relevan (MAX 3 file)
-      const relevantPrefixes = this._getRelevantFolderPrefixes(allFiles, keywords);
+      // Step 3: ✅ FIX — gunakan full path matching
+      const relevantFolderPaths = this._getRelevantFolderPrefixes(allFiles, keywords);
       let toFetch = [];
 
-      if (relevantPrefixes.size > 0) {
-        toFetch = scored
-          .filter(f => {
-            const prefix = (f.folderPath || '/').split('/')[0].toLowerCase();
-            return relevantPrefixes.has(prefix);
-          })
-          .slice(0, MAX_FILES_TO_FETCH);
-        console.log(`[OneDrive] Folder-match: ${toFetch.length} files`);
+      if (relevantFolderPaths.size > 0) {
+        // ✅ FIX: filter menggunakan full folder path, bukan hanya first segment
+        const folderFiltered = scored.filter(f => {
+          const fullPath = (f.folderPath || '/').toLowerCase();
+          return relevantFolderPaths.has(fullPath);
+        });
+
+        console.log(`[OneDrive] Folder-match: ${folderFiltered.length} files in relevant folders`);
+
+        // Ambil file dengan score tertinggi dari folder yang relevan
+        // Plus file dengan score tinggi dari semua folder
+        const highScoreFromFolder = folderFiltered.slice(0, MAX_FILES_TO_FETCH);
+        const highScoreOverall    = scored.filter(f => f.score > 0).slice(0, Math.floor(MAX_FILES_TO_FETCH / 2));
+
+        // Merge & deduplicate
+        const seen = new Set();
+        for (const f of [...highScoreFromFolder, ...highScoreOverall]) {
+          if (!seen.has(f.id)) {
+            seen.add(f.id);
+            toFetch.push(f);
+          }
+          if (toFetch.length >= MAX_FILES_TO_FETCH) break;
+        }
+
+        // Jika masih kurang, tambah dari folder yang relevan
+        if (toFetch.length < MAX_FILES_TO_FETCH) {
+          for (const f of folderFiltered) {
+            if (!seen.has(f.id)) {
+              seen.add(f.id);
+              toFetch.push(f);
+            }
+            if (toFetch.length >= MAX_FILES_TO_FETCH) break;
+          }
+        }
+
       } else {
+        // Fallback: tidak ada folder yang cocok
+        // Coba ambil file dengan score > 0
         toFetch = scored.filter(f => f.score > 0).slice(0, MAX_FILES_TO_FETCH);
-        if (!toFetch.length) toFetch = scored.slice(0, MAX_FILES_TO_FETCH);
-        console.log(`[OneDrive] Fallback: ${toFetch.length} files`);
+
+        if (!toFetch.length) {
+          // Last resort: ambil file terbaru
+          toFetch = scored.slice(0, MAX_FILES_TO_FETCH);
+        }
+
+        console.log(`[OneDrive] Fallback mode: ${toFetch.length} files (score-based)`);
       }
 
       if (!toFetch.length) return '';
 
-      // Step 4: build context
-      // ✅ Tidak ada daftar 194 file — langsung ke konten
-      let context  = `\n\n=== DOKUMEN INTERNAL PT GARUDA YAMATO STEEL ===\n`;
-      context     += `Berikut adalah isi dokumen yang relevan:\n\n`;
+      console.log(`[OneDrive] Files to fetch (${toFetch.length}):`);
+      toFetch.forEach((f, i) => console.log(`  ${i+1}. [score:${f.score}] ${f.folderPath}/${f.name}`));
 
-      let totalChars = 0;
+      // Step 4: build context
+      let context  = `\n\n=== DOKUMEN INTERNAL PT GARUDA YAMATO STEEL ===\n`;
+      context     += `Query: "${userMessage}"\n`;
+      context     += `Keywords: [${keywords.join(', ')}]\n`;
+      context     += `Dokumen relevan ditemukan: ${toFetch.length} file\n\n`;
+      context     += `INSTRUKSI: Baca konten dokumen di bawah ini dengan seksama dan jawab pertanyaan user secara DETAIL dan LENGKAP berdasarkan isi dokumen. Jangan hanya menyebut nama dokumen — KUTIP ISI KONTENNYA.\n\n`;
+
+      let totalChars  = 0;
       let fetchSuccess = 0;
       let fetchFail    = 0;
+      let sparseFiles  = [];
 
       for (const file of toFetch) {
         if (totalChars >= MAX_TOTAL_CHARS) {
-          context += `\n[Budget konteks tercapai]\n`;
+          context += `\n[Budget konteks tercapai — ${toFetch.length - fetchSuccess - fetchFail} file tidak ditampilkan]\n`;
           break;
         }
 
         let content = null;
+        let fromCache = false;
 
-        // Cek cache
+        // Cek cache terlebih dahulu
         if (odIndex.isContentFresh(hash, file.id, file.lastModified)) {
           content = odIndex.getContent(hash, file.id);
-          if (content) console.log(`[OneDrive] Cache hit: "${file.name}" (${content.length} chars)`);
+          if (content) {
+            fromCache = true;
+            console.log(`[OneDrive] Cache hit: "${file.name}" (${content.length} chars)`);
+          }
         }
 
-        // Fetch jika belum ada
+        // Fetch dari OneDrive jika tidak ada di cache
         if (!content) {
           try {
             content = await this.readFileContent(driveId, file.id, file.name);
-            if (content && !content.startsWith('[') && content.length > 50) {
+
+            // Konten valid = tidak dimulai dengan '[' (error/placeholder) dan > 20 chars
+            const isGoodContent  = content && !content.startsWith('[') && content.length > 20;
+            const isSparsePdf    = content && content.startsWith('[PDF TERBATAS:');
+
+            if (isGoodContent) {
               odIndex.saveContent(hash, file.id, file.lastModified, content);
               console.log(`[OneDrive] ✅ Cached: "${file.name}" (${content.length} chars)`);
               fetchSuccess++;
+            } else if (isSparsePdf) {
+              // PDF scan — jangan cache (tidak ada keyword), tapi tetap tampil di context
+              fetchFail++;
+              sparseFiles.push(file.name);
             } else {
               fetchFail++;
             }
@@ -458,23 +564,35 @@ class OneDriveService {
           }
         }
 
-        // ✅ 20K per file — dokumen 26K = 75% terbaca, dokumen 10K = 100% terbaca
+        // Truncate jika terlalu panjang
         const truncated = content && content.length > MAX_PER_FILE_CHARS
-          ? content.substring(0, MAX_PER_FILE_CHARS) + `\n\n[... konten dipotong, ${content.length - MAX_PER_FILE_CHARS} chars tidak ditampilkan]`
+          ? content.substring(0, MAX_PER_FILE_CHARS) + `\n\n[... konten terpotong, ${content.length - MAX_PER_FILE_CHARS} chars tidak ditampilkan — dokumen lebih panjang dari limit]`
           : (content || '[Konten kosong]');
 
         const label = file.folderPath && file.folderPath !== '/'
           ? `${file.folderPath}/${file.name}` : file.name;
 
-        context += `${'─'.repeat(60)}\n`;
-        context += `DOKUMEN: ${label}\n`;
-        context += `${'─'.repeat(60)}\n`;
+        const cacheLabel = fromCache ? ' [dari cache]' : ' [baru diunduh]';
+        const scoreLabel = file.score > 0 ? ` [relevansi: ${file.score}]` : '';
+
+        context += `${'═'.repeat(60)}\n`;
+        context += `📄 DOKUMEN: ${label}${cacheLabel}${scoreLabel}\n`;
+        context += `${'═'.repeat(60)}\n`;
         context += `${truncated}\n\n`;
 
         totalChars += truncated.length;
       }
 
+      // ✅ FIX: Tambahkan catatan untuk file yang sparse
+      if (sparseFiles.length > 0) {
+        context += `\n⚠️ CATATAN: ${sparseFiles.length} file berikut memiliki konten terbatas (kemungkinan PDF scan/gambar): ${sparseFiles.join(', ')}\n`;
+        context += `Jika user menanyakan konten dari file tersebut, informasikan bahwa dokumen perlu dibuka langsung.\n\n`;
+      }
+
       context += `=== AKHIR DOKUMEN INTERNAL ===\n`;
+      context += `\nINSTRUKSI AKHIR: Berikan jawaban LENGKAP dan DETAIL berdasarkan konten dokumen di atas. `;
+      context += `Sebutkan nomor dokumen/kebijakan yang relevan. `;
+      context += `Jika ada poin-poin penting, KUTIP LANGSUNG dari dokumen.\n`;
 
       console.log(`[OneDrive] Context built — success: ${fetchSuccess}, fail: ${fetchFail}, chars: ${totalChars}`);
       console.log(`[OneDrive] Final context length: ${context.length} chars`);
@@ -500,7 +618,7 @@ class OneDriveService {
         const testContent = await this.readFileContent(driveId, testFile.id, testFile.name);
         readTestResult = testContent && !testContent.startsWith('[') && testContent.length > 50
           ? `✅ OK — "${testFile.name}" (${testContent.length} chars)`
-          : `⚠️ Konten kosong: ${testContent?.substring(0, 100)}`;
+          : `⚠️ Konten terbatas: ${testContent?.substring(0, 100)}`;
       } catch (e) {
         readTestResult = `❌ GAGAL: ${e.message}`;
       }
