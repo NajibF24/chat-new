@@ -1,6 +1,7 @@
 // server/routes/admin.js
 // ✅ FIX: Bot Creator hanya lihat bot miliknya / assigned / bot lama (createdBy null)
 // ✅ FIX: API Key tidak auto-generate, tidak tampil otomatis, ada endpoint reveal terpisah
+// ✅ PATCH: wahaConfig sekarang mendukung targets[] dan schedules[]
 
 import express    from 'express';
 import bcrypt     from 'bcryptjs';
@@ -352,8 +353,15 @@ router.get('/bots', requireAdminOrBotCreator, async (req, res) => {
       aiProvider: b.aiProvider
         ? { ...b.aiProvider, apiKey: b.aiProvider.apiKey ? '***' : '' }
         : {},
+      // ✅ PATCH: wahaConfig masking + expose targets & schedules
       wahaConfig: b.wahaConfig
-        ? { ...b.wahaConfig, apiKey: b.wahaConfig.apiKey ? '***' : '' }
+        ? {
+            ...b.wahaConfig,
+            apiKey:        b.wahaConfig.apiKey        ? '***' : '',
+            webhookSecret: b.wahaConfig.webhookSecret ? '***' : '',
+            targets:       b.wahaConfig.targets       || [],
+            schedules:     b.wahaConfig.schedules     || [],
+          }
         : {},
       smartsheetConfig: b.smartsheetConfig
         ? { ...b.smartsheetConfig, apiKey: b.smartsheetConfig.apiKey ? '***' : '' }
@@ -378,6 +386,43 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
 
+    // ── wahaConfig (CREATE) ── ✅ PATCH: targets + schedules
+    const wahaConfigCreate = {
+      enabled:        wahaConfig?.enabled        || false,
+      endpoint:       wahaConfig?.endpoint       || '',
+      session:        wahaConfig?.session        || 'default',
+      apiKey:         wahaConfig?.apiKey         || '',
+      webhookEnabled: wahaConfig?.webhookEnabled || false,
+      webhookSecret:  wahaConfig?.webhookSecret  || '',
+      botPhoneNumber: wahaConfig?.botPhoneNumber || '',
+      targets: (wahaConfig?.targets || []).map(t => ({
+        chatId:  t.chatId  || '',
+        label:   t.label   || '',
+        type:    t.type    || 'private',
+        tagOnly: t.tagOnly || false,
+        active:  t.active  !== false,
+      })),
+      schedules: (wahaConfig?.schedules || []).map(s => ({
+        label:           s.label           || '',
+        prompt:          s.prompt          || '',
+        active:          s.active          !== false,
+        scheduleType:    s.scheduleType    || 'daily',
+        time:            s.time            || '08:00',
+        times:           s.times           || [],
+        intervalMinutes: s.intervalMinutes || 60,
+        intervalStart:   s.intervalStart   || '08:00',
+        intervalEnd:     s.intervalEnd     || '17:00',
+        targetIds:       s.targetIds       || [],
+      })),
+      // Legacy fields
+      chatId: wahaConfig?.chatId || '',
+      dailySchedule: {
+        enabled: wahaConfig?.dailySchedule?.enabled || false,
+        time:    wahaConfig?.dailySchedule?.time    || '08:00',
+        prompt:  wahaConfig?.dailySchedule?.prompt  || '',
+      },
+    };
+
     const newBot = new Bot({
       name, description, persona: persona || '',
       tone: tone || 'professional',
@@ -396,13 +441,7 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
         maxTokens:   aiProvider?.maxTokens   ?? 2000,
       },
       capabilities: sanitizeCapabilities(capabilities),
-      wahaConfig: {
-        enabled:  wahaConfig?.enabled  || false,
-        endpoint: wahaConfig?.endpoint || '',
-        chatId:   wahaConfig?.chatId   || '',
-        session:  wahaConfig?.session  || 'default',
-        apiKey:   wahaConfig?.apiKey   || '',
-      },
+      wahaConfig: wahaConfigCreate,
       smartsheetConfig: { enabled: false, sheetId: '', apiKey: '', ...smartsheetConfig },
       kouventaConfig:   { enabled: false, apiKey: '', endpoint: '', ...kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
@@ -455,6 +494,45 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
       avatar, aiProvider, knowledgeMode, capabilities,
     } = req.body;
 
+    // ── wahaConfig (UPDATE) ── ✅ PATCH: targets + schedules
+    const wahaConfigUpdate = {
+      enabled:        wahaConfig?.enabled        || false,
+      endpoint:       wahaConfig?.endpoint       || '',
+      session:        wahaConfig?.session        || 'default',
+      apiKey: wahaConfig?.apiKey === '***'
+        ? existing.wahaConfig?.apiKey
+        : (wahaConfig?.apiKey || ''),
+      webhookEnabled: wahaConfig?.webhookEnabled || false,
+      webhookSecret:  wahaConfig?.webhookSecret  || '',
+      botPhoneNumber: wahaConfig?.botPhoneNumber || '',
+      targets: (wahaConfig?.targets || []).map(t => ({
+        chatId:  t.chatId  || '',
+        label:   t.label   || '',
+        type:    t.type    || 'private',
+        tagOnly: t.tagOnly || false,
+        active:  t.active  !== false,
+      })),
+      schedules: (wahaConfig?.schedules || []).map(s => ({
+        label:           s.label           || '',
+        prompt:          s.prompt          || '',
+        active:          s.active          !== false,
+        scheduleType:    s.scheduleType    || 'daily',
+        time:            s.time            || '08:00',
+        times:           s.times           || [],
+        intervalMinutes: s.intervalMinutes || 60,
+        intervalStart:   s.intervalStart   || '08:00',
+        intervalEnd:     s.intervalEnd     || '17:00',
+        targetIds:       s.targetIds       || [],
+      })),
+      // Legacy
+      chatId: wahaConfig?.chatId || existing.wahaConfig?.chatId || '',
+      dailySchedule: {
+        enabled: wahaConfig?.dailySchedule?.enabled || false,
+        time:    wahaConfig?.dailySchedule?.time    || '08:00',
+        prompt:  wahaConfig?.dailySchedule?.prompt  || '',
+      },
+    };
+
     const updateData = {
       name, description, persona: persona || '',
       tone: tone || 'professional',
@@ -463,15 +541,7 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
       knowledgeMode: knowledgeMode || 'relevant',
       capabilities: sanitizeCapabilities(capabilities),
       // ✅ botApiKey tidak bisa diubah lewat sini — pakai POST /regenerate-key
-      wahaConfig: {
-        enabled:  wahaConfig?.enabled  || false,
-        endpoint: wahaConfig?.endpoint || '',
-        chatId:   wahaConfig?.chatId   || '',
-        session:  wahaConfig?.session  || 'default',
-        apiKey: wahaConfig?.apiKey === '***'
-          ? existing.wahaConfig?.apiKey
-          : (wahaConfig?.apiKey || ''),
-      },
+      wahaConfig: wahaConfigUpdate,
       smartsheetConfig: {
         enabled: smartsheetConfig?.enabled || false,
         sheetId: smartsheetConfig?.sheetId || '',
@@ -502,6 +572,8 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
           ? existing.onedriveConfig?.clientSecret
           : (onedriveConfig?.clientSecret || ''),
       },
+      // ✅ PATCH: pptTemplateFileId
+      pptTemplateFileId: req.body.pptTemplateFileId ?? existing.pptTemplateFileId ?? null,
       updatedAt: new Date(),
     };
 

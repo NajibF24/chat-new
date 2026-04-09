@@ -110,14 +110,26 @@ const initialBotState = {
   prompt: '',
   starterQuestions: [],
   knowledgeMode: 'relevant',
-  aiProvider: { provider: 'openai', model: 'gpt-4o', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 2000 },
+  pptTemplateFileId: null, // ✅ NEW: reference to template pptx in knowledge files
+  aiProvider: { provider: 'openai', model: 'gpt-4o', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 8000 }, // ✅ 8000
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
   smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '' },
   kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
   azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
+  // ✅ UPDATED wahaConfig with new schema
   wahaConfig: {
-    enabled: false, endpoint: '', chatId: '', session: 'default', apiKey: '',
-    dailySchedule: { enabled: false, time: '08:00', prompt: '' }
+    enabled: false,
+    endpoint: '',
+    session: 'default',
+    apiKey: '',
+    webhookEnabled: false,
+    webhookSecret: '',
+    botPhoneNumber: '',
+    targets: [],    // [{ _id, chatId, label, type, tagOnly, active }]
+    schedules: [],  // [{ _id, label, prompt, active, scheduleType, time, times, intervalMinutes, intervalStart, intervalEnd, targetIds }]
+    // legacy
+    chatId: '',
+    dailySchedule: { enabled: false, time: '08:00', prompt: '' },
   },
   onedriveConfig: { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '' },
   avatar: { type: 'emoji', emoji: '🤖', bgColor: '#6366f1', textColor: '#ffffff' },
@@ -489,56 +501,82 @@ function AdminDashboard({ user, handleLogout }) {
   };
 
   const handleEditBot = (bot) => {
-    setEditingBot(bot);
-    setBotForm({
-      name: bot.name, description: bot.description || '',
-      persona: bot.persona || '', tone: bot.tone || 'professional',
-      systemPrompt: bot.systemPrompt || '',
-      prompt: bot.prompt || '',
-      starterQuestions: bot.starterQuestions || [],
-      knowledgeMode: bot.knowledgeMode || 'relevant',
-      aiProvider: {
-        provider:    bot.aiProvider?.provider    || 'openai',
-        model:       bot.aiProvider?.model       || 'gpt-4o',
-        apiKey:      bot.aiProvider?.apiKey      || '',
-        endpoint:    bot.aiProvider?.endpoint    || '',
-        temperature: bot.aiProvider?.temperature ?? 0.1,
-        maxTokens:   bot.aiProvider?.maxTokens   ?? 2000,
-      },
-      capabilities: {
-        webSearch:       bot.capabilities?.webSearch       || false,
-        codeInterpreter: bot.capabilities?.codeInterpreter || false,
-        imageGeneration: bot.capabilities?.imageGeneration || false,
-        canvas:          bot.capabilities?.canvas          || false,
-        fileSearch:      bot.capabilities?.fileSearch      || false,
-      },
-      smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', ...bot.smartsheetConfig },
-      kouventaConfig:    { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
-      azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
-      onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
-      wahaConfig: {
-        enabled: bot.wahaConfig?.enabled || false,
-        endpoint: bot.wahaConfig?.endpoint || '',
-        chatId: bot.wahaConfig?.chatId || '',
-        session: bot.wahaConfig?.session || 'default',
-        apiKey: bot.wahaConfig?.apiKey || '',
-        dailySchedule: {
-          enabled: bot.wahaConfig?.dailySchedule?.enabled || false,
-          time: bot.wahaConfig?.dailySchedule?.time || '08:00',
-          prompt: bot.wahaConfig?.dailySchedule?.prompt || ''
-        }
-      },
-      avatar: bot.avatar || { type: 'emoji', emoji: '🤖', bgColor: '#6366f1' },
-    });
-    setKnowledgeFiles(bot.knowledgeFiles || []);
-    setBotModalTab('basic'); setTestAIState(null); setShowBotModal(true);
+  setEditingBot(bot);
+
+  // ✅ NEW: prepare WAHA config (clean + backward compatible)
+  const wahaConfigForForm = {
+    enabled:        bot.wahaConfig?.enabled        || false,
+    endpoint:       bot.wahaConfig?.endpoint       || '',
+    session:        bot.wahaConfig?.session        || 'default',
+    apiKey:         bot.wahaConfig?.apiKey         || '',
+    webhookEnabled: bot.wahaConfig?.webhookEnabled || false,
+    webhookSecret:  bot.wahaConfig?.webhookSecret  || '',
+    botPhoneNumber: bot.wahaConfig?.botPhoneNumber || '',
+    targets:        bot.wahaConfig?.targets        || [],
+    schedules:      bot.wahaConfig?.schedules      || [],
+
+    // legacy support
+    chatId: bot.wahaConfig?.chatId || '',
+    dailySchedule: {
+      enabled: bot.wahaConfig?.dailySchedule?.enabled || false,
+      time:    bot.wahaConfig?.dailySchedule?.time    || '08:00',
+      prompt:  bot.wahaConfig?.dailySchedule?.prompt  || '',
+    },
+  };
+
+  setBotForm({
+    name: bot.name,
+    description: bot.description || '',
+    persona: bot.persona || '',
+    tone: bot.tone || 'professional',
+    systemPrompt: bot.systemPrompt || '',
+    prompt: bot.prompt || '',
+    starterQuestions: bot.starterQuestions || [],
+    knowledgeMode: bot.knowledgeMode || 'relevant',
+
+    aiProvider: {
+      provider:    bot.aiProvider?.provider    || 'openai',
+      model:       bot.aiProvider?.model       || 'gpt-4o',
+      apiKey:      bot.aiProvider?.apiKey      || '',
+      endpoint:    bot.aiProvider?.endpoint    || '',
+      temperature: bot.aiProvider?.temperature ?? 0.1,
+      maxTokens:   bot.aiProvider?.maxTokens   ?? 2000,
+    },
+
+    capabilities: {
+      webSearch:       bot.capabilities?.webSearch       || false,
+      codeInterpreter: bot.capabilities?.codeInterpreter || false,
+      imageGeneration: bot.capabilities?.imageGeneration || false,
+      canvas:          bot.capabilities?.canvas          || false,
+      fileSearch:      bot.capabilities?.fileSearch      || false,
+    },
+
+    smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', ...bot.smartsheetConfig },
+    kouventaConfig:    { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
+    azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
+    onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
+
+    // ✅ REPLACED HERE
+    wahaConfig: wahaConfigForForm,
+
+    avatar: bot.avatar || { type: 'emoji', emoji: '🤖', bgColor: '#6366f1' },
+  });
+
+  setKnowledgeFiles(bot.knowledgeFiles || []);
+  setBotModalTab('basic');
+  setTestAIState(null);
+  setShowBotModal(true);
   };
 
   const handleSaveBot = async (e) => {
     e.preventDefault();
     try {
       const { botApiKey: _omit, ...payload } = botForm;
-      const cleanPayload = { ...payload, starterQuestions: botForm.starterQuestions.filter(q => q.trim()) };
+      const cleanPayload = {
+        ...payload,
+        starterQuestions: botForm.starterQuestions.filter(q => q.trim()),
+        pptTemplateFileId: botForm.pptTemplateFileId
+      };
       if (editingBot) await axios.put(`/api/admin/bots/${editingBot._id}`, cleanPayload);
       else            await axios.post('/api/admin/bots', cleanPayload);
       setShowBotModal(false); fetchBots(); fetchStats();
@@ -1410,52 +1448,169 @@ function AdminDashboard({ user, handleLogout }) {
               )}
 
               {/* KNOWLEDGE TAB */}
+              {/* KNOWLEDGE TAB */}
               {botModalTab === 'knowledge' && (
                 <div className="space-y-5">
+
+                  {/* Info */}
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
                     📚 Upload documents as the bot's knowledge source. Supports <strong>PDF, Word, Excel, PowerPoint, TXT, CSV, MD</strong>.
-                    {!editingBot && <span className="block mt-1 font-bold text-amber-800">⚠️ Save the bot first before uploading files.</span>}
+                    {!editingBot && (
+                      <span className="block mt-1 font-bold text-amber-800">
+                        ⚠️ Save the bot first before uploading files.
+                      </span>
+                    )}
                   </div>
+
+                  {/* Knowledge Mode */}
                   <div>
-                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Knowledge Base Mode</label>
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">
+                      Knowledge Base Mode
+                    </label>
                     <div className="space-y-2">
                       {KNOWLEDGE_MODES.map(m => (
-                        <label key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${botForm.knowledgeMode === m.id ? 'border-primary bg-primary/5' : 'border-gray-100 hover:border-gray-200'}`}>
-                          <input type="radio" name="knowledgeMode" value={m.id} checked={botForm.knowledgeMode === m.id} onChange={() => setBotForm({ ...botForm, knowledgeMode: m.id })} className="accent-primary-dark" />
-                          <div><div className="text-sm font-semibold text-gray-800">{m.label}</div><div className="text-xs text-gray-400">{m.desc}</div></div>
+                        <label
+                          key={m.id}
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                            botForm.knowledgeMode === m.id
+                              ? 'border-primary bg-primary/5'
+                              : 'border-gray-100 hover:border-gray-200'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="knowledgeMode"
+                            value={m.id}
+                            checked={botForm.knowledgeMode === m.id}
+                            onChange={() => setBotForm({ ...botForm, knowledgeMode: m.id })}
+                            className="accent-primary-dark"
+                          />
+                          <div>
+                            <div className="text-sm font-semibold text-gray-800">{m.label}</div>
+                            <div className="text-xs text-gray-400">{m.desc}</div>
+                          </div>
                         </label>
                       ))}
                     </div>
                   </div>
-                  {editingBot && (
-                    <div>
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Upload Files</label>
-                      <div onClick={() => knowledgeInputRef.current?.click()} className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-amber-300 hover:bg-amber-50/50 transition-all">
-                        {knowledgeUploading
-                          ? <div className="flex flex-col items-center gap-2 text-amber-600"><div className="w-8 h-8 border-2 border-amber-200 border-t-amber-600 rounded-full animate-spin"/><p className="font-semibold text-sm">Processing files...</p></div>
-                          : <><div className="text-4xl mb-2">📁</div><p className="text-sm font-semibold text-gray-600">Click or drag & drop files</p><p className="text-xs text-gray-400 mt-1">PDF • Word • Excel • PowerPoint • TXT • CSV • MD</p></>}
-                      </div>
-                      <input ref={knowledgeInputRef} type="file" multiple accept={SUPPORTED_FILE_TYPES} className="hidden" onChange={handleKnowledgeUpload} />
+
+                  {/* ✅ PATCH 5: PPT TEMPLATE SELECTOR */}
+                  {editingBot && knowledgeFiles.some(f => f.originalName?.toLowerCase().endsWith('.pptx')) && (
+                    <div className="border border-indigo-100 bg-indigo-50 rounded-xl p-3">
+                      <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-2">
+                        🎨 Template PPT (dari Knowledge Base)
+                      </label>
+
+                      <select
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                        value={botForm.pptTemplateFileId || ''}
+                        onChange={e =>
+                          setBotForm({
+                            ...botForm,
+                            pptTemplateFileId: e.target.value || null
+                          })
+                        }
+                      >
+                        <option value="">— Gunakan tema GYS default —</option>
+
+                        {knowledgeFiles
+                          .filter(f => f.originalName?.toLowerCase().endsWith('.pptx'))
+                          .map(f => (
+                            <option key={f._id} value={f._id}>
+                              🎨 {f.originalName}
+                            </option>
+                          ))}
+                      </select>
+
+                      <p className="text-[9px] text-indigo-600 mt-1">
+                        Bot akan mengadopsi warna & font dari template PPTX yang dipilih saat membuat presentasi
+                      </p>
                     </div>
                   )}
+
+                  {/* Upload Files */}
+                  {editingBot && (
+                    <div>
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">
+                        Upload Files
+                      </label>
+
+                      <div
+                        onClick={() => knowledgeInputRef.current?.click()}
+                        className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-amber-300 hover:bg-amber-50/50 transition-all"
+                      >
+                        {knowledgeUploading ? (
+                          <div className="flex flex-col items-center gap-2 text-amber-600">
+                            <div className="w-8 h-8 border-2 border-amber-200 border-t-amber-600 rounded-full animate-spin"/>
+                            <p className="font-semibold text-sm">Processing files...</p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-4xl mb-2">📁</div>
+                            <p className="text-sm font-semibold text-gray-600">Click or drag & drop files</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              PDF • Word • Excel • PowerPoint • TXT • CSV • MD
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      <input
+                        ref={knowledgeInputRef}
+                        type="file"
+                        multiple
+                        accept={SUPPORTED_FILE_TYPES}
+                        className="hidden"
+                        onChange={handleKnowledgeUpload}
+                      />
+                    </div>
+                  )}
+
+                  {/* File List */}
                   {knowledgeFiles.length > 0 && (
                     <div>
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Documents ({knowledgeFiles.length})</label>
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">
+                        Documents ({knowledgeFiles.length})
+                      </label>
+
                       <div className="space-y-2">
                         {knowledgeFiles.map(f => (
-                          <div key={f._id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors">
-                            <span className="text-xl flex-shrink-0">{getFileIcon(f.originalName)}</span>
+                          <div
+                            key={f._id}
+                            className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors"
+                          >
+                            <span className="text-xl flex-shrink-0">
+                              {getFileIcon(f.originalName)}
+                            </span>
+
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate text-gray-800">{f.originalName}</p>
-                              <p className="text-[10px] text-gray-400">{fmtSize(f.size)} · {new Date(f.uploadedAt).toLocaleDateString('en-US')}</p>
-                              {f.summary && <p className="text-[10px] text-gray-400 mt-1 line-clamp-2">{f.summary}</p>}
+                              <p className="text-sm font-semibold truncate text-gray-800">
+                                {f.originalName}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {fmtSize(f.size)} · {new Date(f.uploadedAt).toLocaleDateString('en-US')}
+                              </p>
+                              {f.summary && (
+                                <p className="text-[10px] text-gray-400 mt-1 line-clamp-2">
+                                  {f.summary}
+                                </p>
+                              )}
                             </div>
-                            {editingBot && <button onClick={() => handleDeleteKnowledge(f._id, f.originalName)} className="text-red-400 hover:text-red-600 text-xs font-bold flex-shrink-0 transition-colors">🗑</button>}
+
+                            {editingBot && (
+                              <button
+                                onClick={() => handleDeleteKnowledge(f._id, f.originalName)}
+                                className="text-red-400 hover:text-red-600 text-xs font-bold flex-shrink-0 transition-colors"
+                              >
+                                🗑
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+
                 </div>
               )}
 
@@ -1477,61 +1632,98 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   )}
 
-                  {/* WAHA WhatsApp */}
+                  {/* ──── WAHA WhatsApp Integration ──── */}
                   {(() => {
-                    const config = botForm.wahaConfig || {};
+                    const waha = botForm.wahaConfig || {};
+                    const setWaha = (patch) => setBotForm(f => ({
+                      ...f,
+                      wahaConfig: { ...f.wahaConfig, ...patch }
+                    }));
+
+                    const targets = waha.targets || [];
+                    const schedules = waha.schedules || [];
+
+                    const addTarget = () => setWaha({ targets: [...targets, newTarget()] });
+                    const removeTarget = (id) => setWaha({ targets: targets.filter(t => t._id !== id) });
+                    const updateTarget = (id, patch) => setWaha({ targets: targets.map(t => t._id === id ? { ...t, ...patch } : t) });
+
+                    const addSchedule = () => setWaha({ schedules: [...schedules, newSchedule()] });
+                    const removeSchedule = (id) => setWaha({ schedules: schedules.filter(s => s._id !== id) });
+                    const updateSchedule = (id, patch) => setWaha({ schedules: schedules.map(s => s._id === id ? { ...s, ...patch } : s) });
+
                     return (
-                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-[#25D366]/40 bg-[#25D366]/5' : 'border-gray-100 bg-white'}`}>
+                      <div className={`border-2 rounded-xl p-4 transition-all ${waha.enabled ? 'border-[#25D366]/40 bg-[#25D366]/5' : 'border-gray-100 bg-white'}`}>
+                        
+                        {/* HEADER */}
                         <div className="flex justify-between items-center mb-3">
-                          <div className="flex items-center gap-2"><span className="text-lg">💬</span><span className="font-semibold text-sm text-gray-800">WhatsApp Forwarder (WAHA)</span></div>
-                          <button type="button" onClick={() => setBotForm(f => ({ ...f, wahaConfig: { ...f.wahaConfig, enabled: !config.enabled } }))}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
-                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">💬</span>
+                            <span className="font-semibold text-sm text-gray-800">WhatsApp Integration (WAHA)</span>
+                          </div>
+                          <button type="button"
+                            onClick={() => setWaha({ enabled: !waha.enabled })}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full ${waha.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 bg-white rounded-full transform ${waha.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
-                        {config.enabled && (
-                          <div className="space-y-3 mt-4 pt-4 border-t border-[#25D366]/20">
+
+                        {waha.enabled && (
+                          <div className="space-y-4 mt-4 pt-4 border-t border-[#25D366]/20">
+
+                            {/* BASIC CONFIG */}
+                            <input
+                              type="text"
+                              value={waha.endpoint || ''}
+                              onChange={e => setWaha({ endpoint: e.target.value })}
+                              placeholder="http://your-waha-server:3000"
+                              className="w-full border rounded-xl p-2 text-xs"
+                            />
+
+                            {/* TARGETS */}
                             <div>
-                              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">API Endpoint URL</label>
-                              <input type="text" value={config.endpoint || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, endpoint: e.target.value}}))} placeholder="http://your_server_ip:3000/api/sendText" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                            </div>
-                            <div className="grid grid-cols-3 gap-3">
-                              <div>
-                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Chat / Group ID</label>
-                                <input type="text" value={config.chatId || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, chatId: e.target.value}}))} placeholder="120363xxxxxx@g.us" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                                <p className="text-[9px] text-gray-400 mt-1">@g.us (Group) / @c.us (DM)</p>
+                              <div className="flex justify-between mb-2">
+                                <span className="text-xs font-semibold">Targets</span>
+                                <button onClick={addTarget} type="button" className="text-xs text-green-600">+ Add</button>
                               </div>
-                              <div>
-                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Session Name</label>
-                                <input type="text" value={config.session || 'default'} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, session: e.target.value}}))} placeholder="default" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">WAHA API Key</label>
-                                <input type="password" value={config.apiKey || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, apiKey: e.target.value}}))} placeholder="Secret API Key" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                              </div>
-                            </div>
-                            {/* Daily Schedule */}
-                            <div className="mt-4 pt-4 border-t border-[#25D366]/20">
-                              <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs font-semibold text-gray-700">⏰ Daily Auto-Send Scheduler</label>
-                                <button type="button" onClick={() => setBotForm(f => ({ ...f, wahaConfig: { ...f.wahaConfig, dailySchedule: { ...f.wahaConfig.dailySchedule, enabled: !f.wahaConfig.dailySchedule?.enabled } } }))}
-                                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${botForm.wahaConfig?.dailySchedule?.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
-                                  <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform ${botForm.wahaConfig?.dailySchedule?.enabled ? 'translate-x-3.5' : 'translate-x-1'}`} />
-                                </button>
-                              </div>
-                              {botForm.wahaConfig?.dailySchedule?.enabled && (
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-[#25D366]/5 p-3 rounded-xl border border-[#25D366]/10">
-                                  <div>
-                                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Time (local)</label>
-                                    <input type="time" value={botForm.wahaConfig.dailySchedule?.time || '08:00'} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, dailySchedule: {...f.wahaConfig.dailySchedule, time: e.target.value}}}))} className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none" />
-                                  </div>
-                                  <div className="md:col-span-3">
-                                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Trigger Message</label>
-                                    <input type="text" value={botForm.wahaConfig.dailySchedule?.prompt || ''} onChange={e => setBotForm(f => ({...f, wahaConfig: {...f.wahaConfig, dailySchedule: {...f.wahaConfig.dailySchedule, prompt: e.target.value}}}))} placeholder="e.g. Generate today's summary report" className="w-full bg-white border border-[#25D366]/20 rounded-xl p-2.5 text-xs outline-none" />
-                                  </div>
+
+                              {targets.map(t => (
+                                <div key={t._id} className="flex gap-2 mb-2">
+                                  <input
+                                    value={t.chatId}
+                                    onChange={e => updateTarget(t._id, { chatId: e.target.value })}
+                                    placeholder="628xxx@c.us"
+                                    className="flex-1 border rounded p-1 text-xs"
+                                  />
+                                  <button onClick={() => removeTarget(t._id)} className="text-red-500 text-xs">x</button>
                                 </div>
-                              )}
+                              ))}
                             </div>
+
+                            {/* SCHEDULE */}
+                            <div>
+                              <div className="flex justify-between mb-2">
+                                <span className="text-xs font-semibold">Schedules</span>
+                                <button onClick={addSchedule} type="button" className="text-xs text-green-600">+ Add</button>
+                              </div>
+
+                              {schedules.map(s => (
+                                <div key={s._id} className="border rounded p-2 mb-2">
+                                  <input
+                                    value={s.prompt}
+                                    onChange={e => updateSchedule(s._id, { prompt: e.target.value })}
+                                    placeholder="Prompt"
+                                    className="w-full border rounded p-1 text-xs mb-1"
+                                  />
+                                  <input
+                                    type="time"
+                                    value={s.time}
+                                    onChange={e => updateSchedule(s._id, { time: e.target.value })}
+                                    className="border rounded p-1 text-xs"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+
                           </div>
                         )}
                       </div>
