@@ -1,6 +1,9 @@
 // server/services/ai-core.service.js
 // FIXED: Citations always shown when webSearch is enabled on bot
 // FIXED: Better citation logic - never skip for informational queries
+// ✅ FIXED: Instruksi AI jauh lebih kuat ketika ada OneDrive/Knowledge context
+// ✅ FIXED: Deteksi hasOneDriveContext — paksa AI kutip isi dokumen
+// ✅ FIXED: Tidak lagi katakan "tidak menemukan informasi" jika dokumen sudah ada
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -119,7 +122,6 @@ async function searchWeb(query, maxResults = 8) {
 
 // ─────────────────────────────────────────────────────────────
 // BUILD VERIFIED CITATIONS
-// FIXED: Skip URL validation for web-search-enabled bots to always show results
 // ─────────────────────────────────────────────────────────────
 
 async function buildVerifiedCitations({ message, aiResponse, contextSources, skipValidation = false }) {
@@ -137,6 +139,8 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources, ski
       citations.push({ title: 'Internal Document', url: null, isInternal: true });
     } else if (src === 'azure_search') {
       citations.push({ title: 'Azure AI Search', url: null, isInternal: true });
+    } else if (src === 'onedrive') {
+      citations.push({ title: 'OneDrive Document', url: null, isInternal: true });
     }
   }
 
@@ -144,12 +148,10 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources, ski
   const webResults  = await searchWeb(searchQuery, 8);
   
   if (skipValidation) {
-    // For web-search bots: include all results without validation (faster, always shows)
     for (const r of webResults) {
       citations.push({ title: r.title, url: r.url, isInternal: false });
     }
   } else {
-    // For regular queries: validate URLs (slower but more accurate)
     const validationResults = await Promise.allSettled(webResults.map(r => validateUrl(r.url)));
     for (let i = 0; i < webResults.length; i++) {
       const isValid = validationResults[i].status === 'fulfilled' && validationResults[i].value;
@@ -166,7 +168,6 @@ async function buildVerifiedCitations({ message, aiResponse, contextSources, ski
     if (!seen.has(key)) { seen.add(key); deduped.push(c); }
   }
 
-  // For web-search bots: show up to 8 citations; regular: up to 6
   const maxCitations = skipValidation ? 8 : 6;
   const sorted       = [
     ...deduped.filter(c => c.isInternal),
@@ -198,14 +199,12 @@ function detectLanguage(message = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DETECT CASUAL MESSAGES — STRICTER: only pure greetings
-// FIXED: No longer flags short informational queries as casual
+// DETECT CASUAL MESSAGES
 // ─────────────────────────────────────────────────────────────
 
 function isCasualMessage(message = '') {
   const t = (message || '').trim().toLowerCase();
 
-  // Only truly casual messages — pure greetings, single emoji, thanks
   const pureCasualPatterns = [
     /^(halo|hai|hi+|hello|hey)\s*[!.]*$/i,
     /^(terima kasih|makasih|thanks?|thank you|thx)\s*[!.]*$/i,
@@ -215,7 +214,6 @@ function isCasualMessage(message = '') {
 
   if (pureCasualPatterns.some(p => p.test(t))) return true;
   
-  // Only mark as casual if it's <= 2 words AND not a question
   const wordCount = t.split(/\s+/).filter(Boolean).length;
   if (wordCount <= 2 && !t.includes('?') && !t.match(/\b(update|news|insight|snack|next|info|harga|market|steel|baja)\b/i)) {
     return true;
@@ -226,36 +224,26 @@ function isCasualMessage(message = '') {
 
 // ─────────────────────────────────────────────────────────────
 // SHOULD SKIP CITATION
-// FIXED: Never skip if bot has webSearch capability enabled
 // ─────────────────────────────────────────────────────────────
 
 function shouldSkipCitation(message = '', aiResponse = '', botCapabilities = {}) {
-  // NEVER skip if webSearch is enabled on this bot
   if (botCapabilities?.webSearch) return false;
-  
-  // Always skip for truly casual messages
   if (isCasualMessage(message)) return true;
-  
-  // Skip for very short responses (likely error or one-word answer)
   const wordCount = aiResponse.trim().split(/\s+/).length;
   if (wordCount < 30) return true;
-  
   return false;
 }
 
 // ─────────────────────────────────────────────────────────────
 // EXTRACT SEARCH TOPIC
-// FIXED: Better topic extraction for steel/market queries
 // ─────────────────────────────────────────────────────────────
 
 function extractSearchTopic(message = '', history = []) {
   const t = message.trim();
   
-  // For steel/market related queries, build a more specific search
   const steelKeywords = /\b(steel|baja|besi|iron|scrap|billet|harga|price|market|pasar|industry|industri|indonesia|global|china|trade|ekspor|impor)\b/i;
   
   if (steelKeywords.test(t)) {
-    // Add current year context for market queries
     const year = new Date().getFullYear();
     const baseQuery = t.length > 150 ? t.substring(0, 150) : t;
     return `${baseQuery} ${year}`;
@@ -265,7 +253,6 @@ function extractSearchTopic(message = '', history = []) {
     return t.length > 180 ? t.substring(0, 180) : t;
   }
 
-  // Check recent conversation for context
   const recentHistory = [...history].reverse();
   for (const h of recentHistory) {
     const content = h.content || h.text || '';
@@ -593,7 +580,6 @@ class AICoreService {
     let contextData    = '';
     let contextSources = [];
     
-    // Check if this bot has webSearch capability enabled
     const botHasWebSearch = Boolean(bot.capabilities?.webSearch);
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
@@ -641,6 +627,7 @@ class AICoreService {
         contextData += `\n\n=== SMARTSHEET DATA ===\n❌ Failed to load data: ${e.message}\n`;
       }
     }
+
     if (bot.onedriveConfig?.enabled && 
         bot.onedriveConfig?.folderUrl && 
         bot.onedriveConfig?.tenantId && 
@@ -658,7 +645,7 @@ class AICoreService {
         if (oneDriveCtx) {
           contextData += oneDriveCtx;
           contextSources.push('onedrive');
-          console.log('[AICoreService] ✅ OneDrive context injected');
+          console.log('[AICoreService] ✅ OneDrive context injected, length:', oneDriveCtx.length);
         }
       } catch (odErr) {
         console.error('[AICoreService] OneDrive error:', odErr.message);
@@ -704,8 +691,39 @@ class AICoreService {
 
     const likelyCasual = isCasualMessage(message || '');
 
-    // FIXED: For web-search bots, always instruct AI to write in a way that citations will be added
-    const citationInstruction = likelyCasual ? '' : botHasWebSearch ? `
+    // ✅ FIX: Deteksi apakah ada OneDrive context — jika ada, paksa AI mengutip isi dokumen
+    const hasOneDriveContext = contextData.includes('=== DOKUMEN INTERNAL PT GARUDA YAMATO STEEL ===');
+    const hasAnyContext = contextData.length > 200;
+
+    // ✅ FIX: Instruksi citation yang jauh lebih kuat ketika ada konteks dokumen OneDrive
+    let citationInstruction = '';
+
+    if (hasOneDriveContext) {
+      // ✅ KUNCI UTAMA: Instruksi tegas untuk baca dan kutip isi dokumen
+      citationInstruction = `
+🔴 INSTRUKSI WAJIB — JANGAN DIABAIKAN:
+Kamu telah diberikan akses ke DOKUMEN INTERNAL perusahaan yang SUDAH DIBACA dan tersedia di bawah.
+Dokumen-dokumen tersebut mengandung informasi yang relevan dengan pertanyaan user.
+
+ATURAN YANG WAJIB DIIKUTI:
+1. BACA seluruh konten dokumen yang tersedia dengan SANGAT TELITI
+2. JANGAN PERNAH mengatakan "saya tidak menemukan informasi" — dokumennya SUDAH ADA
+3. JANGAN PERNAH menyuruh user untuk "menghubungi departemen IT" jika informasinya ada di dokumen
+4. KUTIP langsung bagian-bagian penting dari dokumen secara verbatim
+5. SEBUTKAN nomor kebijakan/SOP/prosedur secara eksplisit (contoh: 007/POL/IT/GYS)
+6. JAWAB dengan SANGAT DETAIL — jangan ringkas berlebihan
+7. Jika dokumen berisi langkah-langkah atau prosedur, TULISKAN SEMUA LANGKAHNYA
+8. Struktur jawaban dengan heading ## dan sub-heading ###
+9. Di akhir jawaban, cantumkan sumber: 📂 **Sumber:** [nama file]
+
+DILARANG KERAS:
+❌ Mengatakan "tidak ada informasi tentang ini dalam dokumen yang tersedia"
+❌ Mengatakan "silakan hubungi tim IT/HR/Finance"
+❌ Hanya menyebut nama dokumen tanpa menjelaskan isinya
+❌ Meringkas berlebihan tanpa kutipan dari dokumen
+`;
+    } else if (!likelyCasual) {
+      citationInstruction = botHasWebSearch ? `
 IMPORTANT: You are a web-search-enabled assistant. Always write your response referencing the most recent and relevant information.
 Your response will automatically have source links appended below — do NOT add your own "Sources:" section.
 Write your response, then the system will add verified web sources automatically.
@@ -715,14 +733,18 @@ The system will automatically append verified, clickable source links after your
 If you used internal documents or Smartsheet data, mention the file name inline.
 Do NOT fabricate URLs.
 `;
+    }
 
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
       citationInstruction,
       contextData,
-      contextData
-        ? 'Use the data and knowledge above to answer accurately. Do not fabricate facts.'
+      // ✅ FIX: Reminder di akhir system prompt jika ada konteks
+      hasOneDriveContext
+        ? `\n\n🔴 REMINDER TERAKHIR: Jawab pertanyaan "${(message || '').substring(0, 100)}" dengan DETAIL PENUH berdasarkan konten dokumen di atas. Kutip informasi spesifik. JANGAN katakan tidak ada informasi.`
+        : hasAnyContext
+        ? 'Gunakan data dan pengetahuan dari dokumen di atas untuk menjawab secara akurat. Jangan membuat-buat fakta.'
         : '',
     ].filter(Boolean).join('\n\n');
 
@@ -741,10 +763,10 @@ Do NOT fabricate URLs.
     const hasEmbeddedCitations = aiResponse.includes('<!--CITATIONS_START-->');
 
     if (!hasEmbeddedCitations) {
-      // FIXED: Check bot capabilities, not just message length
       const skipCitation = shouldSkipCitation(message || '', aiResponse, bot.capabilities || {});
       
-      if (!skipCitation) {
+      // ✅ FIX: Jika ada OneDrive context, skip web citation (tidak perlu)
+      if (!skipCitation && !hasOneDriveContext) {
         try {
           const searchTopic = extractSearchTopic(message || '', history.slice(-6));
           console.log(`[Citations] Searching for: "${searchTopic.substring(0, 80)}" | webSearch bot: ${botHasWebSearch}`);
@@ -753,11 +775,10 @@ Do NOT fabricate URLs.
             message:        searchTopic,
             aiResponse,
             contextSources,
-            skipValidation: botHasWebSearch, // Skip URL validation for web-search bots = faster + always shows
+            skipValidation: botHasWebSearch,
           });
           
           if (citations.length > 0) {
-            // Remove any self-added sources section from AI
             aiResponse = aiResponse
               .replace(/\n+---\s*\n.{0,10}(?:Sources?|References?|Sumber).{0,10}\n[\s\S]*$/im, '')
               .replace(/\*\*(?:Sources?|References?|Sumber)\*\*[\s\S]*$/im, '')
@@ -770,6 +791,8 @@ Do NOT fabricate URLs.
         } catch (citErr) {
           console.warn('[Citations] Failed to build citations:', citErr.message);
         }
+      } else if (hasOneDriveContext) {
+        console.log('[Citations] Skipped — OneDrive context present, internal docs cited');
       } else {
         console.log('[Citations] Skipped (casual message or short response)');
       }
