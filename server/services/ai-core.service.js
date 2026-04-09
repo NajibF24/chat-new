@@ -268,14 +268,19 @@ function extractSearchTopic(message = '', history = []) {
   const recentHistory = [...history].reverse();
   for (const h of recentHistory) {
     const content = h.content || h.text || '';
-    if (content.length > 80 && !content.includes('[\s\S]*?/g, '').trim();
-      if (clean.length > 50) return clean.substring(0, 180);
+
+    if (content.length > 80) {
+      // Bersihkan URL biar query lebih relevan
+      const clean = content.replace(/https?:\/\/\S+/g, '').trim();
+
+      if (clean.length > 50) {
+        return clean.substring(0, 180);
+      }
     }
   }
 
   return t;
-}
-
+  }
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
 // ─────────────────────────────────────────────────────────────
