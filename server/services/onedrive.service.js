@@ -402,8 +402,8 @@ class OneDriveService {
       // Step 4: build context
       // ✅ FIX UTAMA: TIDAK lagi tampilkan daftar 194 file
       // Langsung ke konten yang relevan saja
-      let context  = `\n\n=== DOKUMEN INTERNAL GYS (OneDrive) ===\n`;
-      context     += `Dokumen yang dimuat: ${toFetch.map(f => f.name).join(', ')}\n\n`;
+      let context  = `\n\n=== DOKUMEN INTERNAL PT GARUDA YAMATO STEEL ===\n`;
+      context     += `Berikut adalah isi dokumen yang relevan dengan pertanyaan user:\n\n`;
 
       let totalChars = 0;
       let fetchSuccess = 0;
@@ -457,7 +457,7 @@ class OneDriveService {
         totalChars += truncated.length;
       }
 
-      context += `=== AKHIR DOKUMEN ===\n`;
+      context += `=== AKHIR DOKUMEN INTERNAL ===\n`;
 
       console.log(`[OneDrive] Context built — success: ${fetchSuccess}, fail: ${fetchFail}, chars: ${totalChars}`);
       console.log(`[OneDrive] Final context length: ${context.length} chars`);
