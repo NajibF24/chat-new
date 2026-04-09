@@ -1,9 +1,10 @@
 // server/services/onedrive.service.js
 // FIXES:
-//   - readFileContent: gunakan /content endpoint langsung
-//   - HAPUS daftar 194 file dari context (buang ~15K token sia-sia)
-//   - MAX_TOTAL 50K, MAX per file 8K, MAX files 5
-//   - Context lebih bersih dan fokus ke isi dokumen
+//   - MAX_PER_FILE_CHARS: 8K → 20K (dokumen tidak terpotong)
+//   - MAX_FILES_TO_FETCH: 5 → 3 (fokus ke file paling relevan)
+//   - MAX_TOTAL_CHARS: 50K → 60K
+//   - Hapus daftar 194 file dari context (hemat token)
+//   - readFileContent: /content endpoint langsung + fallback
 
 import axios   from 'axios';
 import odIndex from './onedrive-index.service.js';
@@ -68,11 +69,20 @@ const FOLDER_KEYWORD_MAP = {
   'data':         ['it system', 'it'],
   'aset':         ['it system', 'it'],
   'asset':        ['it system', 'it'],
+  'backup':       ['it system', 'it'],
+  'restore':      ['it system', 'it'],
+  'recovery':     ['it system', 'it'],
+  'access':       ['it system', 'it'],
+  'akses':        ['it system', 'it'],
 };
 
-const MAX_TOTAL_CHARS    = 50_000;
-const MAX_PER_FILE_CHARS = 8_000;
-const MAX_FILES_TO_FETCH = 5;
+// ✅ Limit yang benar:
+// - 20K per file → dokumen 26K terbaca 75%, dokumen 10K terbaca 100%
+// - 3 file → fokus, tidak buang token untuk file tidak relevan
+// - 60K total → cukup untuk 3 file × 20K
+const MAX_TOTAL_CHARS    = 60_000;
+const MAX_PER_FILE_CHARS = 20_000;
+const MAX_FILES_TO_FETCH = 3;
 
 class OneDriveService {
   constructor(tenantId, clientId, clientSecret) {
@@ -83,6 +93,7 @@ class OneDriveService {
     this.tokenExpiry  = null;
   }
 
+  // ── Auth ──────────────────────────────────────────────────
   async getAccessToken() {
     if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry - 300_000) {
       return this.accessToken;
@@ -113,6 +124,7 @@ class OneDriveService {
     return r.data;
   }
 
+  // ── URL parsing ───────────────────────────────────────────
   async parseFolderUrl(folderUrl) {
     const url      = new URL(folderUrl);
     const hostname = url.hostname;
@@ -159,6 +171,7 @@ class OneDriveService {
     throw new Error(`Format URL tidak dikenali.`);
   }
 
+  // ── File listing ──────────────────────────────────────────
   async _listFolderItems(driveId, folderPath) {
     const endpoint = folderPath
       ? `/drives/${driveId}/root:/${folderPath}:/children`
@@ -216,6 +229,7 @@ class OneDriveService {
     return await this._listFilesRecursive(driveId, folderPath);
   }
 
+  // ── Content extraction ────────────────────────────────────
   async readFileContent(driveId, fileId, fileName) {
     const token = await this.getAccessToken();
     const ext   = (fileName || '').split('.').pop().toLowerCase();
@@ -304,6 +318,7 @@ class OneDriveService {
     }
   }
 
+  // ── Helpers ───────────────────────────────────────────────
   _extractKeywords(msg) {
     const stop = new Set([
       'yang','dan','atau','di','ke','dari','ini','itu','untuk','dengan','dalam',
@@ -350,6 +365,7 @@ class OneDriveService {
     return { hash, fileCount: files.length };
   }
 
+  // ── Main context builder ──────────────────────────────────
   async buildContext(folderUrl, userMessage) {
     try {
       const { driveId, folderPath } = await this.parseFolderUrl(folderUrl);
@@ -369,7 +385,7 @@ class OneDriveService {
       }
 
       if (!allFiles.length) {
-        return `\n\n=== ONEDRIVE ===\nFolder kosong.\n=== AKHIR ONEDRIVE ===\n`;
+        return '';
       }
 
       // Step 2: score & rank files
@@ -381,7 +397,7 @@ class OneDriveService {
         return { ...f, score: this._scoreFile(f, keywords, cachedKws) };
       }).sort((a, b) => b.score - a.score || new Date(b.lastModified) - new Date(a.lastModified));
 
-      // Step 3: pilih file paling relevan
+      // Step 3: pilih file paling relevan (MAX 3 file)
       const relevantPrefixes = this._getRelevantFolderPrefixes(allFiles, keywords);
       let toFetch = [];
 
@@ -395,15 +411,16 @@ class OneDriveService {
         console.log(`[OneDrive] Folder-match: ${toFetch.length} files`);
       } else {
         toFetch = scored.filter(f => f.score > 0).slice(0, MAX_FILES_TO_FETCH);
-        if (!toFetch.length) toFetch = scored.slice(0, 3);
+        if (!toFetch.length) toFetch = scored.slice(0, MAX_FILES_TO_FETCH);
         console.log(`[OneDrive] Fallback: ${toFetch.length} files`);
       }
 
+      if (!toFetch.length) return '';
+
       // Step 4: build context
-      // ✅ FIX UTAMA: TIDAK lagi tampilkan daftar 194 file
-      // Langsung ke konten yang relevan saja
+      // ✅ Tidak ada daftar 194 file — langsung ke konten
       let context  = `\n\n=== DOKUMEN INTERNAL PT GARUDA YAMATO STEEL ===\n`;
-      context     += `Berikut adalah isi dokumen yang relevan dengan pertanyaan user:\n\n`;
+      context     += `Berikut adalah isi dokumen yang relevan:\n\n`;
 
       let totalChars = 0;
       let fetchSuccess = 0;
@@ -441,9 +458,9 @@ class OneDriveService {
           }
         }
 
-        // ✅ Potong per file agar tidak mendominasi
+        // ✅ 20K per file — dokumen 26K = 75% terbaca, dokumen 10K = 100% terbaca
         const truncated = content && content.length > MAX_PER_FILE_CHARS
-          ? content.substring(0, MAX_PER_FILE_CHARS) + `\n...[dipotong, total ${content.length} chars]`
+          ? content.substring(0, MAX_PER_FILE_CHARS) + `\n\n[... konten dipotong, ${content.length - MAX_PER_FILE_CHARS} chars tidak ditampilkan]`
           : (content || '[Konten kosong]');
 
         const label = file.folderPath && file.folderPath !== '/'
@@ -466,10 +483,11 @@ class OneDriveService {
 
     } catch (err) {
       console.error('[OneDrive] buildContext error:', err.message);
-      return `\n\n=== ONEDRIVE ERROR ===\n⚠️ Gagal memuat dokumen: ${err.message}\n=== AKHIR ===\n`;
+      return '';
     }
   }
 
+  // ── Test connection ───────────────────────────────────────
   async testConnection(folderUrl) {
     await this.getAccessToken();
     const files = await this.listFiles(folderUrl);
