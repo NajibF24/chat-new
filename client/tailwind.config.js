@@ -44,5 +44,8 @@ module.exports = {
       }
     },
   },
-  plugins: [],
+    // 🔥 INI YANG PENTING
+  plugins: [
+    require('@tailwindcss/typography'),
+  ],
 }
