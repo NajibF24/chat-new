@@ -695,12 +695,12 @@ router.post('/from-document', requireAuth, docUpload.single('document'), async (
     }
 
     const userRequest = prompt || `Buat presentasi dari dokumen ini: ${fileName}`;
+    const hasImages    = images.length > 0;
     const imageConstraint = !hasImages 
       ? '\n\nCRITICAL: This document has NO images. NEVER use LAYOUT: IMAGE. Only use: TITLE, SECTION, CONTENT, GRID, STATS, TIMELINE, TWO_COLUMN, CHART, TABLE, QUOTE, CLOSING.'
       : `\n\nDocument has ${images.length} image(s). Use LAYOUT: IMAGE only for actual images.`;
     const title       = (prompt || fileName).replace(/\.(docx|pdf|xlsx|txt|md)$/i, '').substring(0, 60);
 
-    const hasImages    = images.length > 0;
     const isMultiModal = hasImages;
 
     // ── Build user content berdasarkan provider ───────────────

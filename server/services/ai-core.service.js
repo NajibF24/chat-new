@@ -610,7 +610,7 @@ class AICoreService {
           );
         }
         console.log(`[AICoreService] PDF extracted: ${text.length} chars, ${data.numpages} pages`);
-        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
+        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 50000)}\n[END FILE]\n`;
 
       } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
