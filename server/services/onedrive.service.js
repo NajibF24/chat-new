@@ -7,6 +7,9 @@
 //   ✅ FIX 5: Fallback scoring: jika tidak ada folder match, tetap ambil semua file relevan
 //   ✅ FIX 6: Context header lebih informatif — beritahu AI isi dokumen ADA
 //   ✅ FIX 7: Hapus sparse PDF skip — tetap masukkan ke context walaupun terbatas
+//   ✅ FIX 8: maxDepth dikurangi 5 → 3 agar tidak terlalu banyak API calls
+//   ✅ FIX 9: Parallel file content fetch dengan timeout per-file (12 detik) dan global (20 detik)
+//   ✅ FIX 10: Subfolder batch size naik 5 → 10 untuk traversal lebih cepat
 
 import axios   from 'axios';
 import odIndex from './onedrive-index.service.js';
@@ -103,10 +106,14 @@ const FOLDER_KEYWORD_MAP = {
   'production':   ['production', 'sms', 'steel'],
 };
 
-// ✅ FIX 3: Naikkan semua limit secara signifikan
-const MAX_TOTAL_CHARS    = 150_000;  // 100K → 150K
-const MAX_PER_FILE_CHARS = 40_000;   // 30K → 40K
-const MAX_FILES_TO_FETCH = 12;       // 8 → 12
+// ✅ FIX 3: Limit yang sudah dinaikkan
+const MAX_TOTAL_CHARS    = 150_000;
+const MAX_PER_FILE_CHARS = 40_000;
+const MAX_FILES_TO_FETCH = 12;
+
+// ✅ FIX 9: Timeout constants
+const FETCH_TIMEOUT_PER_FILE_MS = 12_000;  // 12 detik per file
+const FETCH_TIMEOUT_GLOBAL_MS   = 20_000;  // 20 detik total untuk semua file
 
 class OneDriveService {
   constructor(tenantId, clientId, clientSecret) {
@@ -207,7 +214,9 @@ class OneDriveService {
     return data.value || [];
   }
 
-  async _listFilesRecursive(driveId, folderPath, depth = 0, maxDepth = 5) {
+  // ✅ FIX 8: maxDepth default dikurangi dari 5 → 3
+  // ✅ FIX 10: Subfolder batch size naik dari 5 → 10
+  async _listFilesRecursive(driveId, folderPath, depth = 0, maxDepth = 3) {
     if (depth > maxDepth) return [];
     let items;
     try {
@@ -234,8 +243,10 @@ class OneDriveService {
         subFolders.push(item.name);
       }
     }
-    for (let i = 0; i < subFolders.length; i += 5) {
-      const chunk = subFolders.slice(i, i + 5);
+
+    // ✅ FIX 10: Batch size naik ke 10
+    for (let i = 0; i < subFolders.length; i += 10) {
+      const chunk = subFolders.slice(i, i + 10);
       const results = await Promise.allSettled(
         chunk.map(name => this._listFilesRecursive(
           driveId, folderPath ? `${folderPath}/${name}` : name, depth + 1, maxDepth
@@ -248,9 +259,10 @@ class OneDriveService {
     return files;
   }
 
+  // ✅ FIX 8: listFiles juga pakai maxDepth=3
   async listFiles(folderUrl) {
     const { driveId, folderPath } = await this.parseFolderUrl(folderUrl);
-    return await this._listFilesRecursive(driveId, folderPath);
+    return await this._listFilesRecursive(driveId, folderPath, 0, 3);
   }
 
   // ── Content extraction ────────────────────────────────────
@@ -299,7 +311,7 @@ class OneDriveService {
         const data = await pdfParse(buffer, { max: 0 });
         const text = (data.text || '').trim();
 
-        // ✅ FIX 2: Threshold turun dari 20 → 5 char agar lebih banyak PDF terbaca
+        // ✅ FIX 2: Threshold turun dari 20 → 5 char
         if (!text || text.length < 5) {
           console.warn(`[OneDrive] PDF "${fileName}" — teks sangat minim (${text.length} chars), kemungkinan scan`);
           return `[PDF SCAN: "${fileName}" — ${data.numpages || '?'} halaman. Dokumen ini adalah scan/gambar dan tidak dapat diekstrak teksnya secara otomatis. Silakan buka dokumen langsung untuk melihat isinya.]`;
@@ -310,7 +322,7 @@ class OneDriveService {
           .replace(/\n{3,}/g, '\n\n')
           .replace(/[ \t]{2,}/g, ' ')
           .replace(/\f/g, '\n\n--- HALAMAN BARU ---\n\n')
-          .replace(/[^\S\n]+/g, ' ')  // Hapus whitespace berlebih kecuali newline
+          .replace(/[^\S\n]+/g, ' ')
           .trim();
 
         console.log(`[OneDrive] PDF parsed: "${fileName}" — ${cleanedText.length} chars, ${data.numpages} pages`);
@@ -390,7 +402,6 @@ class OneDriveService {
     const relevant = new Set();
 
     for (const kw of keywords) {
-      // Cek keyword di SETIAP segment path (substring match, bukan exact)
       for (const folderPath of allFolderPaths) {
         const segments = folderPath.split('/').filter(Boolean);
 
@@ -399,7 +410,6 @@ class OneDriveService {
           relevant.add(folderPath);
         }
 
-        // Cek di full path string
         if (folderPath.includes(kw)) {
           relevant.add(folderPath);
         }
@@ -410,7 +420,6 @@ class OneDriveService {
       for (const fragment of mappedFragments) {
         for (const folderPath of allFolderPaths) {
           const segments = folderPath.split('/').filter(Boolean);
-          // ✅ FIX: substring match untuk fragment juga
           if (segments.some(seg => seg.includes(fragment) || fragment.includes(seg))) {
             relevant.add(folderPath);
           }
@@ -424,13 +433,12 @@ class OneDriveService {
     return relevant;
   }
 
-  // ✅ FIX 1b: Score file berdasarkan nama file juga (bukan hanya folder path)
+  // ✅ FIX 1b: Score file berdasarkan nama file juga
   _scoreFileByName(file, keywords) {
     const nameLower = file.name.toLowerCase();
     let score = 0;
     for (const kw of keywords) {
-      if (nameLower.includes(kw)) score += 15;  // High score untuk nama file yang match
-      // Cek juga alias
+      if (nameLower.includes(kw)) score += 15;
       const aliases = FOLDER_KEYWORD_MAP[kw] || [];
       for (const alias of aliases) {
         if (nameLower.includes(alias)) score += 8;
@@ -449,6 +457,9 @@ class OneDriveService {
 
   // ── Main context builder ──────────────────────────────────
   async buildContext(folderUrl, userMessage) {
+    // ✅ FIX 9: Track overall start time
+    const overallStartTime = Date.now();
+
     try {
       const { driveId, folderPath } = await this.parseFolderUrl(folderUrl);
 
@@ -461,7 +472,7 @@ class OneDriveService {
         console.log(`[OneDrive] Using cached index (${allFiles.length} files)`);
       } else {
         console.log(`[OneDrive] Index stale/missing — refreshing...`);
-        allFiles = await this._listFilesRecursive(driveId, folderPath);
+        allFiles = await this._listFilesRecursive(driveId, folderPath, 0, 3);
         hash     = odIndex.saveIndex(odIndex.hash(this.tenantId, folderUrl), folderUrl, allFiles);
         console.log(`[OneDrive] Index refreshed: ${allFiles.length} files`);
       }
@@ -492,7 +503,6 @@ class OneDriveService {
       }
 
       if (relevantFolderPaths.size > 0) {
-        // Filter file dari folder yang relevan
         const folderFiltered = scored.filter(f => {
           const fullPath = (f.folderPath || '/').toLowerCase();
           return relevantFolderPaths.has(fullPath);
@@ -500,15 +510,12 @@ class OneDriveService {
 
         console.log(`[OneDrive] Folder-match: ${folderFiltered.length} files in relevant folders`);
 
-        // ✅ FIX: Ambil lebih banyak file dari folder relevan
         const highScoreFromFolder = folderFiltered.slice(0, MAX_FILES_TO_FETCH);
-        // Tambah file dengan score tinggi dari semua folder (jika ada keyword match di nama)
         const highScoreByName = scored.filter(f => {
           const nameScore = this._scoreFileByName(f, keywords);
           return nameScore > 0;
         }).slice(0, Math.ceil(MAX_FILES_TO_FETCH / 2));
 
-        // Merge & deduplicate
         const seen = new Set();
         for (const f of [...highScoreFromFolder, ...highScoreByName]) {
           if (!seen.has(f.id)) {
@@ -518,7 +525,6 @@ class OneDriveService {
           if (toFetch.length >= MAX_FILES_TO_FETCH) break;
         }
 
-        // Jika masih kurang, tambah dari folder relevan
         if (toFetch.length < MAX_FILES_TO_FETCH) {
           for (const f of folderFiltered) {
             if (!seen.has(f.id)) {
@@ -530,9 +536,8 @@ class OneDriveService {
         }
 
       } else {
-        // ✅ FIX: Fallback yang lebih baik — ambil file dengan score > 0 ATAU file terbaru
         const byNameScore = scored.filter(f => this._scoreFileByName(f, keywords) > 0);
-        
+
         if (byNameScore.length > 0) {
           toFetch = byNameScore.slice(0, MAX_FILES_TO_FETCH);
           console.log(`[OneDrive] Fallback: ${toFetch.length} files by name score`);
@@ -540,7 +545,6 @@ class OneDriveService {
           toFetch = scored.filter(f => f.score > 0).slice(0, MAX_FILES_TO_FETCH);
           console.log(`[OneDrive] Fallback: ${toFetch.length} files by combined score`);
         } else {
-          // Last resort: ambil file terbaru
           toFetch = scored.slice(0, MAX_FILES_TO_FETCH);
           console.log(`[OneDrive] Last resort: ${toFetch.length} most recent files`);
         }
@@ -551,7 +555,7 @@ class OneDriveService {
       console.log(`[OneDrive] Files to fetch (${toFetch.length}):`);
       toFetch.forEach((f, i) => console.log(`  ${i+1}. [score:${f.score}] ${f.folderPath}/${f.name}`));
 
-      // Step 4: build context
+      // Step 4: build context header
       // ✅ FIX 4 & 6: Instruksi AI jauh lebih tegas
       let context  = `\n\n=== DOKUMEN INTERNAL PT GARUDA YAMATO STEEL ===\n`;
       context     += `Query user: "${userMessage}"\n`;
@@ -562,66 +566,98 @@ class OneDriveService {
       context     += `2. JANGAN katakan "tidak menemukan informasi" jika konten dokumen sudah ada di bawah.\n`;
       context     += `3. JAWAB secara DETAIL dan LENGKAP berdasarkan ISI DOKUMEN — bukan hanya menyebut nama file.\n`;
       context     += `4. KUTIP bagian-bagian penting dari dokumen secara langsung.\n`;
-      context     += `5. Jika ada nomor kebijakan/prosedur, sebutkan secara eksplisit.\n`;
+      context     += `5. Jika ada nomor kebijakan/SOP/prosedur, sebutkan secara eksplisit.\n`;
       context     += `6. Struktur jawaban dengan heading yang jelas.\n\n`;
 
-      let totalChars  = 0;
+      // ✅ FIX 9: PARALLEL fetch dengan timeout per-file dan global deadline
+      console.log(`[OneDrive] Starting parallel fetch for ${toFetch.length} files...`);
+      const fetchDeadline = Date.now() + FETCH_TIMEOUT_GLOBAL_MS;
+
+      const fetchResults = await Promise.allSettled(
+        toFetch.map(async (file) => {
+          // Cek apakah masih dalam budget waktu global
+          if (Date.now() > fetchDeadline) {
+            console.warn(`[OneDrive] Global timeout reached, skipping "${file.name}"`);
+            return { file, content: `[SKIP: global timeout tercapai untuk "${file.name}"]`, fromCache: false, skipped: true };
+          }
+
+          // ── Cek cache dulu (sangat cepat, tidak perlu timeout) ──
+          if (odIndex.isContentFresh(hash, file.id, file.lastModified)) {
+            const cached = odIndex.getContent(hash, file.id);
+            if (cached) {
+              console.log(`[OneDrive] Cache hit: "${file.name}" (${cached.length} chars)`);
+              return { file, content: cached, fromCache: true, skipped: false };
+            }
+          }
+
+          // ── Fetch dari OneDrive dengan per-file timeout ──
+          const fetchWithTimeout = new Promise(async (resolve) => {
+            const timer = setTimeout(() => {
+              console.warn(`[OneDrive] Per-file timeout (${FETCH_TIMEOUT_PER_FILE_MS}ms) for "${file.name}"`);
+              resolve({ file, content: `[TIMEOUT: "${file.name}" tidak merespons dalam ${FETCH_TIMEOUT_PER_FILE_MS/1000} detik]`, fromCache: false, skipped: true });
+            }, FETCH_TIMEOUT_PER_FILE_MS);
+
+            try {
+              const content = await this.readFileContent(driveId, file.id, file.name);
+              clearTimeout(timer);
+
+              const isScanPdf = content?.startsWith('[PDF SCAN:');
+              if (content && content.length > 5 && !isScanPdf) {
+                odIndex.saveContent(hash, file.id, file.lastModified, content);
+                console.log(`[OneDrive] ✅ Fetched & cached: "${file.name}" (${content.length} chars)`);
+              } else if (isScanPdf) {
+                console.log(`[OneDrive] ⚠️ Scan PDF: "${file.name}" — tetap ditampilkan`);
+              }
+
+              resolve({ file, content: content || '', fromCache: false, skipped: false });
+            } catch (e) {
+              clearTimeout(timer);
+              console.error(`[OneDrive] ❌ Failed "${file.name}": ${e.message}`);
+              resolve({ file, content: `[GAGAL MEMBACA: ${e.message}]`, fromCache: false, skipped: false });
+            }
+          });
+
+          return fetchWithTimeout;
+        })
+      );
+
+      // ── Build context dari hasil parallel fetch ──
+      let totalChars   = 0;
       let fetchSuccess = 0;
       let fetchFail    = 0;
+      let fetchSkipped = 0;
 
-      for (const file of toFetch) {
+      for (const result of fetchResults) {
         if (totalChars >= MAX_TOTAL_CHARS) {
-          context += `\n[Budget konteks tercapai — ${toFetch.length - fetchSuccess - fetchFail} file tidak ditampilkan]\n`;
+          context += `\n[Budget konteks tercapai — file sisanya tidak ditampilkan]\n`;
           break;
         }
 
-        let content = null;
-        let fromCache = false;
+        const { file, content, fromCache, skipped } = result.status === 'fulfilled'
+          ? result.value
+          : { file: {}, content: '[Promise rejected]', fromCache: false, skipped: false };
 
-        // Cek cache terlebih dahulu
-        if (odIndex.isContentFresh(hash, file.id, file.lastModified)) {
-          content = odIndex.getContent(hash, file.id);
-          if (content) {
-            fromCache = true;
-            console.log(`[OneDrive] Cache hit: "${file.name}" (${content.length} chars)`);
-          }
+        if (skipped) {
+          fetchSkipped++;
+          continue; // Jangan masukkan ke context jika di-skip karena timeout
         }
 
-        // Fetch dari OneDrive jika tidak ada di cache
-        if (!content) {
-          try {
-            content = await this.readFileContent(driveId, file.id, file.name);
+        const isError = content.startsWith('[GAGAL') || content.startsWith('[TIMEOUT') || content.startsWith('[ERROR') || content.startsWith('[SKIP');
 
-            // ✅ FIX 7: Jangan skip konten hanya karena dimulai dengan '['
-            // PDF scan tetap disimpan untuk informasi ke user
-            const isScanPdf = content && content.startsWith('[PDF SCAN:');
-            const isGoodContent = content && content.length > 5;
-
-            if (isGoodContent && !isScanPdf) {
-              odIndex.saveContent(hash, file.id, file.lastModified, content);
-              console.log(`[OneDrive] ✅ Cached: "${file.name}" (${content.length} chars)`);
-              fetchSuccess++;
-            } else if (isScanPdf) {
-              // Scan PDF — tidak cache tapi tetap tampil
-              fetchFail++;
-              console.log(`[OneDrive] ⚠️ Scan PDF: "${file.name}" — tetap ditampilkan di context`);
-            } else {
-              fetchFail++;
-            }
-          } catch (e) {
-            console.error(`[OneDrive] ❌ Failed "${file.name}": ${e.message}`);
-            content = `[GAGAL MEMBACA: ${e.message}]`;
-            fetchFail++;
-          }
+        if (!isError) {
+          fetchSuccess++;
+        } else {
+          fetchFail++;
+          continue; // Skip error entries dari context
         }
 
         // Truncate jika terlalu panjang
-        const truncated = content && content.length > MAX_PER_FILE_CHARS
+        const truncated = content.length > MAX_PER_FILE_CHARS
           ? content.substring(0, MAX_PER_FILE_CHARS) + `\n\n[... konten dipotong — ${content.length - MAX_PER_FILE_CHARS} chars tidak ditampilkan]`
-          : (content || '[Konten kosong]');
+          : content;
 
         const label = file.folderPath && file.folderPath !== '/'
-          ? `${file.folderPath}/${file.name}` : file.name;
+          ? `${file.folderPath}/${file.name}` : (file.name || 'unknown');
 
         const cacheLabel = fromCache ? ' [cache]' : ' [fresh]';
         const scoreLabel = file.score > 0 ? ` [skor:${file.score}]` : '';
@@ -636,18 +672,18 @@ class OneDriveService {
 
       context += `\n${'═'.repeat(70)}\n`;
       context += `=== AKHIR DOKUMEN INTERNAL ===\n\n`;
-      // ✅ FIX 4: Tambah reminder instruksi di akhir
       context += `PENGINGAT: Jawab pertanyaan "${userMessage}" secara LENGKAP dan DETAIL `;
       context += `berdasarkan konten dokumen di atas. Kutip informasi spesifik dari dokumen. `;
       context += `Jangan lewatkan detail penting seperti nomor kebijakan, prosedur, atau persyaratan.\n`;
 
-      console.log(`[OneDrive] Context built — success: ${fetchSuccess}, fail: ${fetchFail}, chars: ${totalChars}`);
-      console.log(`[OneDrive] Final context length: ${context.length} chars`);
+      const elapsedMs = Date.now() - overallStartTime;
+      console.log(`[OneDrive] buildContext selesai dalam ${elapsedMs}ms — success: ${fetchSuccess}, fail: ${fetchFail}, skipped: ${fetchSkipped}, chars: ${totalChars}`);
 
       return context;
 
     } catch (err) {
-      console.error('[OneDrive] buildContext error:', err.message);
+      const elapsedMs = Date.now() - overallStartTime;
+      console.error(`[OneDrive] buildContext error setelah ${elapsedMs}ms:`, err.message);
       return '';
     }
   }
