@@ -5,6 +5,7 @@
 // ✅ FIXED: Deteksi hasOneDriveContext — paksa AI kutip isi dokumen
 // ✅ FIXED: Tidak lagi katakan "tidak menemukan informasi" jika dokumen sudah ada
 // ✅ FIXED: extractFileContent sekarang punya debug log + path validation
+// ✅ FIXED: substring(0, 8000) → substring(0, 50000) agar file tidak terpotong
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -26,6 +27,14 @@ import KouventaService        from './kouventa.service.js';
 import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
 import PptxTemplateService from './pptx-template.service.js';
+
+// ─────────────────────────────────────────────────────────────
+// ✅ CONFIGURABLE LIMIT — sesuaikan dengan context window model
+// GPT-4o/4.1 (128K ctx): bisa sampai 80000
+// Claude (200K ctx): bisa sampai 80000
+// GPT-3.5 (16K ctx): pakai 8000
+// ─────────────────────────────────────────────────────────────
+const MAX_FILE_CONTENT_CHARS = 50000;
 
 // ─────────────────────────────────────────────────────────────
 // URL VALIDATOR — HEAD request to verify URL is reachable
@@ -544,9 +553,6 @@ class AICoreService {
   // ─────────────────────────────────────────────────────────────
   // ✅ FIXED: extractFileContent — now with full debug logging
   // ─────────────────────────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────
-// ✅ FIXED extractFileContent — debug log lebih lengkap + path validation
-// ─────────────────────────────────────────────────────────────
   async extractFileContent(attachedFile) {
     console.log(`[AICoreService] extractFileContent called`);
     console.log(`  keys        : ${Object.keys(attachedFile || {}).join(', ')}`);
@@ -584,9 +590,9 @@ class AICoreService {
     return this._readFileContent(physicalPath, attachedFile?.originalname || path.basename(physicalPath));
   }
 
-// ─────────────────────────────────────────────────────────────
-// ✅ FIXED _readFileContent — validasi konten tidak kosong setelah ekstraksi
-// ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
+  // ✅ FIXED _readFileContent — ALL substring now use MAX_FILE_CONTENT_CHARS
+  // ─────────────────────────────────────────────────────────────
   async _readFileContent(physicalPath, originalName) {
     const ext = path.extname(originalName || physicalPath).toLowerCase();
     try {
@@ -594,7 +600,6 @@ class AICoreService {
         const data = await pdf(fs.readFileSync(physicalPath));
         const text = (data.text || '').trim();
 
-        // ✅ FIX: jika PDF kosong, beri pesan jelas — jangan wrap kosong
         if (!text || text.length < 30) {
           const pages = data.numpages || '?';
           console.warn(`[AICoreService] PDF "${originalName}" teks kosong (${text.length} chars, ${pages} halaman)`);
@@ -610,13 +615,13 @@ class AICoreService {
           );
         }
         console.log(`[AICoreService] PDF extracted: ${text.length} chars, ${data.numpages} pages`);
-        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 50000)}\n[END FILE]\n`;
+        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
+        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
 
       } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
         const text   = (result.value || '').trim();
 
-        // ✅ FIX: validasi isi DOCX tidak kosong
         if (!text || text.length < 10) {
           console.warn(`[AICoreService] DOCX "${originalName}" teks kosong (${text.length} chars)`);
           return (
@@ -629,7 +634,8 @@ class AICoreService {
           );
         }
         console.log(`[AICoreService] DOCX extracted: ${text.length} chars`);
-        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
+        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
+        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
 
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
@@ -648,17 +654,18 @@ class AICoreService {
           );
         }
         console.log(`[AICoreService] XLSX extracted: ${trimmed.length} chars`);
-        return `\n\n[FILE CONTENT: ${originalName}]\n${trimmed.substring(0, 8000)}\n[END FILE]\n`;
+        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
+        return `\n\n[FILE CONTENT: ${originalName}]\n${trimmed.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
 
       } else {
         const text = fs.readFileSync(physicalPath, 'utf8').trim();
         console.log(`[AICoreService] Text file extracted: ${text.length} chars`);
-        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, 8000)}\n[END FILE]\n`;
+        // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
+        return `\n\n[FILE CONTENT: ${originalName}]\n${text.substring(0, MAX_FILE_CONTENT_CHARS)}\n[END FILE]\n`;
       }
 
     } catch (err) {
       console.error(`[AICoreService] ❌ Failed to read "${originalName}": ${err.message}`);
-      // ✅ FIX: return pesan error yang jelas, bukan string kosong
       return (
         `\n\n[PERINGATAN FILE: "${originalName}"]\n` +
         `Terjadi error saat membaca file: ${err.message}\n` +
@@ -800,7 +807,6 @@ class AICoreService {
           console.log(`[AICoreService] ✅ File content extracted: ${text.length} chars`);
         } else {
           console.warn(`[AICoreService] ⚠️ File content extraction returned empty string`);
-          // Still inform the AI about the file even if we can't read it
           userContent.push({ type: 'text', text: `[User attached a file: ${attachedFile.originalname || attachedFile.filename} but content could not be extracted]` });
         }
       }
@@ -812,11 +818,9 @@ class AICoreService {
 
     const likelyCasual = isCasualMessage(message || '');
 
-    // ✅ FIX: Deteksi apakah ada OneDrive context — jika ada, paksa AI mengutip isi dokumen
     const hasOneDriveContext = contextData.includes('=== DOKUMEN INTERNAL PT GARUDA YAMATO STEEL ===');
     const hasAnyContext = contextData.length > 200;
 
-    // ✅ FIX: Instruksi citation yang jauh lebih kuat ketika ada konteks dokumen OneDrive
     let citationInstruction = '';
 
     if (hasOneDriveContext) {
@@ -961,7 +965,8 @@ Do NOT fabricate URLs.
           .filter(h => !PPT_RESPONSE_MARKERS.some(m => (h.content || '').includes(m)))
           .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
           .join('\n\n---\n\n')
-          .substring(0, 8000);
+          // ✅ FIX: 8000 → MAX_FILE_CONTENT_CHARS
+          .substring(0, MAX_FILE_CONTENT_CHARS);
       }
 
       console.log('[PPT] Step 1 — generating smart content with auto layout detection...');
