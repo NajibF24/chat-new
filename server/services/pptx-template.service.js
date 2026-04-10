@@ -2,20 +2,36 @@
 // ============================================================
 // REWRITE: True template-based PPTX generation
 //
-// Strategy:
-//   1. Open the template .pptx (which is a ZIP file)
-//   2. Read the slide master + slide layouts from the template
-//   3. For each AI-generated slide, clone the closest matching
-//      layout XML from the template as the base
-//   4. Inject AI content into the cloned slide XML
-//   5. This means every slide inherits: background, fonts,
-//      colors, logo placement, footer, decorative shapes —
-//      exactly as defined in the template file
+// ROOT CAUSE FIX (2025-04):
+//   The original replaceTextBodies() blindly replaced the 1st
+//   and 2nd <p:txBody> in order. But template slides have:
+//     txBody[0] = Title  (correct)
+//     txBody[1] = Divider (a 0.01in decorative line!) <- WRONG
+//     txBody[2] = Subtitle (small)
+//     <p:pic>   = large image placeholder (4+ inches tall, unused)
+//
+//   Result: all body content was crammed into an invisible
+//   0.01-inch divider line. Nobody could see anything.
+//
+// FIX STRATEGY:
+//   1. replaceTextBodies() now reads the HEIGHT of each shape
+//      before deciding if it's a body slot.
+//      - Shapes < MIN_BODY_HEIGHT_EMU (0.1 in = 91440 EMU)
+//        are treated as decorative and SKIPPED for body injection.
+//   2. After text injection, if no large body slot was found
+//      (because all remaining txBody are tiny), we REPLACE the
+//      <p:pic> placeholder with a real <p:sp> text box that
+//      occupies the same position/size as the picture.
+//   3. The title injection is unchanged (always 1st txBody).
 // ============================================================
 
 import AdmZip from 'adm-zip';
 import path   from 'path';
 import fs     from 'fs';
+
+// Minimum height in EMU to count as a "body" text box
+// 0.1 inch = 91440 EMU  — Dividers are typically 12700 EMU (0.01 in)
+const MIN_BODY_HEIGHT_EMU = 91440;
 
 // ─────────────────────────────────────────────────────────────
 // XML HELPERS
@@ -30,7 +46,6 @@ function escapeXml(str = '') {
     .replace(/'/g,  '&apos;');
 }
 
-// Build a text run with given options
 function makeRun(text, opts = {}) {
   const { sz = 1800, bold = false, color = null, typeface = null } = opts;
   const boldAttr  = bold ? ' b="1"' : '';
@@ -39,27 +54,21 @@ function makeRun(text, opts = {}) {
   return `<a:r><a:rPr lang="en-US" sz="${sz}"${boldAttr} dirty="0">${colorEl}${fontEl}</a:rPr><a:t>${escapeXml(text)}</a:t></a:r>`;
 }
 
-// Build a paragraph
 function makePara(text, opts = {}) {
   const { align = null, marL = 0, indent = 0, bullet = false, spcBef = 0 } = opts;
   const alignAttr = align ? ` algn="${align}"` : '';
   const marAttr   = marL ? ` marL="${marL}"` : '';
   const indAttr   = indent ? ` indent="${indent}"` : '';
-  const bulletEl  = bullet
-    ? `<a:buChar char="•"/>`
-    : `<a:buNone/>`;
+  const bulletEl  = bullet ? `<a:buChar char="•"/>` : `<a:buNone/>`;
   const spcEl = spcBef ? `<a:spcBef><a:spcPts val="${spcBef}"/></a:spcBef>` : '';
   return `<a:p><a:pPr${alignAttr}${marAttr}${indAttr}>${bulletEl}${spcEl}</a:pPr>${makeRun(text, opts)}</a:p>`;
 }
 
 // ─────────────────────────────────────────────────────────────
 // TEMPLATE ANALYSIS
-// Opens the .pptx zip and maps out all available slides,
-// layouts, and masters so we can clone from them.
 // ─────────────────────────────────────────────────────────────
 
 function analyzeTemplate(zip) {
-  // Read presentation manifest
   const presEntry = zip.getEntry('ppt/presentation.xml');
   const relsEntry = zip.getEntry('ppt/_rels/presentation.xml.rels');
   if (!presEntry || !relsEntry) {
@@ -69,7 +78,6 @@ function analyzeTemplate(zip) {
   const presXml = presEntry.getData().toString('utf8');
   const relsXml = relsEntry.getData().toString('utf8');
 
-  // Parse relationships: rId → target path
   const relsMap = {};
   for (const m of relsXml.matchAll(/<Relationship\b([^>]+?)\/>/gs)) {
     const idM     = m[1].match(/\bId="([^"]+)"/);
@@ -77,15 +85,13 @@ function analyzeTemplate(zip) {
     if (idM && targetM) relsMap[idM[1]] = targetM[1];
   }
 
-  // Parse slide list from sldIdLst
   const slideList = [];
   for (const m of presXml.matchAll(/<p:sldId\b([^>]+?)\/>/gs)) {
-    const idM   = m[1].match(/\bid="(\d+)"/);
-    const rIdM  = m[1].match(/\br:id="([^"]+)"/);
+    const idM  = m[1].match(/\bid="(\d+)"/);
+    const rIdM = m[1].match(/\br:id="([^"]+)"/);
     if (idM && rIdM) slideList.push({ id: idM[1], rId: rIdM[1] });
   }
 
-  // Resolve a target path to the actual zip entry path
   function resolveTarget(target) {
     if (!target) return null;
     let t = target.replace(/^\//, '');
@@ -104,7 +110,6 @@ function analyzeTemplate(zip) {
     return null;
   }
 
-  // Build slide info list
   const slides = [];
   for (const { id, rId } of slideList) {
     const rawTarget = relsMap[rId];
@@ -114,9 +119,8 @@ function analyzeTemplate(zip) {
     const entry     = getEntry(entryPath, rawTarget, 'ppt/' + rawTarget);
     if (!entry) continue;
 
-    const slideXml  = entry.getData().toString('utf8');
+    const slideXml = entry.getData().toString('utf8');
 
-    // Find what layout this slide uses (from its own .rels)
     const slideRelPath  = entry.entryName.replace(/\.xml$/, '.xml.rels')
       .replace('ppt/slides/', 'ppt/slides/_rels/');
     const slideRelEntry = getEntry(slideRelPath);
@@ -132,11 +136,8 @@ function analyzeTemplate(zip) {
       }
     }
 
-    // Get shape names in this slide to understand its purpose
     const shapeNames = [...slideXml.matchAll(/cNvPr id="\d+" name="([^"]+)"/g)].map(m => m[1]);
-
-    // Classify slide type by shape names and content
-    let slideType = classifySlide(slideXml, shapeNames);
+    const slideType  = classifySlide(slideXml, shapeNames);
 
     slides.push({
       index:       slides.length,
@@ -154,46 +155,30 @@ function analyzeTemplate(zip) {
     throw new Error('Template has no slides');
   }
 
-  // Pick representative slides for each layout type we need
-  // Priority: find slides that best match each type
   const titleSlide   = slides.find(s => s.slideType === 'TITLE')   || slides[0];
   const closingSlide = slides.find(s => s.slideType === 'CLOSING') || slides[slides.length - 1];
   const contentSlide = slides.find(s => s.slideType === 'CONTENT') || slides[1] || slides[0];
-
-  // For section dividers: pick a slide with minimal text shapes
   const sectionSlide = slides.find(s => s.slideType === 'SECTION') || contentSlide;
 
   console.log(`[PPT Template] Analyzed ${slides.length} slides:`);
   slides.forEach(s => console.log(`  slide${s.index + 1}: type=${s.slideType} shapes=[${s.shapeNames.slice(0,4).join(',')}]`));
 
-  return {
-    slides,
-    titleSlide,
-    contentSlide,
-    closingSlide,
-    sectionSlide,
-    getEntry,
-    resolveTarget,
-  };
+  return { slides, titleSlide, contentSlide, closingSlide, sectionSlide, getEntry, resolveTarget };
 }
 
-// Classify a slide by examining its content
 function classifySlide(xml, names) {
   const lowerNames = names.map(n => n.toLowerCase());
   const lowerXml   = xml.toLowerCase();
 
-  // Look for large centered title-only layout (typically slide 1)
   if (lowerNames.some(n => n.includes('maintitle') || n.includes('main title'))) return 'TITLE';
 
-  // Check text content for closing indicators
   if (lowerXml.includes('thank you') || lowerXml.includes('terima kasih') ||
-      lowerXml.includes('thank') || lowerNames.some(n => n.includes('closing'))) {
+      lowerNames.some(n => n.includes('closing'))) {
     return 'CLOSING';
   }
 
-  // Has a title and subtitle/body — generic content layout
   const hasTitle = lowerNames.some(n =>
-    n.includes('title') || n.includes('judul') || n === 'title 1' || n === 'title'
+    n.includes('title') || n === 'title 1' || n === 'title'
   );
   const hasBody = lowerNames.some(n =>
     n.includes('subtitle') || n.includes('content') || n.includes('body') ||
@@ -202,43 +187,13 @@ function classifySlide(xml, names) {
 
   if (hasTitle && hasBody) return 'CONTENT';
   if (hasTitle) return 'SECTION';
-
   return 'CONTENT';
 }
 
 // ─────────────────────────────────────────────────────────────
-// INJECT CONTENT INTO TEMPLATE SLIDE XML
-//
-// This is the key function: instead of building slides from
-// scratch, we take the template slide XML as-is and surgically
-// replace the text inside named shapes.
-//
-// The template's backgrounds, decorations, logos, colors,
-// and layout all remain untouched.
+// BUILD PARAGRAPHS (same as before)
 // ─────────────────────────────────────────────────────────────
 
-function injectIntoSlide(templateXml, slideData, options = {}) {
-  let xml = templateXml;
-
-  const layout = (slideData.layout || 'CONTENT').toUpperCase();
-
-  // Build the content paragraphs based on layout type
-  const paragraphs = buildParagraphs(slideData, options);
-
-  // Strategy: find text body placeholders in the template and replace their content
-  // We look for <p:txBody> inside <p:sp> elements and replace based on position/name
-
-  xml = replaceTextBodies(xml, paragraphs, layout);
-
-  // If slide has an image to inject, add it
-  if (slideData.imagePath && fs.existsSync(slideData.imagePath) && options.imageRId) {
-    xml = injectImage(xml, slideData.imagePath, options.imageRId);
-  }
-
-  return xml;
-}
-
-// Build paragraph arrays for each part of the slide
 function buildParagraphs(slideData, options = {}) {
   const layout  = (slideData.layout || 'CONTENT').toUpperCase();
   const { primaryColor = '006A4E', accentColor = '00A878', darkColor = '111827', grayColor = '6B7280' } = options;
@@ -249,9 +204,7 @@ function buildParagraphs(slideData, options = {}) {
       const subtitle = slideData.subtitle || '';
       const meta     = [slideData.presenter, slideData.date].filter(Boolean).join('   •   ');
       return {
-        title: [
-          makePara(title, { sz: 4400, bold: true, color: 'FFFFFF', align: 'ctr' }),
-        ],
+        title: [makePara(title, { sz: 4400, bold: true, color: 'FFFFFF', align: 'ctr' })],
         body: [
           ...(subtitle ? [makePara(subtitle, { sz: 2000, color: 'CCEEDF', align: 'ctr' })] : []),
           ...(meta     ? [makePara(meta,     { sz: 1400, color: 'A8D5C2', align: 'ctr' })] : []),
@@ -262,9 +215,7 @@ function buildParagraphs(slideData, options = {}) {
     case 'SECTION': {
       return {
         title: [makePara(slideData.title || '', { sz: 3600, bold: true, color: primaryColor })],
-        body:  slideData.subtitle
-          ? [makePara(slideData.subtitle, { sz: 1800, color: grayColor })]
-          : [],
+        body:  slideData.subtitle ? [makePara(slideData.subtitle, { sz: 1800, color: grayColor })] : [],
       };
     }
 
@@ -308,11 +259,11 @@ function buildParagraphs(slideData, options = {}) {
       return {
         title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
         body: [
-          ...(slideData.leftTitle  ? [makePara(slideData.leftTitle,  { sz: 1700, bold: true, color: darkColor, spcBef: 200 })] : []),
-          ...left.map(b  => makePara(String(b), { sz: 1400, color: grayColor,    bullet: true, marL: 342900, indent: -342900 })),
+          ...(slideData.leftTitle  ? [makePara(slideData.leftTitle,  { sz: 1700, bold: true, color: darkColor,    spcBef: 200 })] : []),
+          ...left.map(b  => makePara(String(b), { sz: 1400, color: grayColor, bullet: true, marL: 342900, indent: -342900 })),
           makePara('', { sz: 600 }),
           ...(slideData.rightTitle ? [makePara(slideData.rightTitle, { sz: 1700, bold: true, color: accentColor, spcBef: 200 })] : []),
-          ...right.map(b => makePara(String(b), { sz: 1400, color: grayColor,    bullet: true, marL: 342900, indent: -342900 })),
+          ...right.map(b => makePara(String(b), { sz: 1400, color: grayColor, bullet: true, marL: 342900, indent: -342900 })),
         ],
       };
     }
@@ -340,7 +291,7 @@ function buildParagraphs(slideData, options = {}) {
           ...(slideData.insightText ? [makePara(`💡 ${slideData.insightText}`, { sz: 1500, bold: true, color: primaryColor })] : []),
           ...data.flatMap(series => [
             makePara(`▸ ${series.name || 'Data'}`, { sz: 1400, bold: true, color: darkColor, spcBef: 200 }),
-            ...( series.labels || []).map((l, i) =>
+            ...(series.labels || []).map((l, i) =>
               makePara(`${l}: ${(series.values || [])[i] ?? '—'}`, { sz: 1300, color: grayColor, marL: 342900 })
             ),
           ]),
@@ -382,64 +333,178 @@ function buildParagraphs(slideData, options = {}) {
   }
 }
 
-// Replace text bodies in the slide XML
-// We find ALL <p:txBody> elements (in order) and replace:
-//   - First txBody  → title content
-//   - Second txBody → body content
-// This works because PowerPoint slides always have title first, body second
-function replaceTextBodies(xml, paragraphs, layout) {
-  const bodyOpenTag  = '<p:txBody>';
-  const bodyCloseTag = '</p:txBody>';
+// ─────────────────────────────────────────────────────────────
+// ✅ FIXED: INJECT CONTENT INTO TEMPLATE SLIDE XML
+//
+// KEY CHANGE: We now parse the height of each <p:sp> element
+// before deciding if it qualifies as a "body" text slot.
+// Shapes with cy < MIN_BODY_HEIGHT_EMU are decorative (Dividers)
+// and are SKIPPED.
+//
+// If no body-sized txBody is found, we replace the <p:pic>
+// image placeholder with a real text box at the same position.
+// ─────────────────────────────────────────────────────────────
 
-  let replaced = 0;
-  let result   = xml;
-  let searchFrom = 0;
+function injectIntoSlide(templateXml, slideData, options = {}) {
+  const paragraphs = buildParagraphs(slideData, options);
+  let xml = templateXml;
 
-  while (replaced < 2) {
-    const startIdx = result.indexOf(bodyOpenTag, searchFrom);
-    if (startIdx === -1) break;
+  xml = replaceTextBodiesFixed(xml, paragraphs, options);
 
-    const endIdx = result.indexOf(bodyCloseTag, startIdx);
-    if (endIdx === -1) break;
+  if (slideData.imagePath && fs.existsSync(slideData.imagePath) && options.imageRId) {
+    xml = injectImage(xml, slideData.imagePath, options.imageRId);
+  }
 
-    const before = result.substring(0, startIdx);
-    const after  = result.substring(endIdx + bodyCloseTag.length);
+  return xml;
+}
 
-    // Extract the <a:bodyPr> from original to preserve layout/sizing
-    const originalBody  = result.substring(startIdx, endIdx + bodyCloseTag.length);
-    const bodyPrMatch   = originalBody.match(/<a:bodyPr[^>]*\/>/);
-    const lstStyleMatch = originalBody.match(/<a:lstStyle[^>]*(?:\/>|>[\s\S]*?<\/a:lstStyle>)/);
+/**
+ * ✅ FIXED replaceTextBodies
+ *
+ * Strategy:
+ *  1. Find all <p:sp> elements in the XML.
+ *  2. For the FIRST sp that has a txBody → inject title.
+ *  3. For subsequent sp elements:
+ *     - Read the cy (height) attribute from <a:ext>
+ *     - If cy < MIN_BODY_HEIGHT_EMU → skip (it's a Divider line)
+ *     - Otherwise → inject body content here
+ *  4. If we never found a body slot big enough:
+ *     - Find the <p:pic> element and REPLACE it with a <p:sp>
+ *       text box at the same position/size, containing the body.
+ */
+function replaceTextBodiesFixed(xml, paragraphs, options = {}) {
+  // ── STEP 1: Replace title in first txBody ──────────────────
+  let result = xml;
+  let titleDone = false;
+  let bodyDone  = false;
 
-    const bodyPr   = bodyPrMatch   ? bodyPrMatch[0]   : '<a:bodyPr/>';
-    const lstStyle = lstStyleMatch ? lstStyleMatch[0] : '<a:lstStyle/>';
+  // We'll work on <p:sp> elements one at a time
+  // Use a regex that captures each full <p:sp>...</p:sp>
+  const spPattern = /(<p:sp>)([\s\S]*?)(<\/p:sp>)/g;
 
-    // Get paragraphs for this slot
-    const paras = replaced === 0
-      ? (paragraphs.title || [])
-      : (paragraphs.body  || []);
+  result = result.replace(spPattern, (fullMatch, open, inner, close) => {
+    // Extract height from <a:ext cy="...">
+    const extMatch = inner.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"/);
+    const cy = extMatch ? parseInt(extMatch[2]) : 999999;
 
-    // Build new txBody — keep original bodyPr so positioning stays correct
-    const newBody = `${bodyOpenTag}${bodyPr}${lstStyle}${paras.join('')}${bodyCloseTag}`;
+    // Does this sp have a txBody?
+    const hasBody = inner.includes('<p:txBody>');
+    if (!hasBody) return fullMatch;
 
-    result     = before + newBody + after;
-    searchFrom = before.length + newBody.length;
-    replaced++;
+    if (!titleDone) {
+      // ── Title slot (always the first txBody sp) ──
+      titleDone = true;
+      const newInner = replaceOneTxBody(inner, paragraphs.title || []);
+      return open + newInner + close;
+    }
+
+    if (!bodyDone) {
+      // ── Body slot — only if height is substantial ──
+      if (cy < MIN_BODY_HEIGHT_EMU) {
+        // This is a Divider or tiny decorative element — SKIP IT
+        console.log(`[PPT Template] Skipping thin shape (cy=${cy} EMU < ${MIN_BODY_HEIGHT_EMU}) for body injection`);
+        return fullMatch;
+      }
+      bodyDone = true;
+      const newInner = replaceOneTxBody(inner, paragraphs.body || []);
+      return open + newInner + close;
+    }
+
+    return fullMatch;
+  });
+
+  // ── STEP 2: If body was never injected, replace the <p:pic> ──
+  if (!bodyDone && (paragraphs.body || []).length > 0) {
+    result = replacePicWithTextBox(result, paragraphs.body, options);
   }
 
   return result;
 }
 
-// Inject an image into the slide (replace existing image placeholder or append)
+/**
+ * Replace the content paragraphs inside a single txBody,
+ * preserving the original <a:bodyPr> and <a:lstStyle>.
+ */
+function replaceOneTxBody(spInner, paragraphs) {
+  return spInner.replace(/(<p:txBody>)([\s\S]*?)(<\/p:txBody>)/, (_, open, body, close) => {
+    const bodyPrMatch   = body.match(/<a:bodyPr[^>]*(?:\/>|>[\s\S]*?<\/a:bodyPr>)/);
+    const lstStyleMatch = body.match(/<a:lstStyle[^>]*(?:\/>|>[\s\S]*?<\/a:lstStyle>)/);
+    const bodyPr   = bodyPrMatch   ? bodyPrMatch[0]   : '<a:bodyPr/>';
+    const lstStyle = lstStyleMatch ? lstStyleMatch[0] : '<a:lstStyle/>';
+    return open + bodyPr + lstStyle + paragraphs.join('') + close;
+  });
+}
+
+/**
+ * ✅ NEW: Replace the <p:pic> image placeholder with a <p:sp>
+ * text box at the SAME position and size, containing body content.
+ *
+ * This handles templates where the large content area is a picture
+ * placeholder rather than a text box (common in branded templates).
+ */
+function replacePicWithTextBox(xml, bodyParagraphs, options = {}) {
+  const { primaryColor = '006A4E' } = options;
+
+  const picMatch = xml.match(/<p:pic>([\s\S]*?)<\/p:pic>/);
+  if (!picMatch) {
+    console.log('[PPT Template] No <p:pic> found to replace — body content may be missing');
+    return xml;
+  }
+
+  const picInner = picMatch[1];
+  // Extract position from the pic
+  const offMatch = picInner.match(/<a:off\s+x="(\d+)"\s+y="(\d+)"/);
+  const extMatch = picInner.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"/);
+
+  if (!offMatch || !extMatch) {
+    console.log('[PPT Template] Cannot read <p:pic> position — body content may be missing');
+    return xml;
+  }
+
+  const x  = offMatch[1];
+  const y  = offMatch[2];
+  const cx = extMatch[1];
+  const cy = extMatch[2];
+
+  // Build a proper auto-fit text box at the pic's position
+  const textBoxXml = `<p:sp>
+  <p:nvSpPr>
+    <p:cNvPr id="901" name="ContentBody"/>
+    <p:cNvSpPr txBox="1"><a:spLocks/></p:cNvSpPr>
+    <p:nvPr/>
+  </p:nvSpPr>
+  <p:spPr>
+    <a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>
+    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+    <a:noFill/>
+    <a:ln><a:noFill/></a:ln>
+  </p:spPr>
+  <p:txBody>
+    <a:bodyPr wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720">
+      <a:normAutofit/>
+    </a:bodyPr>
+    <a:lstStyle/>
+    ${bodyParagraphs.join('')}
+  </p:txBody>
+</p:sp>`;
+
+  console.log(`[PPT Template] Replaced <p:pic> with text box at x=${x} y=${y} cx=${cx} cy=${cy} (${(parseInt(cy)/914400).toFixed(2)}in tall)`);
+
+  // Replace the <p:pic> element with our text box
+  return xml.replace(/<p:pic>[\s\S]*?<\/p:pic>/, textBoxXml);
+}
+
+// ─────────────────────────────────────────────────────────────
+// INJECT IMAGE INTO SLIDE
+// ─────────────────────────────────────────────────────────────
+
 function injectImage(xml, imagePath, rId) {
-  // Look for existing pic element to replace
   const picMatch = xml.match(/<p:pic>[\s\S]*?<\/p:pic>/);
   if (picMatch) {
-    // Replace the r:embed attribute in the existing pic
     const newPic = picMatch[0].replace(/(r:embed=")[^"]*(")/g, `$1${rId}$2`);
     return xml.replace(picMatch[0], newPic);
   }
 
-  // No existing pic — insert one before </p:spTree>
   const picXml = `
 <p:pic>
   <p:nvPicPr>
@@ -461,7 +526,7 @@ function injectImage(xml, imagePath, rId) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PICK WHICH TEMPLATE SLIDE TO CLONE FOR A GIVEN LAYOUT
+// PICK TEMPLATE SLIDE FOR LAYOUT TYPE
 // ─────────────────────────────────────────────────────────────
 
 function pickTemplateSlide(analysis, layout) {
@@ -479,7 +544,6 @@ function pickTemplateSlide(analysis, layout) {
 // ─────────────────────────────────────────────────────────────
 
 function updatePresentationXml(presXml, relsXml, newSlides) {
-  // Find max existing slide ID
   const existingIds = [...presXml.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)]
     .map(m => parseInt(m[1])).filter(id => id < 10000);
   let maxId = existingIds.length > 0 ? Math.max(256, ...existingIds) : 256;
@@ -504,7 +568,6 @@ function updatePresentationXml(presXml, relsXml, newSlides) {
     `<p:sldIdLst>${sldIdBlock}</p:sldIdLst>`
   );
 
-  // Remove old slide rels, add new ones
   let updatedRels = relsXml.replace(
     /<Relationship\b[^>]*presentationml\.slide"[^>]*\/>/g, ''
   );
@@ -527,13 +590,11 @@ function updateContentTypes(ctXml, slideNames) {
   return updated.replace('</Types>', overrides + '\n</Types>');
 }
 
-// Get layout target from slide rels XML
 function getLayoutTarget(slideRelXml) {
   const m = slideRelXml?.match(/Type="[^"]*slideLayout"[^>]*Target="([^"]+)"/);
   return m ? m[1] : '../slideLayouts/slideLayout1.xml';
 }
 
-// Build a clean slide rels XML (slide → layout, optionally + image)
 function buildSlideRels(layoutTarget, imageTarget = null) {
   const imgRel = imageTarget
     ? `<Relationship Id="rId2" ` +
@@ -551,7 +612,6 @@ function buildSlideRels(layoutTarget, imageTarget = null) {
   );
 }
 
-// Mime type → file extension map
 function mimeToExt(mime = '') {
   if (mime.includes('png'))  return '.png';
   if (mime.includes('jpeg') || mime.includes('jpg')) return '.jpeg';
@@ -561,192 +621,7 @@ function mimeToExt(mime = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MAIN PUBLIC API
-// ─────────────────────────────────────────────────────────────
-
-const PptxTemplateService = {
-
-  /**
-   * Returns true if templatePath is a valid .pptx file
-   */
-  isValidTemplate(templatePath) {
-    if (!templatePath) return false;
-    if (!fs.existsSync(templatePath)) return false;
-    if (!/\.pptx?$/i.test(templatePath)) return false;
-    try {
-      const zip = new AdmZip(templatePath);
-      return Boolean(zip.getEntry('ppt/presentation.xml'));
-    } catch {
-      return false;
-    }
-  },
-
-  /**
-   * Generate a PPTX file using the given template as master.
-   *
-   * @param {object} params
-   * @param {string} params.templatePath  - Path to the .pptx template file
-   * @param {object} params.pptData       - { slides: [...] } from AI
-   * @param {string} params.title         - Presentation title
-   * @param {string} params.outputDir     - Directory to save the output file
-   * @param {Array}  params.selectedImages - [{ path, caption, slideIndex }] — images chosen by AI
-   *
-   * @returns {object} { pptxFile, pptxUrl, pptxName, slideCount, usedTemplate }
-   */
-  async generate({ templatePath, pptData, title, outputDir, selectedImages = [] }) {
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-
-    // Open template
-    let templateZip;
-    try {
-      templateZip = new AdmZip(templatePath);
-    } catch (err) {
-      throw new Error(`Cannot open template PPTX: ${err.message}`);
-    }
-
-    // Analyze template structure
-    const analysis = analyzeTemplate(templateZip);
-
-    // Extract theme colors from template for text injection
-    const themeColors = extractThemeColors(templateZip);
-    console.log(`[PPT Template] Theme colors: primary=${themeColors.primaryColor} accent=${themeColors.accentColor}`);
-
-    // Create output zip starting from a copy of the template
-    // (this preserves ALL template assets: media, fonts, theme, master, layouts)
-    const outputZip = new AdmZip(templatePath);
-
-    // Remove all existing content slides (keep everything else: master, layouts, theme, media)
-    const toRemove = outputZip.getEntries()
-      .filter(e => /^ppt\/slides\/(slide\d+\.xml|_rels\/slide\d+\.xml\.rels)$/.test(e.entryName))
-      .map(e => e.entryName);
-    toRemove.forEach(name => { try { outputZip.deleteFile(name); } catch {} });
-    console.log(`[PPT Template] Removed ${toRemove.length} original slides, generating ${pptData.slides?.length || 0} new slides`);
-
-    // Track new slides for manifest update
-    const newSlideInfos = [];
-    const slides = pptData.slides || [];
-
-    // Track existing media files to avoid name collisions
-    const existingMedia = outputZip.getEntries()
-      .filter(e => e.entryName.startsWith('ppt/media/'))
-      .map(e => e.entryName);
-    let mediaCounter = existingMedia.length + 1;
-
-    // Build a lookup: slideIndex → image info
-    const imageBySlide = {};
-    for (const img of selectedImages) {
-      if (img.slideIndex !== undefined && img.slideIndex !== null) {
-        imageBySlide[img.slideIndex] = img;
-      }
-    }
-
-    for (let i = 0; i < slides.length; i++) {
-      const sd       = slides[i];
-      const slideNum = i + 1;
-      const slideName    = `slide${slideNum}.xml`;
-      const slidePath    = `ppt/slides/${slideName}`;
-      const slideRelPath = `ppt/slides/_rels/${slideName}.rels`;
-
-      // Pick the best template slide to clone
-      const templateSlide = pickTemplateSlide(analysis, sd.layout);
-
-      // Get layout target from the template slide's rels
-      let layoutTarget = '../slideLayouts/slideLayout1.xml';
-      if (templateSlide.relPath) {
-        const tRelEntry = templateZip.getEntry(templateSlide.relPath);
-        if (tRelEntry) {
-          layoutTarget = getLayoutTarget(tRelEntry.getData().toString('utf8'));
-        }
-      }
-
-      // Handle image for this slide
-      let imageRId    = null;
-      let imageTarget = null;
-      const imgInfo   = imageBySlide[i];
-
-      if (imgInfo && imgInfo.path && fs.existsSync(imgInfo.path)) {
-        const imgBuffer  = fs.readFileSync(imgInfo.path);
-        const ext        = mimeToExt(imgInfo.mimeType || '');
-        const mediaName  = `img_injected_${mediaCounter}${ext}`;
-        const mediaPath  = `ppt/media/${mediaName}`;
-
-        outputZip.addFile(mediaPath, imgBuffer);
-        imageRId    = 'rId2';
-        imageTarget = `../media/${mediaName}`;
-        mediaCounter++;
-
-        console.log(`[PPT Template] Slide ${slideNum}: injecting image ${mediaName}`);
-      }
-
-      // Clone template slide XML and inject content
-      const clonedXml = injectIntoSlide(
-        templateSlide.xml,
-        sd,
-        { ...themeColors, imageRId }
-      );
-
-      // Build slide rels
-      const relXml = buildSlideRels(layoutTarget, imageTarget);
-
-      // Add to output zip
-      outputZip.addFile(slidePath,    Buffer.from(clonedXml, 'utf8'));
-      outputZip.addFile(slideRelPath, Buffer.from(relXml,    'utf8'));
-      newSlideInfos.push({ name: slideName });
-
-      console.log(`[PPT Template] Slide ${slideNum} (${sd.layout || 'CONTENT'}) ← cloned from ${path.basename(templateSlide.entryPath)}`);
-    }
-
-    if (newSlideInfos.length === 0) {
-      throw new Error('No slides were generated');
-    }
-
-    // Update presentation.xml and its .rels to reference new slides
-    const presXml = outputZip.getEntry('ppt/presentation.xml')?.getData().toString('utf8') || '';
-    const relsXml = outputZip.getEntry('ppt/_rels/presentation.xml.rels')?.getData().toString('utf8') || '';
-    const ctXml   = outputZip.getEntry('[Content_Types].xml')?.getData().toString('utf8') || '';
-
-    const { updatedPres, updatedRels } = updatePresentationXml(presXml, relsXml, newSlideInfos);
-    const updatedCt = updateContentTypes(ctXml, newSlideInfos.map(s => s.name));
-
-    outputZip.updateFile('ppt/presentation.xml',            Buffer.from(updatedPres, 'utf8'));
-    outputZip.updateFile('ppt/_rels/presentation.xml.rels', Buffer.from(updatedRels, 'utf8'));
-    outputZip.updateFile('[Content_Types].xml',             Buffer.from(updatedCt,   'utf8'));
-
-    // Update document title in core.xml
-    const coreEntry = outputZip.getEntry('docProps/core.xml');
-    if (coreEntry) {
-      let coreXml = coreEntry.getData().toString('utf8');
-      const safeTitle = escapeXml(title || 'Presentation');
-      if (coreXml.includes('<dc:title>')) {
-        coreXml = coreXml.replace(/<dc:title>.*?<\/dc:title>/, `<dc:title>${safeTitle}</dc:title>`);
-      } else {
-        coreXml = coreXml.replace('</cp:coreProperties>', `<dc:title>${safeTitle}</dc:title></cp:coreProperties>`);
-      }
-      outputZip.updateFile('docProps/core.xml', Buffer.from(coreXml, 'utf8'));
-    }
-
-    // Save output file
-    const safeTitle  = (title || 'Presentation').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').substring(0, 40);
-    const filename   = `GYS-${safeTitle}-${Date.now()}.pptx`;
-    const filepath   = path.join(outputDir, filename);
-    outputZip.writeZip(filepath);
-
-    console.log(`✅ [PPT Template] "${filename}" — ${newSlideInfos.length} slides — template: "${path.basename(templatePath)}"`);
-
-    return {
-      pptxFile:     filepath,
-      pptxUrl:      `/api/files/${filename}`,
-      pptxName:     filename,
-      slideCount:   newSlideInfos.length,
-      usedTemplate: path.basename(templatePath),
-      usedFallback: false,
-    };
-  },
-};
-
-// ─────────────────────────────────────────────────────────────
-// Extract primary brand colors from template theme XML
-// These are used when injecting text so colors match the template
+// EXTRACT THEME COLORS
 // ─────────────────────────────────────────────────────────────
 
 function extractThemeColors(zip) {
@@ -764,13 +639,11 @@ function extractThemeColors(zip) {
 
     const themeXml = themeFiles[0].getData().toString('utf8');
 
-    // Extract accent colors
     const accents = [];
     for (const m of themeXml.matchAll(/<a:accent\d[^>]*>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/g)) {
       accents.push(m[1].toUpperCase());
     }
 
-    // Extract dk1 (dark text color)
     const dk1M = themeXml.match(/<a:dk1>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
 
     return {
@@ -783,5 +656,153 @@ function extractThemeColors(zip) {
     return defaults;
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// MAIN PUBLIC API
+// ─────────────────────────────────────────────────────────────
+
+const PptxTemplateService = {
+
+  isValidTemplate(templatePath) {
+    if (!templatePath) return false;
+    if (!fs.existsSync(templatePath)) return false;
+    if (!/\.pptx?$/i.test(templatePath)) return false;
+    try {
+      const zip = new AdmZip(templatePath);
+      return Boolean(zip.getEntry('ppt/presentation.xml'));
+    } catch {
+      return false;
+    }
+  },
+
+  async generate({ templatePath, pptData, title, outputDir, selectedImages = [] }) {
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+    let templateZip;
+    try {
+      templateZip = new AdmZip(templatePath);
+    } catch (err) {
+      throw new Error(`Cannot open template PPTX: ${err.message}`);
+    }
+
+    const analysis    = analyzeTemplate(templateZip);
+    const themeColors = extractThemeColors(templateZip);
+    console.log(`[PPT Template] Theme colors: primary=${themeColors.primaryColor} accent=${themeColors.accentColor}`);
+
+    const outputZip = new AdmZip(templatePath);
+
+    const toRemove = outputZip.getEntries()
+      .filter(e => /^ppt\/slides\/(slide\d+\.xml|_rels\/slide\d+\.xml\.rels)$/.test(e.entryName))
+      .map(e => e.entryName);
+    toRemove.forEach(name => { try { outputZip.deleteFile(name); } catch {} });
+    console.log(`[PPT Template] Removed ${toRemove.length} original slides, generating ${pptData.slides?.length || 0} new slides`);
+
+    const newSlideInfos = [];
+    const slides = pptData.slides || [];
+
+    const existingMedia = outputZip.getEntries()
+      .filter(e => e.entryName.startsWith('ppt/media/'))
+      .map(e => e.entryName);
+    let mediaCounter = existingMedia.length + 1;
+
+    const imageBySlide = {};
+    for (const img of selectedImages) {
+      if (img.slideIndex !== undefined && img.slideIndex !== null) {
+        imageBySlide[img.slideIndex] = img;
+      }
+    }
+
+    for (let i = 0; i < slides.length; i++) {
+      const sd       = slides[i];
+      const slideNum = i + 1;
+      const slideName    = `slide${slideNum}.xml`;
+      const slidePath    = `ppt/slides/${slideName}`;
+      const slideRelPath = `ppt/slides/_rels/${slideName}.rels`;
+
+      const templateSlide = pickTemplateSlide(analysis, sd.layout);
+
+      let layoutTarget = '../slideLayouts/slideLayout1.xml';
+      if (templateSlide.relPath) {
+        const tRelEntry = templateZip.getEntry(templateSlide.relPath);
+        if (tRelEntry) {
+          layoutTarget = getLayoutTarget(tRelEntry.getData().toString('utf8'));
+        }
+      }
+
+      let imageRId    = null;
+      let imageTarget = null;
+      const imgInfo   = imageBySlide[i];
+
+      if (imgInfo && imgInfo.path && fs.existsSync(imgInfo.path)) {
+        const imgBuffer  = fs.readFileSync(imgInfo.path);
+        const ext        = mimeToExt(imgInfo.mimeType || '');
+        const mediaName  = `img_injected_${mediaCounter}${ext}`;
+        const mediaPath  = `ppt/media/${mediaName}`;
+        outputZip.addFile(mediaPath, imgBuffer);
+        imageRId    = 'rId2';
+        imageTarget = `../media/${mediaName}`;
+        mediaCounter++;
+        console.log(`[PPT Template] Slide ${slideNum}: injecting image ${mediaName}`);
+      }
+
+      const clonedXml = injectIntoSlide(
+        templateSlide.xml,
+        sd,
+        { ...themeColors, imageRId }
+      );
+
+      const relXml = buildSlideRels(layoutTarget, imageTarget);
+
+      outputZip.addFile(slidePath,    Buffer.from(clonedXml, 'utf8'));
+      outputZip.addFile(slideRelPath, Buffer.from(relXml,    'utf8'));
+      newSlideInfos.push({ name: slideName });
+
+      console.log(`[PPT Template] Slide ${slideNum} (${sd.layout || 'CONTENT'}) ← template: ${path.basename(templateSlide.entryPath)}`);
+    }
+
+    if (newSlideInfos.length === 0) {
+      throw new Error('No slides were generated');
+    }
+
+    const presXml = outputZip.getEntry('ppt/presentation.xml')?.getData().toString('utf8') || '';
+    const relsXml = outputZip.getEntry('ppt/_rels/presentation.xml.rels')?.getData().toString('utf8') || '';
+    const ctXml   = outputZip.getEntry('[Content_Types].xml')?.getData().toString('utf8') || '';
+
+    const { updatedPres, updatedRels } = updatePresentationXml(presXml, relsXml, newSlideInfos);
+    const updatedCt = updateContentTypes(ctXml, newSlideInfos.map(s => s.name));
+
+    outputZip.updateFile('ppt/presentation.xml',            Buffer.from(updatedPres, 'utf8'));
+    outputZip.updateFile('ppt/_rels/presentation.xml.rels', Buffer.from(updatedRels, 'utf8'));
+    outputZip.updateFile('[Content_Types].xml',             Buffer.from(updatedCt,   'utf8'));
+
+    const coreEntry = outputZip.getEntry('docProps/core.xml');
+    if (coreEntry) {
+      let coreXml = coreEntry.getData().toString('utf8');
+      const safeTitle = escapeXml(title || 'Presentation');
+      if (coreXml.includes('<dc:title>')) {
+        coreXml = coreXml.replace(/<dc:title>.*?<\/dc:title>/, `<dc:title>${safeTitle}</dc:title>`);
+      } else {
+        coreXml = coreXml.replace('</cp:coreProperties>', `<dc:title>${safeTitle}</dc:title></cp:coreProperties>`);
+      }
+      outputZip.updateFile('docProps/core.xml', Buffer.from(coreXml, 'utf8'));
+    }
+
+    const safeTitle  = (title || 'Presentation').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').substring(0, 40);
+    const filename   = `GYS-${safeTitle}-${Date.now()}.pptx`;
+    const filepath   = path.join(outputDir, filename);
+    outputZip.writeZip(filepath);
+
+    console.log(`✅ [PPT Template] "${filename}" — ${newSlideInfos.length} slides — template: "${path.basename(templatePath)}"`);
+
+    return {
+      pptxFile:     filepath,
+      pptxUrl:      `/api/files/${filename}`,
+      pptxName:     filename,
+      slideCount:   newSlideInfos.length,
+      usedTemplate: path.basename(templatePath),
+      usedFallback: false,
+    };
+  },
+};
 
 export default PptxTemplateService;
