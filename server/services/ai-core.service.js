@@ -611,11 +611,11 @@ class AICoreService {
           );
         }
       } catch (e) { console.warn('[PPT] DB history error:', e.message); }
-
+ 
       // ── STEP 0.5: Knowledge base template + images ───────────
       const freshBot     = await Bot.findById(botId).lean();
       const knowledgeFiles = freshBot?.knowledgeFiles || [];
-
+ 
       let templatePath = null;
       if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
         const templateFile = knowledgeFiles.find(f =>
@@ -626,7 +626,7 @@ class AICoreService {
           templatePath = templateFile.path;
         }
       }
-
+ 
       if (!templatePath) {
         const pptxFile = knowledgeFiles.find(f =>
           f.originalName?.toLowerCase().endsWith('.pptx') &&
@@ -634,54 +634,54 @@ class AICoreService {
         );
         if (pptxFile) templatePath = pptxFile.path;
       }
-
+ 
       // Images from knowledge base files
       const kbExtractedImages = KnowledgeBaseService.getExtractedImages(
         knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
       );
-
+ 
       let knowledgeCtx = '';
       if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
         knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
           knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
         );
       }
-
-      // ── STEP 1: ✅ NEW — Read uploaded chat document ─────────
+ 
+      // ── STEP 1: Read uploaded chat document ─────────────────
       let uploadedDocContent = '';
       let uploadedDocImages  = [];
       let uploadedDocName    = '';
-
+ 
       if (attachedFile) {
         const physicalPath = attachedFile.serverPath || attachedFile.path;
         const originalName = attachedFile.originalname || attachedFile.filename || '';
         uploadedDocName    = originalName;
-
+ 
         if (physicalPath && fs.existsSync(physicalPath)) {
           console.log(`[PPT] Reading uploaded document: "${originalName}"`);
-
-          // Deep read of document text
+ 
           uploadedDocContent = await deepReadDocument(physicalPath, originalName, attachedFile.mimetype);
-
-          // Extract images from document
+ 
           const ext = path.extname(originalName).toLowerCase();
           if (['.docx', '.pptx', '.xlsx'].includes(ext)) {
             uploadedDocImages = await extractImagesFromUploadedFile(physicalPath, originalName);
-            console.log(`[PPT] Extracted ${uploadedDocImages.length} images from uploaded "${originalName}"`);
+            console.log(`[PPT] Extracted ${uploadedDocImages.length} raw images from "${originalName}"`);
           }
-
+ 
           console.log(`[PPT] Document content: ${uploadedDocContent.length} chars`);
         }
       }
 
-      // Combine all images: uploaded doc images + knowledge base images
-      const allExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
-      console.log(`[PPT] Total images available: ${allExtractedImages.length} (uploaded: ${uploadedDocImages.length}, KB: ${kbExtractedImages.length})`);
+      // ── Combine ALL raw images (before smart selection) ──────
+      // ✅ Smart selection happens AFTER slide content is generated
+      //    so AI can score images against actual slide titles & content
+      const rawExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
+      console.log(`[PPT] Raw images pool: ${rawExtractedImages.length} total (uploaded: ${uploadedDocImages.length}, KB: ${kbExtractedImages.length})`);
 
-      // ── STEP 2: Build content user message ───────────────────
+       // ── STEP 2: Build content user message ───────────────────
       const userRequest = message || '';
       const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
-
+ 
       let historicalContent = '';
       if (refersToHistory && dbHistory.length > 0) {
         historicalContent = dbHistory
@@ -690,13 +690,12 @@ class AICoreService {
           .join('\n\n---\n\n')
           .substring(0, 8000);
       }
-
+ 
       // ── STEP 3: CONTENT GENERATION ──────────────────────────
       console.log('[PPT] Step 1 — generating content...');
-
+ 
       let contentUserMsg = '';
-
-      // ✅ Priority 1: Uploaded document content
+ 
       if (uploadedDocContent) {
         contentUserMsg += `=== DOKUMEN YANG DI-UPLOAD: "${uploadedDocName}" ===\n`;
         contentUserMsg += uploadedDocContent + '\n\n';
@@ -704,73 +703,107 @@ class AICoreService {
         contentUserMsg += `Buat presentasi berdasarkan dokumen di atas. `;
         contentUserMsg += `Gunakan konten dokumen sebagai sumber utama — jangan mengarang data.\n`;
         contentUserMsg += `Struktur slide harus mencerminkan struktur dokumen aslinya.\n`;
-        if (uploadedDocImages.length > 0) {
-          contentUserMsg += `Dokumen memiliki ${uploadedDocImages.length} gambar — tandai slide yang relevan dengan [HAS_IMAGE].\n`;
+        if (rawExtractedImages.length > 0) {
+          contentUserMsg += `Dokumen memiliki ${rawExtractedImages.length} gambar tersedia — tandai slide yang relevan dengan [HAS_IMAGE] jika gambar akan berguna di slide tersebut.\n`;
         }
         contentUserMsg += `\n`;
       }
-
-      // Priority 2: Knowledge base context
+ 
       if (knowledgeCtx) {
         contentUserMsg += `KNOWLEDGE BASE CONTEXT:\n${knowledgeCtx.substring(0, 4000)}\n\n`;
       }
-
-      // Priority 3: Historical conversation
+ 
       if (historicalContent) {
         contentUserMsg += `RIWAYAT PERCAKAPAN:\n${historicalContent}\n\n`;
       }
-
+ 
       contentUserMsg += `PERMINTAAN USER: ${userRequest}\n\n`;
       contentUserMsg += `PENTING: Match bahasa user (Indonesia → Bahasa Indonesia). Auto-detect best layout per slide.`;
-
+ 
       const contentResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
         messages:       [],
         userContent:    contentUserMsg,
       });
-
+ 
       const slideContent = contentResult.text;
       if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
-
+ 
       const titleMatch = slideContent.match(/^#\s+(.+)/m);
       const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
-
-      // ✅ Log token usage for content generation
+ 
       const contentUsage = normalizeUsage(contentResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
       if (contentUsage) {
         console.log(`[PPT] Content tokens — prompt: ${contentUsage.prompt_tokens}, completion: ${contentUsage.completion_tokens}, total: ${contentUsage.total_tokens}`);
       }
-
+ 
       console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
-
+ 
       // ── STEP 4: JSON CONVERSION ──────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
-
+ 
       const jsonResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
         messages:       [],
         userContent:    `Convert this presentation to JSON:\n\n${slideContent}`,
       });
-
+ 
       let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
       const jsonStart = rawJson.indexOf('{');
       const jsonEnd   = rawJson.lastIndexOf('}');
       if (jsonStart !== -1 && jsonEnd !== -1) rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
-
+ 
       let pptData;
       try {
         pptData = JSON.parse(rawJson);
       } catch (parseErr) {
         throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
       }
-
+ 
       if (!pptData?.slides?.length) throw new Error('JSON tidak memiliki slides.');
-
+ 
       const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
-
+ 
+      // ── STEP 4.5: ✅ SMART IMAGE SELECTION ──────────────────
+      // Now that we have slide content & titles, AI can intelligently
+      // pick which images are actually relevant for this presentation.
+      let finalExtractedImages = [];
+ 
+      if (rawExtractedImages.length > 0) {
+        console.log(`[PPT] Step 2.5 — smart image selection (${rawExtractedImages.length} candidates)...`);
+        try {
+          // Lazy import to avoid circular dependency
+          const { selectRelevantImages } = await import('./smart-image-selector.service.js');
+ 
+          finalExtractedImages = await selectRelevantImages(
+            rawExtractedImages,
+            userRequest,
+            slideContent,     // AI uses actual slide titles to judge relevance
+            bot.aiProvider,   // Use same AI provider as the bot
+            6                 // max 6 images in a PPT
+          );
+ 
+          console.log(`[PPT] ✅ Smart selection: ${rawExtractedImages.length} raw → ${finalExtractedImages.length} selected`);
+ 
+          if (finalExtractedImages.length > 0) {
+            finalExtractedImages.forEach((img, i) =>
+              console.log(`[PPT]   [${i+1}] ${img.filename || img.caption || 'unnamed'} (${img.fileSize ? Math.round(img.fileSize/1024)+'KB' : '?'})`)
+            );
+          } else {
+            console.log(`[PPT]   → No images selected as relevant. Presentation will be text-only.`);
+          }
+ 
+        } catch (selErr) {
+          // Non-fatal: if smart selection fails, use simple size filter only
+          console.warn('[PPT] Smart image selection failed, using size-filtered fallback:', selErr.message);
+          const { filterValidImages } = await import('./smart-image-selector.service.js').catch(() => ({ filterValidImages: imgs => imgs }));
+          finalExtractedImages = filterValidImages ? filterValidImages(rawExtractedImages) : rawExtractedImages;
+        }
+      }
+ 
       // ── STEP 5: RENDER PPTX ──────────────────────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generate({
@@ -780,79 +813,86 @@ class AICoreService {
         outputDir,
         styleDesc:       templatePath ? 'Custom Template' : 'GYS Gamma Style',
         templatePath,
-        extractedImages: allExtractedImages,
+        extractedImages: finalExtractedImages,  // ✅ Only relevant images
       });
-
+ 
       // ── STEP 6: BUILD RESPONSE ───────────────────────────────
       const reqLower = userRequest.toLowerCase();
       const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
       const indWords = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
       const isEnglish = engWords.length > indWords.length;
-
+ 
       const layoutIcons = {
         TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
         TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
         TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯', IMAGE_SLIDE: '🖼️',
       };
-
+ 
       const layoutSummary = pptData.slides
         .map((s, i) => {
           const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
           return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
         })
         .join('\n');
-
+ 
       const templateNote = result.usedTemplate
         ? '\n🎨 **Template:** Custom template applied'
         : '';
-      const imageNote = allExtractedImages.length > 0
-        ? `\n🖼️ **Gambar:** ${allExtractedImages.length} gambar diintegrasikan ke dalam slide`
-        : '';
+ 
+      // ✅ Updated image note — shows selection stats
+      let imageNote = '';
+      if (finalExtractedImages.length > 0) {
+        imageNote = rawExtractedImages.length > finalExtractedImages.length
+          ? `\n🖼️ **Gambar:** ${finalExtractedImages.length} gambar dipilih (dari ${rawExtractedImages.length} gambar di dokumen)`
+          : `\n🖼️ **Gambar:** ${finalExtractedImages.length} gambar diintegrasikan ke dalam slide`;
+      } else if (rawExtractedImages.length > 0) {
+        imageNote = `\n🖼️ **Gambar:** Tidak ada gambar yang relevan dipilih (${rawExtractedImages.length} gambar di dokumen tidak relevan dengan topik)`;
+      }
+ 
       const docNote = uploadedDocName
         ? `\n📄 **Sumber:** Presentasi dibuat dari "${uploadedDocName}"`
         : '';
-
-      // ✅ Total token usage across both AI calls
+ 
       const jsonUsage = normalizeUsage(jsonResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
       const totalTokens = (contentUsage?.total_tokens || 0) + (jsonUsage?.total_tokens || 0);
       const tokenNote = totalTokens > 0
         ? `\n📊 **Token digunakan:** ${totalTokens.toLocaleString()} total`
         : '';
-
+ 
       const responseMarkdown = isEnglish
         ? `✅ **GYS Presentation successfully generated!**
-
+ 
 📊 **Title:** ${title}
 📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
-
+ 
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
-
+ 
 **Auto-detected slide layouts:**
 ${layoutSummary}`
         : `✅ **Presentasi GYS berhasil dibuat!**
-
+ 
 📊 **Judul:** ${title}
 📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
-
+ 
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
-
+ 
 **Layout yang dipilih per slide:**
 ${layoutSummary}`;
-
+ 
       await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
       }).save();
       await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
-
+ 
       return {
         response: responseMarkdown, threadId,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
       };
-
+ 
     } catch (error) {
       console.error('❌ [PPT Command]', error);
       throw new Error(`Gagal membuat presentasi: ${error.message}`);

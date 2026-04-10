@@ -104,6 +104,7 @@ const FILE_TYPE_ICON = { pdf: '📕', docx: '📘', doc: '📘', xlsx: '📗', x
 const getFileIcon = (name = '') => FILE_TYPE_ICON[name.split('.').pop()?.toLowerCase()] || '📄';
 const fmtSize = (b) => !b ? '0 B' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
 
+// ── PATCH SECTION 4: apiVersion added to initialBotState ─────
 const initialBotState = {
   name: '', description: '', persona: '', tone: 'professional',
   systemPrompt: 'You are a professional AI assistant.',
@@ -111,7 +112,15 @@ const initialBotState = {
   starterQuestions: [],
   knowledgeMode: 'relevant',
   pptTemplateFileId: null,
-  aiProvider: { provider: 'openai', model: 'gpt-4o', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 8000 },
+  aiProvider: {
+    provider: 'openai',
+    model: 'gpt-4o',
+    apiKey: '',
+    endpoint: '',
+    apiVersion: '',     // ← PATCH: Azure API version
+    temperature: 0.1,
+    maxTokens: 8000
+  },
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
   smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '' },
   kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
@@ -498,6 +507,7 @@ function AdminDashboard({ user, handleLogout }) {
     setBotModalTab('basic'); setTestAIState(null); setShowBotModal(true);
   };
 
+  // ── PATCH SECTION 5: handleEditBot maps apiVersion ───────────
   const handleEditBot = (bot) => {
     setEditingBot(bot);
 
@@ -535,6 +545,7 @@ function AdminDashboard({ user, handleLogout }) {
         model:       bot.aiProvider?.model       || 'gpt-4o',
         apiKey:      bot.aiProvider?.apiKey      || '',
         endpoint:    bot.aiProvider?.endpoint    || '',
+        apiVersion:  bot.aiProvider?.apiVersion  || '',   // ← PATCH: map apiVersion
         temperature: bot.aiProvider?.temperature ?? 0.1,
         maxTokens:   bot.aiProvider?.maxTokens   ?? 2000,
       },
@@ -689,6 +700,10 @@ function AdminDashboard({ user, handleLogout }) {
   const filteredBots    = bots.filter(b => b.name.toLowerCase().includes(botSearch.toLowerCase()));
   const activeCapCount  = Object.values(botForm.capabilities || {}).filter(Boolean).length;
   const isReasoningOrGpt5 = /^(o\d|gpt-5)/.test(botForm.aiProvider?.model || '');
+
+  // ── PATCH SECTION 3: isAzureEndpointDetected computed var ────
+  const isAzureEndpointDetected = currentProvider === 'custom' &&
+    (botForm.aiProvider?.endpoint || '').includes('.openai.azure.com');
 
   // ─────────────────────────────────────────────────────────────
   // RENDER
@@ -1292,12 +1307,16 @@ function AdminDashboard({ user, handleLogout }) {
                 </div>
               )}
 
-              {/* AI & MODEL TAB */}
+              {/* ════════════════════════════════════════════════════
+                  AI & MODEL TAB  — PATCH SECTIONS 1, 2, 3 applied
+                  ════════════════════════════════════════════════════ */}
               {botModalTab === 'ai' && (
                 <div className="space-y-5">
                   <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
                     💡 Select an AI provider and model. The API Key can be set per-bot or left blank to use the key from the server <code className="bg-blue-100 px-1 rounded">.env</code>.
                   </div>
+
+                  {/* Provider selector */}
                   <div>
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">AI Provider</label>
                     <div className="grid grid-cols-2 gap-2">
@@ -1311,6 +1330,8 @@ function AdminDashboard({ user, handleLogout }) {
                       ))}
                     </div>
                   </div>
+
+                  {/* Model list (non-custom providers) */}
                   {availableModels.length > 0 && (
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Model</label>
@@ -1340,12 +1361,37 @@ function AdminDashboard({ user, handleLogout }) {
                       </div>
                     </div>
                   )}
+
+                  {/* ── PATCH SECTION 1: Model ID / Deployment Name (custom provider) ── */}
                   {currentProvider === 'custom' && (
                     <div>
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Model ID</label>
-                      <input className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none" placeholder="e.g. llama3:8b" value={botForm.aiProvider?.model || ''} onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, model: e.target.value } }))} />
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">
+                        Model ID / Deployment Name
+                      </label>
+                      <input
+                        autoComplete="off"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
+                        placeholder={
+                          isAzureEndpointDetected
+                            ? "Azure deployment name, e.g. gpt-4.1-agent"
+                            : "e.g. llama3:8b, mistral, gpt-4o"
+                        }
+                        value={botForm.aiProvider?.model || ''}
+                        onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, model: e.target.value } }))}
+                      />
+                      {isAzureEndpointDetected ? (
+                        <p className="text-[10px] text-blue-600 mt-1">
+                          🔵 Azure detected — masukkan <strong>Deployment Name</strong> yang sudah kamu buat di Azure OpenAI Studio
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Sesuaikan dengan model yang tersedia di endpoint kamu
+                        </p>
+                      )}
                     </div>
                   )}
+
+                  {/* API Key */}
                   <div>
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">API Key (override .env — optional)</label>
                     <div className="relative">
@@ -1364,12 +1410,70 @@ function AdminDashboard({ user, handleLogout }) {
                         : <span className="text-emerald-600 font-semibold">✅ Using OPENAI_API_KEY from server .env</span>}
                     </p>
                   </div>
+
+                  {/* ── PATCH SECTION 2: Endpoint URL with Azure detection banner ── */}
                   {(currentProvider === 'custom' || currentProvider === 'openai') && (
-                    <div>
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">{currentProvider === 'custom' ? 'Endpoint URL *' : 'Custom Base URL (Azure / proxy — optional)'}</label>
-                      <input autoComplete="off" className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none" placeholder="https://..." value={botForm.aiProvider?.endpoint || ''} onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, endpoint: e.target.value } }))} />
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">
+                          {currentProvider === 'custom' ? 'Endpoint URL *' : 'Custom Base URL (Azure / proxy — optional)'}
+                        </label>
+                        <input
+                          autoComplete="off"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none"
+                          placeholder={
+                            currentProvider === 'custom'
+                              ? "https://your-resource.openai.azure.com/ atau https://localhost:11434/v1"
+                              : "https://..."
+                          }
+                          value={botForm.aiProvider?.endpoint || ''}
+                          onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, endpoint: e.target.value } }))}
+                        />
+
+                        {/* Azure Detection Banner */}
+                        {isAzureEndpointDetected && (
+                          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-[10px] text-blue-700 space-y-1">
+                            <p className="font-bold">🔵 Azure OpenAI Terdeteksi</p>
+                            <p>✅ Endpoint akan diarahkan ke: <code className="bg-blue-100 px-1 rounded">/openai/deployments/{'{deployment}'}/chat/completions</code></p>
+                            <p>✅ Header <code className="bg-blue-100 px-1 rounded">api-key</code> akan digunakan (bukan Bearer token)</p>
+                            <p>📝 Isi <strong>Model ID</strong> dengan <strong>Deployment Name</strong> kamu di Azure OpenAI Studio</p>
+                          </div>
+                        )}
+
+                        {/* Generic custom endpoint hints */}
+                        {currentProvider === 'custom' && !isAzureEndpointDetected && botForm.aiProvider?.endpoint && (
+                          <div className="mt-2 p-3 bg-gray-50 border border-gray-100 rounded-xl text-[10px] text-gray-500 space-y-0.5">
+                            <p className="font-bold text-gray-600">💡 Format endpoint:</p>
+                            <p>• <strong>Azure:</strong> <code>https://resource.openai.azure.com/</code></p>
+                            <p>• <strong>Ollama:</strong> <code>http://localhost:11434/v1</code></p>
+                            <p>• <strong>LM Studio:</strong> <code>http://localhost:1234/v1</code></p>
+                            <p>• <strong>AWS/Custom:</strong> <code>https://your-gateway.amazonaws.com/</code></p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* API Version — only shown when Azure is detected */}
+                      {currentProvider === 'custom' && isAzureEndpointDetected && (
+                        <div>
+                          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">
+                            API Version (Azure)
+                          </label>
+                          <input
+                            autoComplete="off"
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
+                            placeholder="2024-12-01-preview"
+                            value={botForm.aiProvider?.apiVersion || ''}
+                            onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiVersion: e.target.value } }))}
+                          />
+                          <p className="text-[10px] text-gray-400 mt-1">
+                            Kosongkan untuk pakai default (<code>2024-12-01-preview</code>). Cek Azure OpenAI docs untuk versi terbaru.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* Temperature & Max Tokens */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5">
                       <label className="text-xs font-semibold text-gray-500 block mb-2">Temperature: <span className="text-primary-dark font-bold">{botForm.aiProvider?.temperature ?? 0.1}</span></label>
@@ -1385,6 +1489,8 @@ function AdminDashboard({ user, handleLogout }) {
                       )}
                     </div>
                   </div>
+
+                  {/* Test Connection */}
                   <div className="pt-3 border-t border-gray-100">
                     <button type="button" onClick={handleTestAI} disabled={testAIState === 'testing'} className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-colors flex items-center gap-2">
                       {testAIState === 'testing' ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Testing...</> : '🔌 Test Connection'}
@@ -1611,7 +1717,6 @@ function AdminDashboard({ user, handleLogout }) {
                     const targets = waha.targets || [];
                     const schedules = waha.schedules || [];
 
-                    // ✅ FIX: Define newTarget and newSchedule inline
                     const newTarget = () => ({ _id: Date.now().toString(), chatId: '', label: '', type: 'private', tagOnly: false, active: true });
                     const newSchedule = () => ({ _id: Date.now().toString(), label: '', prompt: '', active: true, scheduleType: 'daily', time: '08:00', times: ['08:00'], intervalMinutes: 60, intervalStart: '08:00', intervalEnd: '17:00', targetIds: [] });
 
