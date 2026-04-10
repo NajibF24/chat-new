@@ -184,7 +184,7 @@ class AIProviderService {
     const provider = providerConfig?.provider || 'openai';
     const model    = providerConfig?.model    || 'gpt-4o';
     const temp     = providerConfig?.temperature ?? 0.1;
-    const maxTok   = providerConfig?.maxTokens   ?? 2000;
+    const maxTok   = providerConfig?.maxTokens   ?? 8000;
     const apiKey   = this.getApiKey(providerConfig);
     const endpoint = providerConfig?.endpoint?.trim() || '';
 
@@ -382,7 +382,7 @@ class AIProviderService {
           'anthropic-version': '2023-06-01',
           'content-type':      'application/json',
         },
-        timeout: 180000,
+        timeout: 300000,
       }
     );
 
@@ -412,7 +412,7 @@ class AIProviderService {
         contents,
         generationConfig: { temperature: temp, maxOutputTokens: maxTok },
       },
-      { timeout: 180000 }
+      { timeout: 300000 }
     );
 
     const text = response.data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';

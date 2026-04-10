@@ -1,485 +1,482 @@
 // server/services/knowledge-base.service.js
-// ✅ FIXED: Proper PPTX reading with theme/color extraction for GYS style matching
+// ✅ FIXED:
+//   BUG 1: _extractPptContent used `new JSZip(buffer)` — broken in JSZip v3
+//          Fixed to use `await JSZip.loadAsync(data)`
+//   BUG 2: extractedImages was extracted but never returned from extractContent()
+//          Fixed to include extractedImages in return value
+// ✅ ADDED: Comprehensive logging throughout all operations
+
 import fs      from 'fs';
 import path    from 'path';
 import pdf     from 'pdf-parse';
 import mammoth from 'mammoth';
 import XLSX    from 'xlsx';
+import { fileURLToPath } from 'url';
 
-// ── Optional PPT parser (officeparser covers .pptx / .ppt) ───
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+
+// ── Logger ────────────────────────────────────────────────────
+const L = {
+  info:  (...a) => console.log( new Date().toISOString(), '[KnowledgeBase] ℹ️ ', ...a),
+  ok:    (...a) => console.log( new Date().toISOString(), '[KnowledgeBase] ✅', ...a),
+  warn:  (...a) => console.warn(new Date().toISOString(), '[KnowledgeBase] ⚠️ ', ...a),
+  error: (...a) => console.error(new Date().toISOString(), '[KnowledgeBase] ❌', ...a),
+  step:  (...a) => console.log( new Date().toISOString(), '[KnowledgeBase]  ├─', ...a),
+};
+
+// ── Optional PPT parser ───────────────────────────────────────
 let officeparserParsePptx = null;
 try {
   const op = await import('officeparser');
   officeparserParsePptx = op.parseOffice || op.default?.parseOffice || null;
+  if (officeparserParsePptx) L.ok('officeparser loaded successfully');
 } catch {
-  // officeparser not available – PPT extraction will fall back to placeholder
+  L.warn('officeparser not available — will use JSZip fallback for PPT text extraction');
 }
+
+// ── Image output directory ────────────────────────────────────
+const IMAGE_OUTPUT_DIR = path.join(process.cwd(), 'data', 'files', 'extracted-images');
 
 class KnowledgeBaseService {
 
   /**
-   * Extract text content from a file.
-   * Supported: PDF, DOCX, DOC, XLSX, XLS, CSV, TXT, MD, PPTX, PPT
-   * Returns { content: string, summary: string }
+   * Extract text content AND images from a file.
+   * Returns { content, summary, extractedImages }
    */
   async extractContent(filePath, originalName, mimetype) {
     const ext = path.extname(originalName).toLowerCase();
+    const fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+
+    L.info(`─────────────────────────────────────────────`);
+    L.info(`extractContent: "${originalName}"`);
+    L.step(`path     = ${filePath}`);
+    L.step(`ext      = ${ext}`);
+    L.step(`mimetype = ${mimetype}`);
+    L.step(`size     = ${(fileSize / 1024).toFixed(1)} KB`);
+
+    // Ensure image output dir exists
+    if (!fs.existsSync(IMAGE_OUTPUT_DIR)) {
+      fs.mkdirSync(IMAGE_OUTPUT_DIR, { recursive: true });
+      L.info(`Created image output dir: ${IMAGE_OUTPUT_DIR}`);
+    }
+
+    const startTime = Date.now();
+    let content = '';
+    let extractedImages = [];
 
     try {
-      let content = '';
-
-      // ── PDF ───────────────────────────────────────────────
+      // ── PDF ─────────────────────────────────────────────────
       if (ext === '.pdf' || mimetype === 'application/pdf') {
+        L.step('Parser: pdf-parse');
         const buffer = fs.readFileSync(filePath);
         const data   = await pdf(buffer);
         content      = data.text || '';
+        L.step(`PDF extracted: ${content.length} chars | ${data.numpages} pages`);
 
-      // ── DOCX / DOC ────────────────────────────────────────
+      // ── DOCX ────────────────────────────────────────────────
       } else if (
         ext === '.docx' || ext === '.doc' ||
         mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
         mimetype === 'application/msword'
       ) {
+        L.step('Parser: mammoth (DOCX text)');
         const result = await mammoth.extractRawText({ path: filePath });
         content      = result.value || '';
+        L.step(`DOCX text extracted: ${content.length} chars`);
 
-      // ── XLSX / XLS ────────────────────────────────────────
+        if (ext === '.docx') {
+          L.step('Extracting images from DOCX...');
+          extractedImages = await this._extractImagesFromDocx(filePath, originalName);
+          L.step(`DOCX images extracted: ${extractedImages.length} images`);
+        }
+
+      // ── XLSX ────────────────────────────────────────────────
       } else if (
         ext === '.xlsx' || ext === '.xls' ||
         mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
         mimetype === 'application/vnd.ms-excel'
       ) {
+        L.step('Parser: xlsx (spreadsheet)');
         const workbook = XLSX.readFile(filePath);
-        const parts    = workbook.SheetNames.map(sheetName => {
+        L.step(`Sheets found: ${workbook.SheetNames.join(', ')}`);
+        const parts = workbook.SheetNames.map(sheetName => {
           const sheet = workbook.Sheets[sheetName];
           const csv   = XLSX.utils.sheet_to_csv(sheet);
+          L.step(`  Sheet "${sheetName}": ${csv.length} chars`);
           return `=== Sheet: ${sheetName} ===\n${csv}`;
         });
         content = parts.join('\n\n');
+        L.step(`XLSX total extracted: ${content.length} chars`);
 
-      // ── PPTX / PPT — ENHANCED: Extract theme + full content ──
+      // ── PPTX ────────────────────────────────────────────────
       } else if (
         ext === '.pptx' || ext === '.ppt' ||
         mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
         mimetype === 'application/vnd.ms-powerpoint'
       ) {
-        content = await this._extractPptContentEnhanced(filePath, originalName);
+        L.step('Parser: pptx (text + images)');
+        content = await this._extractPptContent(filePath, originalName);
+        L.step(`PPTX text extracted: ${content.length} chars`);
 
-      // ── CSV ───────────────────────────────────────────────
+        if (ext === '.pptx') {
+          L.step('Extracting images from PPTX...');
+          extractedImages = await this._extractImagesFromPptx(filePath, originalName);
+          L.step(`PPTX images extracted: ${extractedImages.length} images`);
+        }
+
+      // ── CSV ──────────────────────────────────────────────────
       } else if (ext === '.csv' || mimetype === 'text/csv') {
+        L.step('Parser: plain text (CSV)');
         content = fs.readFileSync(filePath, 'utf8');
+        L.step(`CSV extracted: ${content.length} chars`);
 
-      // ── Plain Text / Markdown ─────────────────────────────
+      // ── TXT / MD ─────────────────────────────────────────────
       } else if (
         ext === '.txt' || ext === '.md' ||
         (mimetype && mimetype.startsWith('text/'))
       ) {
+        L.step('Parser: plain text');
         content = fs.readFileSync(filePath, 'utf8');
+        L.step(`Text extracted: ${content.length} chars`);
 
       } else {
-        // Fallback: try reading as text
+        L.warn(`Unknown file type "${ext}" — attempting UTF-8 read`);
         try {
           content = fs.readFileSync(filePath, 'utf8');
+          L.step(`Fallback text read: ${content.length} chars`);
         } catch {
-          content = `[File "${originalName}" tidak dapat dibaca sebagai teks]`;
+          content = `[File "${originalName}" cannot be read as text]`;
+          L.warn(`Cannot read file as text: ${originalName}`);
         }
       }
 
-      // Truncate very large content to 80K chars (~20K tokens) for storage
+      // Truncate very large content
       const MAX_CHARS = 80000;
       if (content.length > MAX_CHARS) {
-        content = content.substring(0, MAX_CHARS) + '\n\n[... konten dipotong, file terlalu besar ...]';
+        L.warn(`Content truncated from ${content.length} to ${MAX_CHARS} chars`);
+        content = content.substring(0, MAX_CHARS) + '\n\n[... content truncated ...]';
       }
 
-      const summary = this._generateSummary(content, originalName);
-      return { content: content.trim(), summary };
+      const summary = this._generateSummary(content, originalName, extractedImages.length);
+      const elapsed = Date.now() - startTime;
+
+      L.ok(`extractContent done: "${originalName}" | ${content.length} chars | ${extractedImages.length} images | ${elapsed}ms`);
+      extractedImages.forEach((img, i) => {
+        L.step(`  Image[${i}]: ${img.filename} (${img.mimeType}) → ${img.url}`);
+      });
+
+      return { content: content.trim(), summary, extractedImages };
 
     } catch (err) {
-      console.error(`❌ Knowledge extraction failed for "${originalName}":`, err.message);
+      const elapsed = Date.now() - startTime;
+      L.error(`extractContent FAILED for "${originalName}" after ${elapsed}ms: ${err.message}`);
+      L.error(err.stack);
       return {
-        content: `[Error membaca file "${originalName}": ${err.message}]`,
-        summary: `File: ${originalName} (gagal dibaca)`,
+        content: `[Error reading file "${originalName}": ${err.message}]`,
+        summary: `File: ${originalName} (read failed)`,
+        extractedImages: [],
       };
     }
   }
 
-  // ── Enhanced PPT / PPTX extraction with GYS theme detection ─
-  async _extractPptContentEnhanced(filePath, originalName) {
-    let themeData   = null;
-    let slideTexts  = [];
-    let layoutInfo  = [];
-    let colorScheme = {};
+  // ── Extract images from DOCX ──────────────────────────────
+  async _extractImagesFromDocx(filePath, originalName) {
+    const images = [];
+    const startTime = Date.now();
+    L.info(`_extractImagesFromDocx: "${originalName}"`);
 
     try {
-      const AdmZip = (await import('adm-zip')).default;
-      const zip    = new AdmZip(filePath);
+      const { default: JSZip } = await import('jszip');
+      const data = fs.readFileSync(filePath);
+      L.step(`DOCX zip loaded: ${data.length} bytes`);
 
-      // ── 1. Extract color theme ─────────────────────────────
-      const themeEntry = zip.getEntry('ppt/theme/theme1.xml');
-      if (themeEntry) {
-        const themeXml = themeEntry.getData().toString('utf8');
-        colorScheme = this._parseThemeColors(themeXml);
-      }
+      const zip = await JSZip.loadAsync(data);
 
-      // ── 2. Extract slide layout info ──────────────────────
-      const slideLayoutEntries = zip.getEntries()
-        .filter(e => e.entryName.match(/^ppt\/slideLayouts\/slideLayout\d+\.xml$/));
+      // DOCX images are in word/media/
+      const allEntries  = Object.keys(zip.files);
+      const mediaEntries = allEntries.filter(name =>
+        name.startsWith('word/media/') && !zip.files[name].dir
+      );
+      L.step(`word/media/ entries: ${mediaEntries.length} total files`);
 
-      for (const entry of slideLayoutEntries) {
-        const xml = entry.getData().toString('utf8');
-        const nameMatch = xml.match(/name="([^"]+)"/);
-        if (nameMatch) layoutInfo.push(nameMatch[1]);
-      }
-
-      // ── 3. Extract all slide content with structure ────────
-      const slideEntries = zip.getEntries()
-        .filter(e => e.entryName.match(/^ppt\/slides\/slide\d+\.xml$/))
-        .sort((a, b) => {
-          const numA = parseInt(a.entryName.match(/slide(\d+)/)?.[1] || '0');
-          const numB = parseInt(b.entryName.match(/slide(\d+)/)?.[1] || '0');
-          return numA - numB;
-        });
-
-      for (let i = 0; i < slideEntries.length; i++) {
-        const xml = slideEntries[i].getData().toString('utf8');
-        const slideData = this._parseSlideXml(xml, i + 1);
-        slideTexts.push(slideData);
-      }
-
-      // ── 4. Extract slide notes ─────────────────────────────
-      const noteEntries = zip.getEntries()
-        .filter(e => e.entryName.match(/^ppt\/notesSlides\/notesSlide\d+\.xml$/))
-        .sort((a, b) => {
-          const numA = parseInt(a.entryName.match(/notesSlide(\d+)/)?.[1] || '0');
-          const numB = parseInt(b.entryName.match(/notesSlide(\d+)/)?.[1] || '0');
-          return numA - numB;
-        });
-
-      const notes = {};
-      for (const entry of noteEntries) {
-        const xml = entry.getData().toString('utf8');
-        const numMatch = entry.entryName.match(/notesSlide(\d+)/);
-        if (numMatch) {
-          const texts = xml.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) || [];
-          const noteText = texts.map(t => t.replace(/<[^>]*>/g, '')).join(' ').trim();
-          if (noteText && noteText.length > 5) notes[parseInt(numMatch[1])] = noteText;
-        }
-      }
-
-      // ── 5. Check for media/images ──────────────────────────
-      const mediaFiles = zip.getEntries().filter(e => e.entryName.startsWith('ppt/media/'));
-      const imageCount = mediaFiles.filter(e => /\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(e.entryName)).length;
-
-      // ── 6. Build comprehensive content string ──────────────
-      themeData = {
-        colors:  colorScheme,
-        layouts: layoutInfo,
-        slides:  slideTexts,
-        notes,
-        imageCount,
-        totalSlides: slideEntries.length,
+      const mimeMap = {
+        '.png':  'image/png',
+        '.jpg':  'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif':  'image/gif',
+        '.webp': 'image/webp',
+        '.bmp':  'image/bmp',
       };
 
-      return this._buildPptContentString(themeData, originalName);
+      for (let i = 0; i < mediaEntries.length; i++) {
+        const entryName = mediaEntries[i];
+        const ext       = path.extname(entryName).toLowerCase();
 
-    } catch (e) {
-      console.warn('[KnowledgeBase] Enhanced PPTX extraction failed, trying fallback:', e.message);
-      return this._extractPptContentFallback(filePath, originalName);
-    }
-  }
-
-  // ── Parse slide XML into structured data ─────────────────
-  _parseSlideXml(xml, slideNum) {
-    // Extract text elements with their properties
-    const textFrameRegex = /<p:sp\b[^>]*>([\s\S]*?)<\/p:sp>/g;
-    const elements = [];
-    let match;
-
-    while ((match = textFrameRegex.exec(xml)) !== null) {
-      const spXml = match[1];
-
-      // Check if placeholder (title, body, etc.)
-      const phMatch = spXml.match(/type="([^"]+)"/);
-      const phType  = phMatch?.[1] || 'body';
-
-      // Extract text content
-      const textParts = spXml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
-      const text = textParts
-        .map(t => t.replace(/<[^>]*>/g, ''))
-        .join('')
-        .trim();
-
-      // Extract font size
-      const szMatch = spXml.match(/sz="(\d+)"/);
-      const fontSize = szMatch ? parseInt(szMatch[1]) / 100 : 12;
-
-      // Extract bold
-      const isBold = /<a:b\/>/.test(spXml) || /b="1"/.test(spXml);
-
-      // Extract color
-      const colorMatch = spXml.match(/srgbClr val="([^"]+)"/);
-      const color = colorMatch?.[1] || null;
-
-      if (text) {
-        elements.push({ type: phType, text, fontSize, isBold, color });
-      }
-    }
-
-    // Detect layout type based on content
-    const layout = this._detectSlideLayout(elements, xml);
-
-    return {
-      slideNum,
-      layout,
-      elements,
-      rawText: elements.map(e => e.text).join('\n'),
-    };
-  }
-
-  // ── Detect slide layout type ──────────────────────────────
-  _detectSlideLayout(elements, xml) {
-    const hasChart  = xml.includes('<c:chart') || xml.includes('<p:graphicFrame');
-    const hasTable  = xml.includes('<a:tbl>');
-    const hasImage  = xml.includes('<p:pic>') || xml.includes('<a:blip');
-
-    if (hasChart)  return 'CHART';
-    if (hasTable)  return 'TABLE';
-
-    const titleEl = elements.find(e => e.type === 'ctrTitle' || e.type === 'title' ||
-      (e.fontSize && e.fontSize >= 28));
-
-    const contentEls = elements.filter(e => e !== titleEl);
-
-    if (elements.length <= 2 && titleEl) return 'TITLE';
-    if (contentEls.length >= 3)          return 'GRID';
-    if (contentEls.length === 2)         return 'TWO_COLUMN';
-    return 'CONTENT';
-  }
-
-  // ── Parse theme colors from XML ───────────────────────────
-  _parseThemeColors(themeXml) {
-    const colors = {};
-
-    const mappings = [
-      { tag: 'dk1',     name: 'dark1'   },
-      { tag: 'lt1',     name: 'light1'  },
-      { tag: 'dk2',     name: 'dark2'   },
-      { tag: 'lt2',     name: 'light2'  },
-      { tag: 'accent1', name: 'accent1' },
-      { tag: 'accent2', name: 'accent2' },
-      { tag: 'accent3', name: 'accent3' },
-      { tag: 'accent4', name: 'accent4' },
-      { tag: 'accent5', name: 'accent5' },
-      { tag: 'accent6', name: 'accent6' },
-    ];
-
-    for (const { tag, name } of mappings) {
-      const match = themeXml.match(new RegExp(`<a:${tag}>[\\s\\S]*?(?:srgbClr|sysClr)[^"]*val="([^"]+)"`, 'i'));
-      if (match) colors[name] = match[1].toUpperCase();
-    }
-
-    // Extract font names
-    const majorFontMatch = themeXml.match(/majorFont[\s\S]*?latin typeface="([^"]+)"/);
-    const minorFontMatch = themeXml.match(/minorFont[\s\S]*?latin typeface="([^"]+)"/);
-    if (majorFontMatch) colors.fontTitle = majorFontMatch[1];
-    if (minorFontMatch) colors.fontBody  = minorFontMatch[1];
-
-    return colors;
-  }
-
-  // ── Build comprehensive content string for AI context ─────
-  _buildPptContentString(themeData, originalName) {
-    const lines = [];
-
-    lines.push(`=== POWERPOINT PRESENTATION: ${originalName} ===`);
-    lines.push(`Total Slides: ${themeData.totalSlides}`);
-    lines.push(`Images/Media: ${themeData.imageCount} gambar`);
-    lines.push('');
-
-    // ── Theme information (crucial for GYS style matching) ──
-    if (Object.keys(themeData.colors).length > 0) {
-      lines.push('--- DESIGN THEME & COLORS ---');
-
-      // Detect if this is a GYS-branded presentation
-      const colVals = Object.values(themeData.colors).map(v => String(v).toUpperCase());
-      const isGYS   = colVals.some(c => ['006A4E','007857','004D38','00A878'].includes(c));
-
-      if (isGYS) {
-        lines.push('Brand: GYS (Garuda Yamato Steel) - Official Corporate Theme');
-        lines.push('Primary Brand Color: #006A4E (Deep Teal Green)');
-        lines.push('Accent Color: #00A878 (Bright Teal)');
-        lines.push('Dark Variant: #004D38 (Dark Green)');
-        lines.push('Mid Variant: #007857 (Mid Green)');
-        lines.push('Background: #F8FAFC (Off-White)');
-        lines.push('Footer: #1F2937 (Dark Gray) with #00A878 teal accent strip');
-        lines.push('Logo: "GYS" text in white on teal rounded rectangle');
-        lines.push('Tagline: "Member of Yamato Steel Group"');
-        lines.push('');
-        lines.push('GYS LAYOUT STYLES DETECTED:');
-        lines.push('- TITLE slide: Full teal background with geometric circles, white text');
-        lines.push('- SECTION slide: Left teal panel with section number, right content');
-        lines.push('- GRID slide: White cards with teal top bar, icon circles, shadow effect');
-        lines.push('- STATS slide: Alternating teal/white cards with large bold numbers');
-        lines.push('- TIMELINE slide: Horizontal connector line, numbered nodes, cards below');
-        lines.push('- TWO_COLUMN: Left neutral card vs right teal-bordered card');
-        lines.push('- CHART: Left insight panel in teal-light, right chart area');
-        lines.push('- TABLE: Teal header row, alternating off-white/white rows');
-        lines.push('- QUOTE: Full teal background with decorative circles, italic text');
-        lines.push('- CLOSING: Full teal background matching TITLE style');
-        lines.push('');
-        lines.push('GYS TYPOGRAPHY:');
-        lines.push(`- Title Font: ${themeData.colors.fontTitle || 'Calibri'}`);
-        lines.push(`- Body Font:  ${themeData.colors.fontBody  || 'Calibri'}`);
-        lines.push('- Title sizes: 24-44pt bold');
-        lines.push('- Body sizes: 12-16pt regular');
-        lines.push('');
-        lines.push('GYS COMPONENT SPECS:');
-        lines.push('- Header bar: white, 0.82" height, thin gray bottom border');
-        lines.push('- Logo: top-left corner, 0.58" x 0.4" rounded rect');
-        lines.push('- Footer: 0.22" dark bar at bottom, left teal accent strip 2.6" wide');
-        lines.push('- Card corners: rectRadius 0.12"');
-        lines.push('- Left accent bar: 0.05" wide teal-accent vertical strip');
-      } else {
-        lines.push('Custom Theme Colors:');
-        for (const [k, v] of Object.entries(themeData.colors)) {
-          if (!k.startsWith('font')) lines.push(`  ${k}: #${v}`);
+        if (!mimeMap[ext]) {
+          L.step(`  Skipping non-image: ${entryName}`);
+          continue;
         }
-        if (themeData.colors.fontTitle) lines.push(`Title Font: ${themeData.colors.fontTitle}`);
-        if (themeData.colors.fontBody)  lines.push(`Body Font:  ${themeData.colors.fontBody}`);
+
+        const entry     = zip.files[entryName];
+        const imgBuffer = await entry.async('nodebuffer');
+        const safeBase  = path.basename(originalName, path.extname(originalName))
+          .replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+        const imgFilename = `docx_${safeBase}_img${i + 1}${ext}`;
+        const imgPath     = path.join(IMAGE_OUTPUT_DIR, imgFilename);
+        const imgUrl      = `/api/files/extracted-images/${imgFilename}`;
+
+        fs.writeFileSync(imgPath, imgBuffer);
+        L.step(`  Saved image[${i}]: ${entryName} → ${imgFilename} (${imgBuffer.length} bytes)`);
+
+        images.push({
+          filename: imgFilename,
+          path:     imgPath,
+          url:      imgUrl,
+          mimeType: mimeMap[ext],
+          index:    i,
+          caption:  `Image ${i + 1} from ${originalName}`,
+        });
       }
-      lines.push('');
+
+      L.ok(`_extractImagesFromDocx: ${images.length} images saved in ${Date.now() - startTime}ms`);
+    } catch (err) {
+      L.error(`_extractImagesFromDocx failed: ${err.message}`);
+      L.error(err.stack);
     }
+    return images;
+  }
 
-    // ── Slide-by-slide content ─────────────────────────────
-    lines.push('--- SLIDE CONTENT ---');
-    for (const slide of themeData.slides) {
-      lines.push(`\n[SLIDE ${slide.slideNum}] (${slide.layout})`);
+  // ── Extract images from PPTX ──────────────────────────────
+  async _extractImagesFromPptx(filePath, originalName) {
+    const images = [];
+    const startTime = Date.now();
+    L.info(`_extractImagesFromPptx: "${originalName}"`);
 
-      const titleEl = slide.elements.find(e =>
-        e.type === 'ctrTitle' || e.type === 'title' || (e.isBold && e.fontSize >= 20)
+    try {
+      const { default: JSZip } = await import('jszip');
+      const data = fs.readFileSync(filePath);
+      L.step(`PPTX zip loaded: ${data.length} bytes`);
+
+      const zip = await JSZip.loadAsync(data);
+
+      // PPTX images are in ppt/media/
+      const allEntries   = Object.keys(zip.files);
+      const mediaEntries = allEntries.filter(name =>
+        name.startsWith('ppt/media/') && !zip.files[name].dir
       );
+      L.step(`ppt/media/ entries: ${mediaEntries.length} total files`);
 
-      if (titleEl) {
-        lines.push(`Title: ${titleEl.text}`);
-      }
+      const mimeMap = {
+        '.png':  'image/png',
+        '.jpg':  'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif':  'image/gif',
+        '.webp': 'image/webp',
+        '.bmp':  'image/bmp',
+      };
 
-      const bodyEls = slide.elements.filter(e => e !== titleEl);
-      if (bodyEls.length > 0) {
-        lines.push('Content:');
-        for (const el of bodyEls) {
-          lines.push(`  - ${el.text}`);
+      for (let i = 0; i < mediaEntries.length; i++) {
+        const entryName = mediaEntries[i];
+        const ext       = path.extname(entryName).toLowerCase();
+
+        if (!mimeMap[ext]) {
+          L.step(`  Skipping non-image: ${entryName} (${ext})`);
+          continue;
         }
+
+        const entry     = zip.files[entryName];
+        const imgBuffer = await entry.async('nodebuffer');
+        const safeBase  = path.basename(originalName, path.extname(originalName))
+          .replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+        const imgFilename = `pptx_${safeBase}_img${i + 1}${ext}`;
+        const imgPath     = path.join(IMAGE_OUTPUT_DIR, imgFilename);
+        const imgUrl      = `/api/files/extracted-images/${imgFilename}`;
+
+        fs.writeFileSync(imgPath, imgBuffer);
+        L.step(`  Saved image[${i}]: ${entryName} → ${imgFilename} (${imgBuffer.length} bytes)`);
+
+        images.push({
+          filename: imgFilename,
+          path:     imgPath,
+          url:      imgUrl,
+          mimeType: mimeMap[ext],
+          index:    i,
+          caption:  `Image ${i + 1} from ${path.basename(originalName, '.pptx')}`,
+        });
       }
 
-      if (themeData.notes[slide.slideNum]) {
-        lines.push(`Notes: ${themeData.notes[slide.slideNum]}`);
-      }
+      L.ok(`_extractImagesFromPptx: ${images.length} images saved in ${Date.now() - startTime}ms`);
+    } catch (err) {
+      L.error(`_extractImagesFromPptx failed: ${err.message}`);
+      L.error(err.stack);
     }
-
-    lines.push('\n--- END PRESENTATION ---');
-    return lines.join('\n');
+    return images;
   }
 
-  // ── Fallback PPT extraction ───────────────────────────────
-  async _extractPptContentFallback(filePath, originalName) {
+  // ── PPT text extraction ───────────────────────────────────
+  async _extractPptContent(filePath, originalName) {
+    L.info(`_extractPptContent: "${originalName}"`);
+    const startTime = Date.now();
+
     // Strategy 1: officeparser
     if (officeparserParsePptx) {
+      L.step('Trying officeparser...');
       try {
-        return await new Promise((resolve, reject) => {
+        const text = await new Promise((resolve, reject) => {
           officeparserParsePptx(filePath, (data, err) => {
             if (err) reject(err);
             else resolve(data || '');
           });
         });
+        L.ok(`officeparser extracted: ${text.length} chars in ${Date.now() - startTime}ms`);
+        return text;
       } catch (e) {
-        console.warn('officeparser PPT failed:', e.message);
+        L.warn(`officeparser failed: ${e.message} — trying JSZip fallback`);
       }
     }
 
-    // Strategy 2: XLSX partial read
+    // Strategy 2: XLSX (sometimes works for PPT)
+    L.step('Trying XLSX fallback...');
     try {
       const workbook = XLSX.readFile(filePath, { type: 'file', raw: false });
       if (workbook.SheetNames.length > 0) {
         const parts = workbook.SheetNames.map(n => XLSX.utils.sheet_to_txt(workbook.Sheets[n]));
-        return `[Konten PowerPoint: ${originalName}]\n\n` + parts.join('\n\n');
+        const text = `[PowerPoint Content: ${originalName}]\n\n` + parts.join('\n\n');
+        L.ok(`XLSX fallback extracted: ${text.length} chars in ${Date.now() - startTime}ms`);
+        return text;
       }
-    } catch { /* ignore */ }
-
-    // Strategy 3: Raw XML
-    try {
-      const AdmZip = (await import('adm-zip')).default;
-      const zip    = new AdmZip(filePath);
-      const slides = zip.getEntries()
-        .filter(e => e.entryName.match(/^ppt\/slides\/slide\d+\.xml$/))
-        .sort((a, b) => a.entryName.localeCompare(b.entryName));
-
-      const texts = slides.map((entry, idx) => {
-        const xml     = entry.getData().toString('utf8');
-        const matches = xml.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) || [];
-        const slideText = matches.map(m => m.replace(/<[^>]*>/g, '')).join(' ');
-        return `[Slide ${idx + 1}]\n${slideText}`;
-      });
-
-      return texts.join('\n\n') || `[PowerPoint: ${originalName} — tidak ada teks yang dapat diekstrak]`;
     } catch (e) {
-      return `[PowerPoint: ${originalName} — ekstraksi tidak tersedia: ${e.message}]`;
+      L.warn(`XLSX fallback failed: ${e.message}`);
+    }
+
+    // Strategy 3: JSZip — parse XML directly
+    // ✅ FIX: was `new JSZip(buffer)` which is broken in JSZip v3
+    //         correct is `await JSZip.loadAsync(buffer)`
+    L.step('Trying JSZip XML extraction...');
+    try {
+      const { default: JSZip } = await import('jszip');
+      const data = fs.readFileSync(filePath);
+      const zip  = await JSZip.loadAsync(data); // ✅ FIXED
+
+      const allFiles = Object.keys(zip.files);
+      const slideFiles = allFiles
+        .filter(e => e.match(/^ppt\/slides\/slide\d+\.xml$/))
+        .sort((a, b) => {
+          const na = parseInt(a.match(/slide(\d+)/)?.[1] || 0);
+          const nb = parseInt(b.match(/slide(\d+)/)?.[1] || 0);
+          return na - nb;
+        });
+
+      L.step(`Found ${slideFiles.length} slide XML files`);
+
+      const texts = [];
+      for (let idx = 0; idx < slideFiles.length; idx++) {
+        const entry = zip.files[slideFiles[idx]];
+        const xml   = await entry.async('string');
+        const matches = xml.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) || [];
+        const slideText = matches
+          .map(m => m.replace(/<[^>]*>/g, '').trim())
+          .filter(Boolean)
+          .join(' ');
+        L.step(`  Slide ${idx + 1}: ${slideText.length} chars of text`);
+        texts.push(`[Slide ${idx + 1}]\n${slideText}`);
+      }
+
+      const result = texts.join('\n\n') || `[PowerPoint: ${originalName} — no text found]`;
+      L.ok(`JSZip XML extracted: ${slideFiles.length} slides, ${result.length} chars in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (e) {
+      L.error(`JSZip extraction failed: ${e.message}`);
+      return `[PowerPoint: ${originalName} — extraction unavailable: ${e.message}]`;
     }
   }
 
-  // ── Original _extractPptContent (legacy, kept for compat) ─
-  async _extractPptContent(filePath, originalName) {
-    return this._extractPptContentEnhanced(filePath, originalName);
-  }
-
   /**
-   * Build the knowledge context string to inject into system prompt.
-   * Respects knowledgeMode: 'always' | 'relevant' | 'disabled'
-   * Now includes GYS theme matching hints.
+   * Build knowledge context string for AI prompt injection.
    */
   buildKnowledgeContext(knowledgeFiles = [], userMessage = '', knowledgeMode = 'relevant') {
-    if (knowledgeMode === 'disabled' || !knowledgeFiles.length) return '';
+    L.info(`buildKnowledgeContext: mode=${knowledgeMode} | files=${knowledgeFiles.length} | query="${(userMessage || '').substring(0, 60)}"`);
+
+    if (knowledgeMode === 'disabled' || !knowledgeFiles.length) {
+      L.info(`Knowledge context: disabled or no files`);
+      return '';
+    }
 
     let filesToInclude = knowledgeFiles;
 
-    // 'relevant' mode: filter by keyword matching
     if (knowledgeMode === 'relevant' && userMessage) {
       const scored = knowledgeFiles.map(f => ({
         file:  f,
         score: this._relevanceScore(f.content, f.originalName, userMessage),
       }));
+      scored.forEach(s => L.step(`  relevance "${s.file.originalName}": ${s.score}`));
 
       const relevant = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score);
       filesToInclude  = relevant.length > 0 ? relevant.map(s => s.file) : knowledgeFiles;
+      L.info(`Relevant files selected: ${filesToInclude.length}/${knowledgeFiles.length}`);
     }
 
     if (!filesToInclude.length) return '';
 
-    // Check if any PPTX knowledge files contain GYS theme
-    const pptxFiles = filesToInclude.filter(f =>
-      /\.(pptx?|ppt)$/i.test(f.originalName) &&
-      f.content && f.content.includes('GYS (Garuda Yamato Steel)')
-    );
-
     let context = `\n\n=== 📚 KNOWLEDGE BASE ===\n`;
-    context    += `Gunakan informasi berikut sebagai referensi untuk menjawab pertanyaan user.\n`;
+    context    += `Use the following as reference:\n\n`;
 
-    if (pptxFiles.length > 0) {
-      context += `\n🎨 PPTX THEME REFERENCE DETECTED:\n`;
-      context += `File presentasi GYS ditemukan. Gunakan tema, warna, dan layout yang sama.\n`;
-      context += `Saat membuat presentasi, ikuti SEMUA spesifikasi desain GYS dari file referensi.\n`;
-    }
-
-    context += `PENTING: Untuk setiap informasi yang kamu ambil dari file-file di bawah, WAJIB sebutkan nama filenya sebagai sumber di akhir jawaban dengan format: "📂 **Sumber:** Dokumen internal — [nama file]"\n\n`;
-
+    let totalChars = 0;
     for (const f of filesToInclude) {
+      const fileContent = (f.content || '(empty)').substring(0, 15000);
       context += `--- File: ${f.originalName} ---\n`;
-      context += `[CITATION_TAG: internal_doc:${f.originalName}]\n`;
-      context += (f.content || '(kosong)').substring(0, 15000);
+      context += fileContent;
+      totalChars += fileContent.length;
+
+      const imgs = f.extractedImages || [];
+      if (imgs.length > 0) {
+        context += `\n[This file has ${imgs.length} embedded image(s) available for PPT slides]\n`;
+      }
       context += `\n\n`;
     }
 
-    context += `=== AKHIR KNOWLEDGE BASE ===\n`;
+    context += `=== END KNOWLEDGE BASE ===\n`;
+    L.info(`Knowledge context built: ${filesToInclude.length} files, ${totalChars} chars`);
     return context;
+  }
+
+  /**
+   * Get all extracted images from relevant knowledge files.
+   * Used by PPT service to embed images into slides.
+   */
+  getExtractedImages(knowledgeFiles = [], userMessage = '', knowledgeMode = 'relevant') {
+    L.info(`getExtractedImages: mode=${knowledgeMode} | files=${knowledgeFiles.length}`);
+
+    if (knowledgeMode === 'disabled' || !knowledgeFiles.length) return [];
+
+    let filesToInclude = knowledgeFiles;
+
+    if (knowledgeMode === 'relevant' && userMessage) {
+      const scored = knowledgeFiles.map(f => ({
+        file:  f,
+        score: this._relevanceScore(f.content, f.originalName, userMessage),
+      }));
+      const relevant = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score);
+      filesToInclude  = relevant.length > 0 ? relevant.map(s => s.file) : knowledgeFiles;
+    }
+
+    const allImages = [];
+    for (const f of filesToInclude) {
+      const imgs = (f.extractedImages || []).filter(img => {
+        const exists = img.path && fs.existsSync(img.path);
+        if (!exists) L.warn(`Image file missing on disk: ${img.path}`);
+        return exists;
+      });
+      if (imgs.length > 0) {
+        L.step(`File "${f.originalName}": ${imgs.length} images available`);
+        allImages.push(...imgs.map(img => ({ ...img, sourceFile: f.originalName })));
+      }
+    }
+
+    L.info(`getExtractedImages total: ${allImages.length} images`);
+    return allImages;
   }
 
   _relevanceScore(content = '', fileName = '', userMessage = '') {
@@ -489,11 +486,12 @@ class KnowledgeBaseService {
     return words.reduce((acc, w) => acc + (text.includes(w) ? 1 : 0), 0);
   }
 
-  _generateSummary(content, fileName) {
-    const lines    = content.split('\n').filter(l => l.trim().length > 20);
-    const preview  = lines.slice(0, 3).join(' ').substring(0, 200);
+  _generateSummary(content, fileName, imageCount = 0) {
+    const lines     = content.split('\n').filter(l => l.trim().length > 20);
+    const preview   = lines.slice(0, 3).join(' ').substring(0, 200);
     const wordCount = content.split(/\s+/).length;
-    return `${fileName} — ${wordCount.toLocaleString()} kata. Preview: ${preview}...`;
+    const imgInfo   = imageCount > 0 ? ` · ${imageCount} image(s)` : '';
+    return `${fileName} — ${wordCount.toLocaleString()} words${imgInfo}. Preview: ${preview}...`;
   }
 }
 

@@ -2,6 +2,7 @@
 // ✅ FIX: Bot Creator hanya lihat bot miliknya / assigned / bot lama (createdBy null)
 // ✅ FIX: API Key tidak auto-generate, tidak tampil otomatis, ada endpoint reveal terpisah
 // ✅ FIX: wahaConfig.targets dan wahaConfig.schedules sekarang tersimpan dengan benar
+// ✅ FIX: extractedImages dari KnowledgeBaseService.extractContent() sekarang tersimpan ke DB
 
 import express    from 'express';
 import bcrypt     from 'bcryptjs';
@@ -739,15 +740,46 @@ router.post('/bots/:id/knowledge', requireAdminOrBotCreator, knowledgeUpload.arr
     if (!req.files || req.files.length === 0)
       return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
 
+    // ✅ FIX: extractedImages sekarang di-destructure dan disimpan ke DB
     const results = [];
     for (const file of req.files) {
-      const { content, summary } = await KnowledgeBaseService.extractContent(file.path, file.originalname, file.mimetype);
-      bot.knowledgeFiles.push({
-        filename: file.filename, originalName: file.originalname,
-        mimetype: file.mimetype, size: file.size, path: file.path,
-        content, summary, uploadedAt: new Date(),
+      console.log(new Date().toISOString(), '[Admin/Knowledge] Processing file:', file.originalname, `(${(file.size / 1024).toFixed(1)} KB)`);
+
+      const { content, summary, extractedImages } = await KnowledgeBaseService.extractContent(
+        file.path, file.originalname, file.mimetype
+      );
+      console.log(
+        new Date().toISOString(),
+        '[Admin/Knowledge] ✅ Processed:', file.originalname,
+        `| chars=${content.length}`,
+        `| images=${(extractedImages || []).length}`
+      );
+      (extractedImages || []).forEach((img, i) => {
+        console.log(
+          new Date().toISOString(),
+          '[Admin/Knowledge]  ├─ Image[' + i + ']:', img.filename,
+          '(' + img.mimeType + ')',
+          '→', img.url
+        );
       });
-      results.push({ name: file.originalname, size: file.size, summary });
+
+      bot.knowledgeFiles.push({
+        filename:        file.filename,
+        originalName:    file.originalname,
+        mimetype:        file.mimetype,
+        size:            file.size,
+        path:            file.path,
+        content,
+        summary,
+        uploadedAt:      new Date(),
+        extractedImages: extractedImages || [],   // ✅ NOW SAVED TO DB
+      });
+      results.push({
+        name:       file.originalname,
+        size:       file.size,
+        summary,
+        imageCount: (extractedImages || []).length,   // ✅ Report image count back
+      });
     }
 
     await bot.save();

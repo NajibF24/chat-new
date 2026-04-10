@@ -1,208 +1,316 @@
 // server/services/wahaScheduler.js
-// ── WAHA Multi-Target Flexible Scheduler ────────────────────
-// Supports:
-//   - Multiple chat/group targets per bot
-//   - Schedule types: 'daily' (HH:MM), 'interval' (every N min), 'times' (multiple per day)
-//   - Backward compatible with legacy dailySchedule config
+// ============================================================
+// GYS Portal AI — Flexible WAHA WhatsApp Scheduler
+// ✅ UPDATED:
+//   - Per-target scheduling (send to specific targets by ID)
+//   - Global scheduling (send to all active targets)
+//   - Detailed logging for each schedule fire event
+//   - 3 schedule types: daily, multiple, interval
+// ============================================================
 
-import axios  from 'axios';
-import Bot    from '../models/Bot.js';
+import axios   from 'axios';
+import Bot     from '../models/Bot.js';
 import AIProviderService from './ai-provider.service.js';
 
-// ── Send a single message to a WAHA target ───────────────────
-async function sendWahaMessage(wahaConfig, chatId, botName, triggerPrompt, aiText) {
-  const wibTime = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
-  const formattedMessage =
-      // `🤖 *BOT SCHEDULED MESSAGE:* ${botName}\n` +
-      // `🕐 *Time (WIB):* ${wibTime}\n` +
-      // `👤 *Triggered by:* scheduler\n\n` +
-      // `💬 *Prompt:*\n${triggerPrompt}\n\n` +
-      `${aiText}`;
+const LOG_PREFIX = '[WahaScheduler]';
+function log(level, ...args) {
+  const ts = new Date().toISOString();
+  if (level === 'ERROR') console.error(ts, LOG_PREFIX, '❌', ...args);
+  else if (level === 'WARN')  console.warn(ts,  LOG_PREFIX, '⚠️', ...args);
+  else                        console.log(ts,   LOG_PREFIX, level === 'OK' ? '✅' : 'ℹ️', ...args);
+}
 
+// Prevent double-firing within same minute
+const firedCache = new Set();
+
+// Track next-fire times for interval schedules
+// Key: `${botId}:${scheduleId}` → Date
+const intervalNextFire = new Map();
+
+// ── Time helpers ──────────────────────────────────────────────
+function currentHHMM() {
+  const now = new Date();
+  return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+}
+
+function todayKey() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function timeToMinutes(hhmm) {
+  const [h, m] = (hhmm || '00:00').split(':').map(Number);
+  return h * 60 + m;
+}
+
+function currentMinutes() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+// ── Send message via WAHA API ─────────────────────────────────
+async function sendWahaMessage(wahaConfig, chatId, text) {
+  if (!wahaConfig.endpoint || !chatId) {
+    log('WARN', `sendWahaMessage: missing endpoint or chatId`);
+    return false;
+  }
+
+  const sendUrl = wahaConfig.endpoint.replace(/\/$/, '') + '/api/sendText';
   const payload = {
     session: wahaConfig.session || 'default',
     chatId,
-    text: formattedMessage,
+    text,
+  };
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(wahaConfig.apiKey && { 'X-Api-Key': wahaConfig.apiKey }),
   };
 
-  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-  if (wahaConfig.apiKey) headers['X-Api-Key'] = wahaConfig.apiKey;
-
-  await axios.post(wahaConfig.endpoint, payload, { headers, timeout: 15000 });
-  console.log(`[WAHA Scheduler] ✅ Sent to ${chatId} (bot: ${botName})`);
+  try {
+    await axios.post(sendUrl, payload, { headers, timeout: 20000 });
+    log('OK', `Sent to ${chatId}: "${text.substring(0, 80)}..."`);
+    return true;
+  } catch (err) {
+    log('ERROR', `Failed to send to ${chatId}: ${err.response?.data?.message || err.message}`);
+    return false;
+  }
 }
 
-// ── Generate AI response for a scheduled message ─────────────
-async function generateScheduledResponse(bot, prompt) {
-  const aiResponse = await AIProviderService.generateCompletion({
-    providerConfig: bot.aiProvider,
-    systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
-    messages:       [],
-    userContent:    prompt,
-    capabilities:   bot.capabilities,
+// ── Generate AI response ──────────────────────────────────────
+async function generateAIResponse(bot, prompt) {
+  try {
+    log('INFO', `Generating AI response for bot "${bot.name}" | prompt="${prompt.substring(0, 80)}"`);
+    const result = await AIProviderService.generateCompletion({
+      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
+      messages:       [],
+      userContent:    prompt,
+    });
+    log('OK', `AI response generated | length=${result.text?.length || 0}`);
+    return result.text || null;
+  } catch (err) {
+    log('ERROR', `AI generation failed: ${err.message}`);
+    return null;
+  }
+}
+
+// ── Fire a schedule ───────────────────────────────────────────
+// schedule.targetIds:
+//   []        → send to ALL active targets (global)
+//   ['id1', ] → send only to those specific targets
+async function fireSchedule(bot, schedule) {
+  const wahaConfig = bot.wahaConfig;
+  const schedLabel = schedule.label || String(schedule._id) || 'unnamed';
+
+  log('INFO', `─────── Firing schedule "${schedLabel}" for bot "${bot.name}" ───────`);
+  log('INFO', `  scheduleType = ${schedule.scheduleType || 'daily'}`);
+  log('INFO', `  prompt       = "${(schedule.prompt || '').substring(0, 100)}"`);
+  log('INFO', `  targetIds    = [${(schedule.targetIds || []).join(', ')}] (empty = global)`);
+
+  const prompt = schedule.prompt || 'Give a helpful daily update summary.';
+
+  // Generate AI message
+  const aiText = await generateAIResponse(bot, prompt);
+  if (!aiText) {
+    log('ERROR', `No AI response — aborting schedule "${schedLabel}"`);
+    return;
+  }
+
+  const formattedMsg = `🤖 *${bot.name}*\n\n${aiText}`;
+
+  // Resolve target list
+  const allActiveTargets = (wahaConfig.targets || []).filter(t => t.active !== false);
+
+  let resolvedTargets;
+  if (!schedule.targetIds || schedule.targetIds.length === 0) {
+    // GLOBAL: send to all active targets
+    resolvedTargets = allActiveTargets;
+    log('INFO', `  Mode: GLOBAL → ${resolvedTargets.length} active targets`);
+  } else {
+    // PER-TARGET: only send to specified targets
+    resolvedTargets = allActiveTargets.filter(t =>
+      schedule.targetIds.includes(String(t._id))
+    );
+    log('INFO', `  Mode: PER-TARGET → ${resolvedTargets.length} matching targets (requested ${schedule.targetIds.length})`);
+  }
+
+  // Log each target
+  resolvedTargets.forEach((t, i) => {
+    log('INFO', `  Target[${i}]: "${t.label || t.chatId}" type=${t.type} chatId=${t.chatId}`);
   });
-  return aiResponse?.text || 'Maaf, AI tidak memberikan respon.';
+
+  // Legacy chatId fallback
+  const legacyChatId = wahaConfig.chatId;
+  if (resolvedTargets.length === 0 && !legacyChatId) {
+    log('WARN', `No targets resolved — nothing sent for schedule "${schedLabel}"`);
+    return;
+  }
+
+  // Send to resolved targets
+  let sentCount = 0;
+  for (const target of resolvedTargets) {
+    const ok = await sendWahaMessage(wahaConfig, target.chatId, formattedMsg);
+    if (ok) sentCount++;
+  }
+
+  // Fallback: legacy chatId
+  if (resolvedTargets.length === 0 && legacyChatId) {
+    log('INFO', `  Sending to legacy chatId: ${legacyChatId}`);
+    await sendWahaMessage(wahaConfig, legacyChatId, formattedMsg);
+    sentCount++;
+  }
+
+  log('OK', `Schedule "${schedLabel}" done — sent to ${sentCount}/${resolvedTargets.length} targets`);
 }
 
 // ── Check if a schedule should fire right now ─────────────────
-// Returns true if the schedule should trigger in the current minute tick.
-function shouldFire(schedule, now) {
-  if (!schedule?.enabled || !schedule?.prompt?.trim()) return false;
+function shouldFireSchedule(botId, schedule) {
+  if (!schedule.active && schedule.active !== undefined) {
+    return false; // explicitly disabled
+  }
 
-  const currentHHMM = now.getHours().toString().padStart(2, '0') + ':' +
-                      now.getMinutes().toString().padStart(2, '0');
-  const currentMin  = now.getHours() * 60 + now.getMinutes();
+  const schedId = String(schedule._id || schedule.label || 'unnamed');
+  const nowHHMM = currentHHMM();
+  const nowMin  = currentMinutes();
+  const today   = todayKey();
 
   switch (schedule.scheduleType || 'daily') {
-    case 'daily':
-      return schedule.time === currentHHMM;
 
-    case 'interval': {
-      // Fire every N minutes from midnight. Min interval = 15 min.
-      const interval = Math.max(15, parseInt(schedule.intervalMin) || 60);
-      return currentMin % interval === 0;
+    case 'daily': {
+      const fireTime = schedule.time || '08:00';
+      if (nowHHMM !== fireTime) return false;
+      const cacheKey = `${botId}:${schedId}:${today}:daily:${fireTime}`;
+      if (firedCache.has(cacheKey)) return false;
+      firedCache.add(cacheKey);
+      log('INFO', `Schedule "${schedule.label}" | daily | matched ${fireTime}`);
+      return true;
     }
 
-    case 'times':
-      return (schedule.times || []).includes(currentHHMM);
+    case 'multiple': {
+      const times = schedule.times || [];
+      for (const t of times) {
+        if (nowHHMM === t) {
+          const cacheKey = `${botId}:${schedId}:${today}:multi:${t}`;
+          if (!firedCache.has(cacheKey)) {
+            firedCache.add(cacheKey);
+            log('INFO', `Schedule "${schedule.label}" | multiple | matched ${t}`);
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    case 'interval': {
+      const startMin = timeToMinutes(schedule.intervalStart || '08:00');
+      const endMin   = timeToMinutes(schedule.intervalEnd   || '17:00');
+      const interval = Math.max(1, schedule.intervalMinutes || 60);
+
+      if (nowMin < startMin || nowMin > endMin) return false;
+
+      const nextFireKey = `${botId}:${schedId}:interval`;
+      const nextFire    = intervalNextFire.get(nextFireKey);
+      const now         = new Date();
+
+      if (!nextFire) {
+        // First time in window — fire immediately, set next
+        intervalNextFire.set(nextFireKey, new Date(now.getTime() + interval * 60000));
+        log('INFO', `Schedule "${schedule.label}" | interval | first fire (every ${interval}min)`);
+        return true;
+      }
+
+      if (now >= nextFire) {
+        intervalNextFire.set(nextFireKey, new Date(now.getTime() + interval * 60000));
+        log('INFO', `Schedule "${schedule.label}" | interval | interval elapsed`);
+        return true;
+      }
+
+      return false;
+    }
 
     default:
+      log('WARN', `Unknown scheduleType "${schedule.scheduleType}" for schedule "${schedule.label}"`);
       return false;
   }
 }
 
-// ── Resolve which targets and schedules should fire now ───────
-// Returns array of { chatId, prompt } to send.
-function resolveFireList(bot, now) {
-  const cfg     = bot.wahaConfig;
-  const fireList = [];
+// ── Legacy daily schedule (backward compat) ───────────────────
+function shouldFireLegacy(botId, wahaConfig) {
+  const daily = wahaConfig.dailySchedule;
+  if (!daily?.enabled || !daily?.time) return false;
 
-  // ── New multi-target system ──────────────────────────────
-  const targets = cfg.targets || [];
+  const nowHHMM = currentHHMM();
+  const today   = todayKey();
 
-  if (targets.length > 0) {
-    for (const target of targets) {
-      if (!target.enabled || !target.chatId) continue;
+  if (nowHHMM !== daily.time) return false;
 
-      // Per-target schedules take priority; fall back to global schedules
-      const schedulesToCheck = (target.schedules?.length > 0)
-        ? target.schedules
-        : (cfg.schedules || []);
-
-      for (const schedule of schedulesToCheck) {
-        if (shouldFire(schedule, now)) {
-          fireList.push({ chatId: target.chatId, prompt: schedule.prompt, label: target.label || target.chatId });
-        }
-      }
-    }
-
-    // Also check global schedules against all targets (if target has no own schedules)
-    // Already handled above: falls back to global schedules.
-
-  } else {
-    // ── Legacy: single chatId + dailySchedule ──────────────
-    const legacyChatId = cfg.chatId;
-    if (!legacyChatId) return fireList;
-
-    // Check new-style global schedules first
-    for (const schedule of (cfg.schedules || [])) {
-      if (shouldFire(schedule, now)) {
-        fireList.push({ chatId: legacyChatId, prompt: schedule.prompt, label: legacyChatId });
-      }
-    }
-
-    // Then legacy dailySchedule
-    const ds = cfg.dailySchedule;
-    if (ds?.enabled && ds?.prompt && shouldFire(
-      { enabled: true, prompt: ds.prompt, scheduleType: 'daily', time: ds.time },
-      now
-    )) {
-      fireList.push({ chatId: legacyChatId, prompt: ds.prompt, label: legacyChatId });
-    }
-  }
-
-  return fireList;
+  const cacheKey = `legacy:${botId}:${today}:${daily.time}`;
+  if (firedCache.has(cacheKey)) return false;
+  firedCache.add(cacheKey);
+  return true;
 }
 
-// ── Main scheduler entry point ────────────────────────────────
-export const startWahaScheduler = () => {
-  console.log('⏳ WAHA Multi-Target Scheduler started (ticks every minute)');
+// ── Main scheduler tick (every 60 seconds) ────────────────────
+async function schedulerTick() {
+  const nowHHMM = currentHHMM();
+  try {
+    const bots = await Bot.find({ 'wahaConfig.enabled': true }).lean();
 
-  setInterval(async () => {
-    try {
-      const now  = new Date();
-      // Round to the start of the current minute
-      now.setSeconds(0, 0);
+    if (bots.length === 0) return; // silent if no WAHA bots
 
-      // Find all bots with WAHA enabled
-      const bots = await Bot.find({ 'wahaConfig.enabled': true }).lean();
+    log('INFO', `Tick at ${nowHHMM} | checking ${bots.length} WAHA-enabled bots`);
 
-      for (const bot of bots) {
-        const cfg = bot.wahaConfig;
-        if (!cfg?.endpoint) continue;
+    for (const bot of bots) {
+      const wahaConfig  = bot.wahaConfig;
+      const schedules   = (wahaConfig.schedules || []);
+      const activeScheds = schedules.filter(s => s.active !== false);
 
-        const fireList = resolveFireList(bot, now);
-        if (fireList.length === 0) continue;
+      log('INFO', `Bot "${bot.name}" | ${activeScheds.length}/${schedules.length} active schedules | ${(wahaConfig.targets || []).filter(t => t.active).length} active targets`);
 
-        console.log(`[WAHA Scheduler] ⏰ Bot "${bot.name}" — ${fireList.length} message(s) to send`);
-
-        for (const { chatId, prompt, label } of fireList) {
-          try {
-            console.log(`[WAHA Scheduler]   → Target: ${label} | Prompt: "${prompt.substring(0, 60)}..."`);
-
-            const aiText = await generateScheduledResponse(bot, prompt);
-            await sendWahaMessage(cfg, chatId, bot.name, prompt, aiText);
-
-          } catch (sendErr) {
-            console.error(`[WAHA Scheduler] ❌ Failed to send to ${chatId}:`, sendErr.message);
-          }
+      for (const schedule of activeScheds) {
+        if (shouldFireSchedule(String(bot._id), schedule)) {
+          fireSchedule(bot, schedule).catch(err =>
+            log('ERROR', `Schedule "${schedule.label}" fire error: ${err.message}`)
+          );
         }
       }
 
-    } catch (error) {
-      console.error('[WAHA Scheduler] ❌ Tick error:', error.message);
+      // Legacy daily
+      if (shouldFireLegacy(String(bot._id), wahaConfig) && wahaConfig.dailySchedule?.prompt) {
+        const legacySched = {
+          _id:          'legacy',
+          label:        'Daily (Legacy)',
+          prompt:       wahaConfig.dailySchedule.prompt,
+          scheduleType: 'daily',
+          time:         wahaConfig.dailySchedule.time,
+          targetIds:    [], // global
+          active:       true,
+        };
+        fireSchedule(bot, legacySched).catch(err =>
+          log('ERROR', `Legacy schedule error: ${err.message}`)
+        );
+      }
     }
-  }, 60_000); // Check every minute
+  } catch (err) {
+    log('ERROR', `Tick error: ${err.message}`);
+  }
+}
+
+// ── Clean fired cache hourly ───────────────────────────────────
+function cleanFiredCache() {
+  const today = todayKey();
+  let removed = 0;
+  for (const key of firedCache) {
+    if (!key.includes(today)) { firedCache.delete(key); removed++; }
+  }
+  if (removed > 0) log('INFO', `Cache cleaned: removed ${removed} stale entries`);
+}
+
+// ── Start ──────────────────────────────────────────────────────
+export const startWahaScheduler = () => {
+  log('OK', 'WAHA Flexible Scheduler starting (interval: 60s)...');
+  schedulerTick(); // run immediately
+  setInterval(schedulerTick, 60 * 1000);
+  setInterval(cleanFiredCache, 60 * 60 * 1000); // clean hourly
 };
 
-// ── Helper: forward a single user message to WAHA (used by chat.js) ──
-export async function forwardChatToWaha(bot, username, userMessage, aiResponse) {
-  const cfg = bot?.wahaConfig;
-  if (!cfg?.enabled || !cfg?.endpoint) return;
-
-  // Collect all enabled target chatIds
-  const chatIds = [];
-
-  if ((cfg.targets || []).length > 0) {
-    for (const t of cfg.targets) {
-      if (t.enabled && t.chatId) chatIds.push(t.chatId);
-    }
-  } else if (cfg.chatId) {
-    chatIds.push(cfg.chatId);
-  }
-
-  if (chatIds.length === 0) return;
-
-  // const wibTime = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
-  // Dengan ini (kirim jawaban langsung saja):
-  const text = aiResponse;
-
-  for (const chatId of chatIds) {
-    try {
-      await axios.post(cfg.endpoint, {
-        chatId,
-        text,
-        session: cfg.session || 'default',
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(cfg.apiKey && { 'X-Api-Key': cfg.apiKey }),
-        },
-        timeout: 10000,
-      });
-      console.log(`[WAHA Forward] ✅ Forwarded chat to: ${chatId}`);
-    } catch (err) {
-      console.error(`[WAHA Forward] ❌ Failed to forward to ${chatId}:`, err.message);
-    }
-  }
-}
+export default startWahaScheduler;

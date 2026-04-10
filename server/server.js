@@ -113,6 +113,8 @@ app.use('/api/smartsheet', smartsheetRoutes);
 app.use('/api/embed', embedRoutes);
 app.use('/api/pptx', pptxRoutes);  // ← TAMBAHAN BARU (1 baris)
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/waha',         wahaRoutes);
+app.use('/api/webhook/waha', wahaRoutes); // ← tambahkan ini
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint Not Found' }));
