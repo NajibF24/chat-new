@@ -115,7 +115,7 @@ async function fireSchedule(bot, schedule) {
     return;
   }
 
-  const formattedMsg = `🤖 *${bot.name}*\n\n${aiText}`;
+  const formattedMsg = aiText;
 
   // Resolve target list
   const allActiveTargets = (wahaConfig.targets || []).filter(t => t.active !== false);
