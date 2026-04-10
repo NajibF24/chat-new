@@ -27,140 +27,17 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 // ── Helper: detect reasoning/GPT-5 model ─────────────────────
 const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(model);
 
-// ── Helper: normalize usage across ALL providers ──────────────
-// OpenAI   : { prompt_tokens, completion_tokens, total_tokens, completion_tokens_details? }
-// Anthropic: { input_tokens, output_tokens }
-// Gemini   : { promptTokenCount, candidatesTokenCount, totalTokenCount }
+// ── Helper: normalize usage across providers ──────────────────
 function normalizeUsage(usage, model = '') {
   if (!usage) return null;
-
-  // OpenAI format
-  const promptTokens =
-    usage.prompt_tokens       ??   // OpenAI standard
-    usage.input_tokens         ??  // Anthropic
-    usage.promptTokenCount     ??  // Gemini
-    0;
-
-  const completionTokens =
-    usage.completion_tokens   ??   // OpenAI standard
-    usage.output_tokens        ??  // Anthropic
-    usage.candidatesTokenCount ??  // Gemini
-    0;
-
-  const totalTokens =
-    usage.total_tokens        ??   // OpenAI standard
-    usage.totalTokenCount      ??  // Gemini
-    (promptTokens + completionTokens);
-
-  // OpenAI o-series reasoning breakdown
-  const reasoningTokens =
-    usage.completion_tokens_details?.reasoning_tokens ?? null;
-
-  // Cache read/write tokens (Anthropic)
-  const cacheReadTokens =
-    usage.cache_read_input_tokens  ?? null;
-  const cacheCreationTokens =
-    usage.cache_creation_input_tokens ?? null;
-
+  const promptTokens     = usage.prompt_tokens       ?? usage.input_tokens      ?? usage.promptTokenCount     ?? 0;
+  const completionTokens = usage.completion_tokens   ?? usage.output_tokens     ?? usage.candidatesTokenCount ?? 0;
+  const totalTokens      = usage.total_tokens        ?? usage.totalTokenCount   ?? (promptTokens + completionTokens);
+  const reasoningTokens  = usage.completion_tokens_details?.reasoning_tokens    ?? null;
   const warningMaxTokens = isReasoningModel(model) && reasoningTokens
     ? reasoningTokens >= (completionTokens * 0.9)
     : false;
-
-  return {
-    promptTokens,
-    completionTokens,
-    totalTokens,
-    reasoningTokens,
-    cacheReadTokens,
-    cacheCreationTokens,
-    warningMaxTokens,
-  };
-}
-
-// ── Helper: format token count for log ───────────────────────
-function fmtTokens(n) {
-  if (n === null || n === undefined) return '—';
-  return n.toLocaleString();
-}
-
-// ── Helper: detect provider from usage shape ─────────────────
-function detectProviderFromUsage(usage) {
-  if (!usage) return null;
-  if ('input_tokens'      in usage) return 'anthropic';
-  if ('promptTokenCount'  in usage) return 'gemini';
-  if ('prompt_tokens'     in usage) return 'openai';
-  return null;
-}
-
-// ── Helper: log token usage to console ───────────────────────
-// ✅ FIXED: Now shows correct field names per provider + cache tokens for Anthropic
-function logTokenUsage({
-  username,
-  botName,
-  model,
-  provider,
-  durationMs,
-  usage,
-  messagePreview,
-  responsePreview,
-  source = '',
-}) {
-  const normalized = normalizeUsage(usage, model);
-  if (!normalized) return;
-
-  const {
-    promptTokens,
-    completionTokens,
-    totalTokens,
-    reasoningTokens,
-    cacheReadTokens,
-    cacheCreationTokens,
-    warningMaxTokens,
-  } = normalized;
-
-  // Provider-specific field labels for clarity in logs
-  let inputLabel      = '📥 prompt';
-  let outputLabel     = '📤 completion';
-  let providerDisplay = provider || detectProviderFromUsage(usage) || 'unknown';
-
-  if (providerDisplay === 'anthropic') {
-    inputLabel  = '📥 input';
-    outputLabel = '📤 output';
-  } else if (providerDisplay === 'google') {
-    inputLabel  = '📥 promptTokens';
-    outputLabel = '📤 candidateTokens';
-  }
-
-  const reasoningStr = reasoningTokens !== null
-    ? ` | 🧠 reasoning: ${fmtTokens(reasoningTokens)}`
-    : '';
-
-  // Anthropic cache breakdown
-  const cacheStr = (cacheReadTokens !== null || cacheCreationTokens !== null)
-    ? ` | 💾 cache_read: ${fmtTokens(cacheReadTokens)} | cache_write: ${fmtTokens(cacheCreationTokens)}`
-    : '';
-
-  const warningStr = warningMaxTokens ? ' ⚠️ REASONING NEAR LIMIT' : '';
-  const durationStr = durationMs ? ` | ⏱ ${(durationMs / 1000).toFixed(1)}s` : '';
-  const sourceStr = source ? ` [${source}]` : '';
-
-  console.log(
-    `[TOKEN]${sourceStr} 👤 ${username || 'unknown'} → 🤖 ${botName || '?'} (${providerDisplay}/${model})` +
-    `${durationStr}` +
-    ` | ${inputLabel}: ${fmtTokens(promptTokens)}` +
-    ` | ${outputLabel}: ${fmtTokens(completionTokens)}` +
-    `${reasoningStr}` +
-    `${cacheStr}` +
-    ` | Σ total: ${fmtTokens(totalTokens)}` +
-    `${warningStr}`
-  );
-
-  if (messagePreview) {
-    console.log(`[TOKEN]   Q: "${messagePreview.substring(0, 120)}${messagePreview.length > 120 ? '…' : ''}"`);
-  }
-  if (responsePreview) {
-    console.log(`[TOKEN]   A: "${responsePreview.substring(0, 120)}${responsePreview.length > 120 ? '…' : ''}"`);
-  }
+  return { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens };
 }
 
 // ── Helper: kirim ke WAHA WhatsApp ───────────────────────────
@@ -277,8 +154,6 @@ router.post('/message', requireAuth, async (req, res) => {
         await new Chat({ userId, botId, threadId: targetThreadId, role: 'user', content: message }).save();
         await new Chat({ userId, botId, threadId: targetThreadId, role: 'assistant', content: markdownResponse }).save();
 
-        console.log(`[TOKEN] 👤 ${sessionUsername || 'unknown'} → 🤖 ${botName} | 🎨 Image generated | prompt: "${prompt.substring(0, 80)}"`);
-
         await AuditService.log({
           req, category: 'chat', action: 'IMAGE_GENERATE',
           targetId: botId, targetName: botName,
@@ -304,20 +179,6 @@ router.post('/message', requireAuth, async (req, res) => {
     // ── WAHA Forward (fire & forget) ─────────────────────────
     sendToWaha(bot, sessionUsername, message, result?.response || '');
 
-    // ── Token Usage Logging ───────────────────────────────────
-    // ✅ FIXED: Pass provider explicitly so the log shows correct labels
-    logTokenUsage({
-      username:        sessionUsername,
-      botName,
-      model,
-      provider,
-      durationMs,
-      usage:           result?.usage,
-      messagePreview:  message,
-      responsePreview: result?.response,
-      source:          'web',
-    });
-
     // ── Audit Log ────────────────────────────────────────────
     const usage = normalizeUsage(result?.usage, model);
     const auditDetail = {
@@ -327,8 +188,6 @@ router.post('/message', requireAuth, async (req, res) => {
         completion: usage.completionTokens,
         total:      usage.totalTokens,
         ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
-        ...(usage.cacheReadTokens !== null && { cacheRead: usage.cacheReadTokens }),
-        ...(usage.cacheCreationTokens !== null && { cacheWrite: usage.cacheCreationTokens }),
       } : null,
       ...(usage?.warningMaxTokens && {
         warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
@@ -364,18 +223,27 @@ router.post('/message', requireAuth, async (req, res) => {
 // ============================================================
 // 🌐 EXTERNAL API CHAT — akses via x-api-key header
 // ============================================================
+// Contoh curl:
+//   curl -X POST https://domain/api/chat/external \
+//     -H "x-api-key: gys-bot-xxxx" \
+//     -H "Content-Type: application/json" \
+//     -d '{"message": "Give me what you got!", "username": "system.scheduler"}'
+// ============================================================
 router.post('/external', async (req, res) => {
   try {
+    // 1. Validasi API Key
     const apiKey = req.headers['x-api-key'];
     if (!apiKey) {
       return res.status(401).json({ error: 'Akses ditolak: x-api-key tidak ditemukan di header' });
     }
 
+    // 2. Cari bot berdasarkan API Key
     const bot = await Bot.findOne({ botApiKey: apiKey }).lean();
     if (!bot) {
       return res.status(403).json({ error: 'Akses ditolak: API Key tidak valid atau Bot tidak ditemukan' });
     }
 
+    // 3. Validasi message
     const { message, username, history } = req.body;
     if (!message?.trim()) {
       return res.status(400).json({ error: 'Field "message" wajib diisi' });
@@ -388,6 +256,7 @@ router.post('/external', async (req, res) => {
 
     console.log(`[EXTERNAL] Bot: ${bot.name} | From: ${callerUsername} | Msg: ${message.substring(0, 80)}`);
 
+    // 4. Panggil AI — pakai system prompt + knowledge base bot yang sesungguhnya
     const startTime = Date.now();
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider,
@@ -402,21 +271,10 @@ router.post('/external', async (req, res) => {
     const durationMs  = Date.now() - startTime;
     const responseText = aiResponse?.text || aiResponse?.response || '';
 
-    // ✅ FIXED: Token log for external API with correct provider labels
-    logTokenUsage({
-      username:        `[EXT] ${callerUsername}`,
-      botName:         bot.name,
-      model,
-      provider,
-      durationMs,
-      usage:           aiResponse?.usage,
-      messagePreview:  message,
-      responsePreview: responseText,
-      source:          'external_api',
-    });
-
+    // 5. WAHA Forward (fire & forget) — sama persis seperti chat internal
     sendToWaha(bot, callerUsername, message, responseText);
 
+    // 6. Audit log
     const usage = normalizeUsage(aiResponse?.usage, model);
     await AuditService.log({
       req,
@@ -437,13 +295,12 @@ router.post('/external', async (req, res) => {
           prompt:     usage.promptTokens,
           completion: usage.completionTokens,
           total:      usage.totalTokens,
-          ...(usage.reasoningTokens   !== null && { reasoning:  usage.reasoningTokens }),
-          ...(usage.cacheReadTokens   !== null && { cacheRead:  usage.cacheReadTokens }),
-          ...(usage.cacheCreationTokens !== null && { cacheWrite: usage.cacheCreationTokens }),
+          ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
         } : null,
       },
     }).catch(() => {});
 
+    // 7. Response — field "response" konsisten dengan format internal
     res.json({
       success:  true,
       botName:  bot.name,

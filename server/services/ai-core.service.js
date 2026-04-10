@@ -1,11 +1,4 @@
 // server/services/ai-core.service.js
-// ============================================================
-// PATCH CHANGES:
-//   1. isPptCommand() — multi-language detection (ID, EN, Malay)
-//   2. processMessage() — extract images from chat attachment for PPT
-//   3. _handlePptCommand() — images come from attachment, NOT knowledge base
-//      Knowledge base = text content (RAG) + template .pptx only
-// ============================================================
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -24,8 +17,6 @@ import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
 import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
-import PptxTemplateService  from './pptx-template.service.js';
-import ImageSelectorService from './image-selector.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
@@ -262,43 +253,16 @@ const PPT_RESPONSE_MARKERS = [
   'fallback mode',
 ];
 
-/**
- * ✅ UPDATED: Multi-language PPT command detection
- * Supports: Indonesian, English, Malay, mixed
- */
 function isPptCommand(message = '') {
   const t = (message || '').trim().toLowerCase();
-
-  // ── Prefix commands ──────────────────────────────────────
-  if (t.startsWith('/ppt'))          return true;
-  if (t.startsWith('/slide'))        return true;
-  if (t.startsWith('/presentation')) return true;
-
-  // ── Indonesia ────────────────────────────────────────────
-  if (/^(buatkan|buat|bikin|tolong\s+buat|tolong\s+buatkan|bikinin)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t)) return true;
-  if (
-    /\b(presentasi|powerpoint|ppt|slide\s+deck|deck)\b/i.test(t) &&
-    /\b(buat|buatkan|bikin|bikinin|tolong|jadikan|konversi|ubah|rangkum|ringkas|summarikan)\b/i.test(t)
-  ) return true;
-  if (/\b(jadikan|ubah|konversi|ringkas|rangkum)\b.{0,40}\b(presentasi|ppt|slide|powerpoint)\b/i.test(t)) return true;
-  // "dari dokumen ini buatkan presentasi", "dari file ini buat ppt"
-  if (/\b(dari\s+(dokumen|file|ini|laporan|data))\b.{0,40}\b(presentasi|ppt|slide)\b/i.test(t)) return true;
-
-  // ── English ──────────────────────────────────────────────
-  if (/^(create|make|generate|build|prepare|convert|turn)\s+(a\s+|an\s+|me\s+a\s+)?(presentation|ppt|slides?|powerpoint|deck)/i.test(t)) return true;
-  if (
-    /\b(presentation|powerpoint|ppt|slide\s+deck|slideshow|slides)\b/i.test(t) &&
-    /\b(create|make|generate|build|prepare|convert|turn\s+into|summarize\s+into|from\s+this|based\s+on)\b/i.test(t)
-  ) return true;
-  if (/\b(turn|convert|transform)\b.{0,30}\b(presentation|slides?|ppt|powerpoint|deck)\b/i.test(t)) return true;
-  // "make a ppt from this document", "create slides from this file"
-  if (/\b(from\s+(this|the)\s+(document|file|report|doc|data))\b.{0,40}\b(presentation|slides?|ppt|powerpoint)\b/i.test(t)) return true;
-  if (/\b(presentation|slides?|ppt|powerpoint)\b.{0,40}\b(from\s+(this|the)\s+(document|file|report|doc|data))\b/i.test(t)) return true;
-
-  // ── Malay ─────────────────────────────────────────────────
-  if (/\b(buat|hasilkan|jadikan|cipta)\b.{0,30}\b(persembahan|slaid|pembentangan)\b/i.test(t)) return true;
-
-  return false;
+  return (
+    t.startsWith('/ppt') ||
+    t.startsWith('/slide') ||
+    t.startsWith('/presentation') ||
+    /^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t) ||
+    (/\b(presentasi|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
+      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t))
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -348,47 +312,6 @@ class AICoreService {
     } catch { return ''; }
   }
 
-  /**
-   * ✅ NEW: Extract images from a file uploaded via chat message.
-   * Only works for .docx and .pptx — these contain embedded images.
-   * This is SEPARATE from knowledge base image extraction.
-   */
-  async extractImagesFromAttachment(attachedFile) {
-    if (!attachedFile) return [];
-
-    const filePath     = attachedFile.serverPath || attachedFile.path;
-    const originalName = attachedFile.originalname || attachedFile.filename || '';
-    const mimetype     = attachedFile.mimetype || '';
-    const ext          = path.extname(originalName).toLowerCase();
-
-    const supportedExts = ['.docx', '.pptx'];
-    const supportedMime = [
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    ];
-
-    if (!supportedExts.includes(ext) && !supportedMime.includes(mimetype)) {
-      return [];
-    }
-
-    if (!filePath || !fs.existsSync(filePath)) {
-      console.warn(`[PPT] Attachment file not found: ${filePath}`);
-      return [];
-    }
-
-    try {
-      const { extractedImages } = await KnowledgeBaseService.extractContent(
-        filePath, originalName, mimetype
-      );
-      const images = extractedImages || [];
-      console.log(`[PPT] Extracted ${images.length} images from chat attachment: ${originalName}`);
-      return images;
-    } catch (err) {
-      console.error(`[PPT] Failed to extract images from attachment: ${err.message}`);
-      return [];
-    }
-  }
-
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
     let bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
@@ -400,21 +323,10 @@ class AICoreService {
       threadId = newThread._id;
     }
 
-    // ✅ UPDATED: PPT command check — extract images from attachment, not knowledge base
     if (isPptCommand(message)) {
-      let attachmentImages = [];
-      if (attachedFile) {
-        // Gambar untuk PPT diambil dari file yang di-upload user di chat
-        attachmentImages = await this.extractImagesFromAttachment(attachedFile);
-      }
-      return this._handlePptCommand({
-        userId, botId, bot, message, threadId, history,
-        attachedFile,       // untuk ekstrak teks konten
-        attachmentImages,   // gambar dari file upload user (bukan knowledge base)
-      });
+      return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
     }
 
-    // ── Normal chat (non-PPT) — perilaku tidak berubah ──────
     let contextData = '';
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
@@ -526,303 +438,208 @@ class AICoreService {
   }
 
   // ─────────────────────────────────────────────────────────
-  // PPT COMMAND HANDLER
-  // ✅ UPDATED: attachmentImages dari file chat, bukan knowledge base
+  // PPT COMMAND HANDLER (class method — no 'function' keyword)
   // ─────────────────────────────────────────────────────────
-  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile = null, attachmentImages = [] }) {
-  try {
-    // ── STEP 0: Load DB history ────────────────────────────────
-    let dbHistory = [];
+  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
     try {
-      if (threadId) {
-        const rawHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(30).lean();
-        dbHistory = rawHistory.filter(h =>
-          h.content && !PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))
+      // ── STEP 0: Load DB history ──────────────────────────────
+      let dbHistory = [];
+      try {
+        if (threadId) {
+          dbHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(30).lean();
+          dbHistory = dbHistory.filter(h =>
+            h.content && !PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))
+          );
+        }
+      } catch (e) { console.warn('[PPT] DB history error:', e.message); }
+
+      // ── STEP 0.5: Find template & extract images from knowledge base ──
+      const freshBot = await Bot.findById(botId).lean();
+      const knowledgeFiles = freshBot?.knowledgeFiles || [];
+
+      // Find template PPTX if configured
+      let templatePath = null;
+      if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
+        const templateFile = knowledgeFiles.find(f =>
+          String(f._id) === freshBot.pptTemplateFileId &&
+          (f.originalName?.endsWith('.pptx') || f.mimetype?.includes('presentationml'))
+        );
+        if (templateFile && fs.existsSync(templateFile.path)) {
+          templatePath = templateFile.path;
+          console.log(`[PPT] Using template: ${templateFile.originalName}`);
+        }
+      }
+
+      // If no explicit template, auto-detect any .pptx in knowledge base
+      if (!templatePath) {
+        const pptxFile = knowledgeFiles.find(f =>
+          f.originalName?.toLowerCase().endsWith('.pptx') &&
+          f.path && fs.existsSync(f.path)
+        );
+        if (pptxFile) {
+          templatePath = pptxFile.path;
+          console.log(`[PPT] Auto-detected template: ${pptxFile.originalName}`);
+        }
+      }
+
+      // Get extracted images from relevant knowledge files (Word/PPTX)
+      const extractedImages = KnowledgeBaseService.getExtractedImages(
+        knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
+      );
+      console.log(`[PPT] Found ${extractedImages.length} extracted images from knowledge base`);
+
+      // Build knowledge context for AI content generation
+      let knowledgeCtx = '';
+      if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
+        knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
+          knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
         );
       }
-    } catch (e) { console.warn('[PPT] DB history error:', e.message); }
- 
-    // ── STEP 0.5: Find template PPTX in knowledge base ─────────
-    const freshBot     = await Bot.findById(botId).lean();
-    const knowledgeFiles = freshBot?.knowledgeFiles || [];
- 
-    // Find template .pptx — check pptTemplateFileId first, then auto-detect
-    let templatePath = null;
- 
-    if (freshBot?.pptTemplateFileId) {
-      const templateFile = knowledgeFiles.find(f =>
-        String(f._id) === freshBot.pptTemplateFileId &&
-        /\.pptx?$/i.test(f.originalName || '') &&
-        f.path && fs.existsSync(f.path)
-      );
-      if (templateFile) {
-        templatePath = templateFile.path;
-        console.log(`[PPT] Using assigned template: ${templateFile.originalName}`);
+
+      // ── STEP 1: User request context ────────────────────────
+      const userRequest = message || '';
+      const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
+
+      let historicalContent = '';
+      if (refersToHistory && dbHistory.length > 0) {
+        historicalContent = dbHistory
+          .filter(h => h.content && h.content.length > 100)
+          .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
+          .join('\n\n---\n\n')
+          .substring(0, 8000);
       }
-    }
- 
-    // Auto-detect: find any .pptx in knowledge base
-    if (!templatePath) {
-      const priorityWords = ['template', 'master', 'tema', 'theme', 'gys'];
-      const pptxFiles = knowledgeFiles
-        .filter(f => /\.pptx?$/i.test(f.originalName || '') && f.path && fs.existsSync(f.path))
-        .sort((a, b) => {
-          // Sort: files with priority keywords first
-          const aScore = priorityWords.filter(w => (a.originalName || '').toLowerCase().includes(w)).length;
-          const bScore = priorityWords.filter(w => (b.originalName || '').toLowerCase().includes(w)).length;
-          return bScore - aScore;
-        });
- 
-      if (pptxFiles.length > 0) {
-        templatePath = pptxFiles[0].path;
-        console.log(`[PPT] Auto-detected template: ${pptxFiles[0].originalName}`);
+
+      // ── STEP 2: CONTENT GENERATION ──────────────────────────
+      console.log('[PPT] Step 1 — generating content...');
+
+      let contentUserMsg = '';
+      if (historicalContent) {
+        contentUserMsg = `Generate a professional presentation based on this conversation and knowledge base context.\nIMPORTANT: Match language exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\n`;
+      } else {
+        contentUserMsg = `Generate a professional presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout.\n\n`;
       }
-    }
- 
-    const hasTemplate = templatePath && PptxTemplateService.isValidTemplate(templatePath);
-    console.log(`[PPT] Template: ${hasTemplate ? templatePath : 'none — using GYS default'}`);
- 
-    // ── STEP 1: Extract text & images from attachment ───────────
-    let attachmentText   = '';
-    let attachmentImages_ = attachmentImages; // passed in from processMessage
- 
-    if (attachedFile) {
-      try {
-        attachmentText = await this.extractFileContent(attachedFile);
-        if (attachmentText) {
-          console.log(`[PPT] Extracted ${attachmentText.length} chars from attachment`);
-        }
-        // Also extract images if not already done
-        if (!attachmentImages_.length) {
-          attachmentImages_ = await this.extractImagesFromAttachment(attachedFile);
-        }
-      } catch (e) {
-        console.warn('[PPT] Attachment extraction failed:', e.message);
-      }
-    }
- 
-    // ── STEP 2: Knowledge base text context (for RAG) ──────────
-    // NOTE: Images from knowledge base are NOT used for PPT.
-    //       Only text content is used as RAG context.
-    //       Images come only from the chat attachment.
-    let knowledgeCtx = '';
-    if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
-      knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
-        knowledgeFiles.filter(f => !/\.pptx?$/i.test(f.originalName || '')), // exclude the template file itself
-        message,
-        freshBot?.knowledgeMode || 'relevant'
-      );
-    }
- 
-    // ── STEP 3: Build content generation prompt ─────────────────
-    const userRequest = message || '';
-    const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
- 
-    let historicalContent = '';
-    if (refersToHistory && dbHistory.length > 0) {
-      historicalContent = dbHistory
-        .filter(h => h.content && h.content.length > 100)
-        .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
-        .join('\n\n---\n\n')
-        .substring(0, 8000);
-    }
- 
-    let contentUserMsg = '';
-    if (historicalContent) {
-      contentUserMsg = `Generate a professional presentation based on this conversation.\nIMPORTANT: Match language exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\n`;
-    } else {
-      contentUserMsg = `Generate a professional presentation.\nIMPORTANT: Match language exactly. Auto-detect best layout.\n\n`;
-    }
- 
-    // Priority: attachment text > knowledge base text > prompt only
-    if (attachmentText) {
-      contentUserMsg += `DOCUMENT CONTENT (PRIMARY SOURCE — extract key points, structure, data):\n${attachmentText.substring(0, 8000)}\n\n`;
+
       if (knowledgeCtx) {
-        contentUserMsg += `ADDITIONAL CONTEXT:\n${knowledgeCtx.substring(0, 3000)}\n\n`;
+        contentUserMsg += `KNOWLEDGE BASE CONTEXT (use this as main content source):\n${knowledgeCtx.substring(0, 6000)}\n\n`;
       }
-    } else if (knowledgeCtx) {
-      contentUserMsg += `KNOWLEDGE BASE CONTEXT:\n${knowledgeCtx.substring(0, 6000)}\n\n`;
-    }
- 
-    contentUserMsg += `User request: ${userRequest}`;
- 
-    // ── STEP 4: Generate slide content with AI ──────────────────
-    console.log('[PPT] Step 1 — generating content...');
-    const contentResult = await AIProviderService.generateCompletion({
-      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-      systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
-      messages:       [],
-      userContent:    contentUserMsg,
-    });
- 
-    const slideContent = contentResult.text;
-    if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
- 
-    const titleMatch = slideContent.match(/^#\s+(.+)/m);
-    const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'Presentation';
- 
-    console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
- 
-    // ── STEP 5: Convert to JSON ─────────────────────────────────
-    console.log('[PPT] Step 2 — converting to JSON...');
-    const jsonResult = await AIProviderService.generateCompletion({
-      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-      systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
-      messages:       [],
-      userContent:    `Convert this presentation to JSON:\n\n${slideContent}`,
-    });
- 
-    let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-    const jsonStart = rawJson.indexOf('{');
-    const jsonEnd   = rawJson.lastIndexOf('}');
-    if (jsonStart !== -1 && jsonEnd !== -1) rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
- 
-    let pptData;
-    try {
-      pptData = JSON.parse(rawJson);
-    } catch {
-      throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
-    }
-    if (!pptData?.slides?.length) throw new Error('JSON tidak memiliki slides.');
- 
-    // ── STEP 6: Smart image selection ───────────────────────────
-    // Ask AI to pick at most 2 relevant images from attachment
-    let selectedImages = [];
-    if (attachmentImages_.length > 0) {
-      console.log(`[PPT] Step 3 — selecting images (${attachmentImages_.length} available)...`);
-      try {
-        selectedImages = await ImageSelectorService.selectImagesForSlides(
-          pptData.slides,
-          attachmentImages_,
-          bot.aiProvider || { provider: 'openai', model: 'gpt-4o' }
-        );
-        console.log(`[PPT] Image selection: ${selectedImages.length} image(s) chosen`);
-        selectedImages.forEach(img =>
-          console.log(`  → Slide ${img.slideIndex}: "${img.caption}"`)
-        );
-      } catch (e) {
-        console.warn('[PPT] Image selection failed, continuing without images:', e.message);
-        selectedImages = [];
-      }
-    }
- 
-    // ── STEP 7: Render PPTX ─────────────────────────────────────
-    const outputDir = path.join(process.cwd(), 'data', 'files');
-    let result;
- 
-    if (hasTemplate) {
-      // ✅ USE REAL TEMPLATE — slides inherit the template's theme,
-      //    background, master layout, fonts, colors, logo, etc.
-      console.log('[PPT] Step 4 — rendering with template...');
-      result = await PptxTemplateService.generate({
-        templatePath,
-        pptData,
-        title,
-        outputDir,
-        selectedImages,
+
+      contentUserMsg += `User request: ${userRequest}`;
+
+      const contentResult = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
+        messages: [],
+        userContent: contentUserMsg,
       });
-    } else {
-      // Fallback: use GYS built-in theme from pptx.service.js
-      console.log('[PPT] Step 4 — rendering with GYS default theme...');
-      result = await PptxService.generate({
+
+      const slideContent = contentResult.text;
+      if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
+
+      const titleMatch = slideContent.match(/^#\s+(.+)/m);
+      const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
+
+      console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars | Images: ${extractedImages.length}`);
+
+      // ── STEP 3: JSON CONVERSION ──────────────────────────────
+      console.log('[PPT] Step 2 — converting to JSON...');
+
+      const jsonResult = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: PPT_JSON_SYSTEM_PROMPT,
+        messages: [],
+        userContent: `Convert this presentation to JSON:\n\n${slideContent}`,
+      });
+
+      let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+      const jsonStart = rawJson.indexOf('{');
+      const jsonEnd   = rawJson.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1) rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+
+      let pptData;
+      try {
+        pptData = JSON.parse(rawJson);
+      } catch (parseErr) {
+        throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
+      }
+
+      if (!pptData?.slides?.length) throw new Error('JSON tidak memiliki slides.');
+
+      const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
+      console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
+
+      // ── STEP 4: RENDER PPTX ──────────────────────────────────
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      const result = await PptxService.generate({
         pptData,
         slideContent,
         title,
         outputDir,
-        styleDesc:       'GYS Corporate',
-        templatePath:    null,
-        extractedImages: selectedImages.map(img => ({
-          path:       img.imagePath,
-          caption:    img.caption,
-          mimeType:   img.mimeType,
-          slideIndex: img.slideIndex,
-        })),
+        styleDesc: templatePath ? 'Custom Template' : 'GYS Gamma Style',
+        templatePath,
+        extractedImages,
       });
-    }
- 
-    // ── STEP 8: Build response message ──────────────────────────
-    const reqLower = (userRequest || '').toLowerCase();
-    const isEnglish = /\b(create|make|generate|presentation|deck|please|english)\b/i.test(reqLower) &&
-      !/\b(buat|buatkan|bikin|tolong|presentasi|bahasa indonesia)\b/i.test(reqLower);
- 
-    const layoutIcons = {
-      TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
-      TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
-      TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯',
-    };
- 
-    const layoutSummary = pptData.slides
-      .map((s, i) => {
-        const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
-        return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
-      })
-      .join('\n');
- 
-    const templateNote  = result.usedTemplate
-      ? `\n🎨 **Template:** ${result.usedTemplate}`
-      : '';
-    const imageNote = selectedImages.length > 0
-      ? `\n🖼️ **Images:** ${selectedImages.length} image(s) embedded`
-      : '';
-    const sourceNote = attachmentText
-      ? `\n📄 **Source:** Content extracted from uploaded document`
-      : '';
- 
-    const responseMarkdown = isEnglish
-      ? `✅ **Presentation successfully generated!**
- 
+
+      // ── STEP 5: BUILD RESPONSE ───────────────────────────────
+      const reqLower = userRequest.toLowerCase();
+      const reqEng   = reqLower.includes('english') || reqLower.includes('inggris');
+      const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
+      const indWords = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
+      const isEnglish = reqEng || engWords.length > indWords.length;
+
+      const layoutIcons = {
+        TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
+        TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
+        TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯', IMAGE_SLIDE: '🖼️',
+      };
+
+      const layoutSummary = pptData.slides
+        .map((s, i) => {
+          const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
+          return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
+        })
+        .join('\n');
+
+      const templateNote = result.usedTemplate
+        ? '\n🎨 **Template:** Custom template from knowledge base applied'
+        : '';
+      const imageNote = extractedImages.length > 0
+        ? `\n🖼️ **Gambar:** ${extractedImages.length} gambar dari dokumen knowledge base diintegrasikan`
+        : '';
+
+      const responseMarkdown = isEnglish
+        ? `✅ **GYS Presentation successfully generated!**
+
 📊 **Title:** ${title}
-📑 **Slides:** ${result.slideCount}${templateNote}${imageNote}${sourceNote}
- 
+📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}
+
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
- 
-**Slide layouts:**
+
+**Auto-detected slide layouts:**
 ${layoutSummary}`
-      : `✅ **Presentasi berhasil dibuat!**
- 
+        : `✅ **Presentasi GYS berhasil dibuat!**
+
 📊 **Judul:** ${title}
-📑 **Jumlah Slide:** ${result.slideCount}${templateNote}${imageNote}${sourceNote}
- 
+📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}
+
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
- 
-**Layout per slide:**
+
+**Layout yang dipilih per slide:**
 ${layoutSummary}`;
- 
-    // Save to DB
-    let savedAttachments = [];
-    if (attachedFile) {
-      savedAttachments.push({
-        name:       attachedFile.originalname || attachedFile.filename,
-        path:       `/api/files/${attachedFile.filename}`,
-        serverPath: attachedFile.path,
-        type:       'file',
-      });
-    }
- 
-    await new Chat({
-      userId, botId, threadId,
-      role: 'user',
-      content: message,
-      attachedFiles: savedAttachments,
-    }).save();
- 
-    await new Chat({
-      userId, botId, threadId,
-      role: 'assistant',
-      content: responseMarkdown,
-      attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
-    }).save();
- 
-    await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
- 
-    return {
-      response: responseMarkdown,
-      threadId,
-      attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
-    };
- 
+
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
+      };
+
     } catch (error) {
       console.error('❌ [PPT Command]', error);
       throw new Error(`Gagal membuat presentasi: ${error.message}`);
