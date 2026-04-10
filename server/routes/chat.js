@@ -27,17 +27,54 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 // ── Helper: detect reasoning/GPT-5 model ─────────────────────
 const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(model);
 
-// ── Helper: normalize usage across providers ──────────────────
+// ── Helper: normalize usage across ALL providers ──────────────
+// OpenAI   : { prompt_tokens, completion_tokens, total_tokens, completion_tokens_details? }
+// Anthropic: { input_tokens, output_tokens }
+// Gemini   : { promptTokenCount, candidatesTokenCount, totalTokenCount }
 function normalizeUsage(usage, model = '') {
   if (!usage) return null;
-  const promptTokens     = usage.prompt_tokens       ?? usage.input_tokens      ?? usage.promptTokenCount     ?? 0;
-  const completionTokens = usage.completion_tokens   ?? usage.output_tokens     ?? usage.candidatesTokenCount ?? 0;
-  const totalTokens      = usage.total_tokens        ?? usage.totalTokenCount   ?? (promptTokens + completionTokens);
-  const reasoningTokens  = usage.completion_tokens_details?.reasoning_tokens    ?? null;
+
+  // OpenAI format
+  const promptTokens =
+    usage.prompt_tokens       ??   // OpenAI standard
+    usage.input_tokens         ??  // Anthropic
+    usage.promptTokenCount     ??  // Gemini
+    0;
+
+  const completionTokens =
+    usage.completion_tokens   ??   // OpenAI standard
+    usage.output_tokens        ??  // Anthropic
+    usage.candidatesTokenCount ??  // Gemini
+    0;
+
+  const totalTokens =
+    usage.total_tokens        ??   // OpenAI standard
+    usage.totalTokenCount      ??  // Gemini
+    (promptTokens + completionTokens);
+
+  // OpenAI o-series reasoning breakdown
+  const reasoningTokens =
+    usage.completion_tokens_details?.reasoning_tokens ?? null;
+
+  // Cache read/write tokens (Anthropic)
+  const cacheReadTokens =
+    usage.cache_read_input_tokens  ?? null;
+  const cacheCreationTokens =
+    usage.cache_creation_input_tokens ?? null;
+
   const warningMaxTokens = isReasoningModel(model) && reasoningTokens
     ? reasoningTokens >= (completionTokens * 0.9)
     : false;
-  return { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens };
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    reasoningTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    warningMaxTokens,
+  };
 }
 
 // ── Helper: format token count for log ───────────────────────
@@ -46,30 +83,74 @@ function fmtTokens(n) {
   return n.toLocaleString();
 }
 
+// ── Helper: detect provider from usage shape ─────────────────
+function detectProviderFromUsage(usage) {
+  if (!usage) return null;
+  if ('input_tokens'      in usage) return 'anthropic';
+  if ('promptTokenCount'  in usage) return 'gemini';
+  if ('prompt_tokens'     in usage) return 'openai';
+  return null;
+}
+
 // ── Helper: log token usage to console ───────────────────────
-// ✅ NEW: Detailed per-request token logging
-function logTokenUsage({ username, botName, model, provider, durationMs, usage, messagePreview, responsePreview }) {
+// ✅ FIXED: Now shows correct field names per provider + cache tokens for Anthropic
+function logTokenUsage({
+  username,
+  botName,
+  model,
+  provider,
+  durationMs,
+  usage,
+  messagePreview,
+  responsePreview,
+  source = '',
+}) {
   const normalized = normalizeUsage(usage, model);
   if (!normalized) return;
 
-  const { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens } = normalized;
+  const {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    reasoningTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    warningMaxTokens,
+  } = normalized;
+
+  // Provider-specific field labels for clarity in logs
+  let inputLabel      = '📥 prompt';
+  let outputLabel     = '📤 completion';
+  let providerDisplay = provider || detectProviderFromUsage(usage) || 'unknown';
+
+  if (providerDisplay === 'anthropic') {
+    inputLabel  = '📥 input';
+    outputLabel = '📤 output';
+  } else if (providerDisplay === 'google') {
+    inputLabel  = '📥 promptTokens';
+    outputLabel = '📤 candidateTokens';
+  }
 
   const reasoningStr = reasoningTokens !== null
     ? ` | 🧠 reasoning: ${fmtTokens(reasoningTokens)}`
     : '';
 
-  const warningStr = warningMaxTokens
-    ? ' ⚠️ REASONING NEAR LIMIT'
+  // Anthropic cache breakdown
+  const cacheStr = (cacheReadTokens !== null || cacheCreationTokens !== null)
+    ? ` | 💾 cache_read: ${fmtTokens(cacheReadTokens)} | cache_write: ${fmtTokens(cacheCreationTokens)}`
     : '';
 
+  const warningStr = warningMaxTokens ? ' ⚠️ REASONING NEAR LIMIT' : '';
   const durationStr = durationMs ? ` | ⏱ ${(durationMs / 1000).toFixed(1)}s` : '';
+  const sourceStr = source ? ` [${source}]` : '';
 
   console.log(
-    `[TOKEN] 👤 ${username || 'unknown'} → 🤖 ${botName || '?'} (${provider}/${model})` +
+    `[TOKEN]${sourceStr} 👤 ${username || 'unknown'} → 🤖 ${botName || '?'} (${providerDisplay}/${model})` +
     `${durationStr}` +
-    ` | 📥 prompt: ${fmtTokens(promptTokens)}` +
-    ` | 📤 completion: ${fmtTokens(completionTokens)}` +
+    ` | ${inputLabel}: ${fmtTokens(promptTokens)}` +
+    ` | ${outputLabel}: ${fmtTokens(completionTokens)}` +
     `${reasoningStr}` +
+    `${cacheStr}` +
     ` | Σ total: ${fmtTokens(totalTokens)}` +
     `${warningStr}`
   );
@@ -196,7 +277,6 @@ router.post('/message', requireAuth, async (req, res) => {
         await new Chat({ userId, botId, threadId: targetThreadId, role: 'user', content: message }).save();
         await new Chat({ userId, botId, threadId: targetThreadId, role: 'assistant', content: markdownResponse }).save();
 
-        // ✅ Token log for image generation (no token cost from LLM)
         console.log(`[TOKEN] 👤 ${sessionUsername || 'unknown'} → 🤖 ${botName} | 🎨 Image generated | prompt: "${prompt.substring(0, 80)}"`);
 
         await AuditService.log({
@@ -225,7 +305,7 @@ router.post('/message', requireAuth, async (req, res) => {
     sendToWaha(bot, sessionUsername, message, result?.response || '');
 
     // ── Token Usage Logging ───────────────────────────────────
-    // ✅ NEW: Print detailed token breakdown to server log
+    // ✅ FIXED: Pass provider explicitly so the log shows correct labels
     logTokenUsage({
       username:        sessionUsername,
       botName,
@@ -235,6 +315,7 @@ router.post('/message', requireAuth, async (req, res) => {
       usage:           result?.usage,
       messagePreview:  message,
       responsePreview: result?.response,
+      source:          'web',
     });
 
     // ── Audit Log ────────────────────────────────────────────
@@ -246,6 +327,8 @@ router.post('/message', requireAuth, async (req, res) => {
         completion: usage.completionTokens,
         total:      usage.totalTokens,
         ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
+        ...(usage.cacheReadTokens !== null && { cacheRead: usage.cacheReadTokens }),
+        ...(usage.cacheCreationTokens !== null && { cacheWrite: usage.cacheCreationTokens }),
       } : null,
       ...(usage?.warningMaxTokens && {
         warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
@@ -319,7 +402,7 @@ router.post('/external', async (req, res) => {
     const durationMs  = Date.now() - startTime;
     const responseText = aiResponse?.text || aiResponse?.response || '';
 
-    // ✅ NEW: Token log for external API calls too
+    // ✅ FIXED: Token log for external API with correct provider labels
     logTokenUsage({
       username:        `[EXT] ${callerUsername}`,
       botName:         bot.name,
@@ -329,6 +412,7 @@ router.post('/external', async (req, res) => {
       usage:           aiResponse?.usage,
       messagePreview:  message,
       responsePreview: responseText,
+      source:          'external_api',
     });
 
     sendToWaha(bot, callerUsername, message, responseText);
@@ -353,7 +437,9 @@ router.post('/external', async (req, res) => {
           prompt:     usage.promptTokens,
           completion: usage.completionTokens,
           total:      usage.totalTokens,
-          ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
+          ...(usage.reasoningTokens   !== null && { reasoning:  usage.reasoningTokens }),
+          ...(usage.cacheReadTokens   !== null && { cacheRead:  usage.cacheReadTokens }),
+          ...(usage.cacheCreationTokens !== null && { cacheWrite: usage.cacheCreationTokens }),
         } : null,
       },
     }).catch(() => {});
