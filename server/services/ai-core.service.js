@@ -24,6 +24,8 @@ import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
 import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
+import PptxTemplateService  from './pptx-template.service.js';
+import ImageSelectorService from './image-selector.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS

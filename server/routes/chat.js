@@ -40,6 +40,48 @@ function normalizeUsage(usage, model = '') {
   return { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens };
 }
 
+// ── Helper: format token count for log ───────────────────────
+function fmtTokens(n) {
+  if (n === null || n === undefined) return '—';
+  return n.toLocaleString();
+}
+
+// ── Helper: log token usage to console ───────────────────────
+// ✅ NEW: Detailed per-request token logging
+function logTokenUsage({ username, botName, model, provider, durationMs, usage, messagePreview, responsePreview }) {
+  const normalized = normalizeUsage(usage, model);
+  if (!normalized) return;
+
+  const { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens } = normalized;
+
+  const reasoningStr = reasoningTokens !== null
+    ? ` | 🧠 reasoning: ${fmtTokens(reasoningTokens)}`
+    : '';
+
+  const warningStr = warningMaxTokens
+    ? ' ⚠️ REASONING NEAR LIMIT'
+    : '';
+
+  const durationStr = durationMs ? ` | ⏱ ${(durationMs / 1000).toFixed(1)}s` : '';
+
+  console.log(
+    `[TOKEN] 👤 ${username || 'unknown'} → 🤖 ${botName || '?'} (${provider}/${model})` +
+    `${durationStr}` +
+    ` | 📥 prompt: ${fmtTokens(promptTokens)}` +
+    ` | 📤 completion: ${fmtTokens(completionTokens)}` +
+    `${reasoningStr}` +
+    ` | Σ total: ${fmtTokens(totalTokens)}` +
+    `${warningStr}`
+  );
+
+  if (messagePreview) {
+    console.log(`[TOKEN]   Q: "${messagePreview.substring(0, 120)}${messagePreview.length > 120 ? '…' : ''}"`);
+  }
+  if (responsePreview) {
+    console.log(`[TOKEN]   A: "${responsePreview.substring(0, 120)}${responsePreview.length > 120 ? '…' : ''}"`);
+  }
+}
+
 // ── Helper: kirim ke WAHA WhatsApp ───────────────────────────
 async function sendToWaha(bot, username, userMessage, aiResponse) {
   if (!bot.wahaConfig?.enabled || !bot.wahaConfig?.chatId || !bot.wahaConfig?.endpoint) return;
@@ -154,6 +196,9 @@ router.post('/message', requireAuth, async (req, res) => {
         await new Chat({ userId, botId, threadId: targetThreadId, role: 'user', content: message }).save();
         await new Chat({ userId, botId, threadId: targetThreadId, role: 'assistant', content: markdownResponse }).save();
 
+        // ✅ Token log for image generation (no token cost from LLM)
+        console.log(`[TOKEN] 👤 ${sessionUsername || 'unknown'} → 🤖 ${botName} | 🎨 Image generated | prompt: "${prompt.substring(0, 80)}"`);
+
         await AuditService.log({
           req, category: 'chat', action: 'IMAGE_GENERATE',
           targetId: botId, targetName: botName,
@@ -178,6 +223,19 @@ router.post('/message', requireAuth, async (req, res) => {
 
     // ── WAHA Forward (fire & forget) ─────────────────────────
     sendToWaha(bot, sessionUsername, message, result?.response || '');
+
+    // ── Token Usage Logging ───────────────────────────────────
+    // ✅ NEW: Print detailed token breakdown to server log
+    logTokenUsage({
+      username:        sessionUsername,
+      botName,
+      model,
+      provider,
+      durationMs,
+      usage:           result?.usage,
+      messagePreview:  message,
+      responsePreview: result?.response,
+    });
 
     // ── Audit Log ────────────────────────────────────────────
     const usage = normalizeUsage(result?.usage, model);
@@ -223,27 +281,18 @@ router.post('/message', requireAuth, async (req, res) => {
 // ============================================================
 // 🌐 EXTERNAL API CHAT — akses via x-api-key header
 // ============================================================
-// Contoh curl:
-//   curl -X POST https://domain/api/chat/external \
-//     -H "x-api-key: gys-bot-xxxx" \
-//     -H "Content-Type: application/json" \
-//     -d '{"message": "Give me what you got!", "username": "system.scheduler"}'
-// ============================================================
 router.post('/external', async (req, res) => {
   try {
-    // 1. Validasi API Key
     const apiKey = req.headers['x-api-key'];
     if (!apiKey) {
       return res.status(401).json({ error: 'Akses ditolak: x-api-key tidak ditemukan di header' });
     }
 
-    // 2. Cari bot berdasarkan API Key
     const bot = await Bot.findOne({ botApiKey: apiKey }).lean();
     if (!bot) {
       return res.status(403).json({ error: 'Akses ditolak: API Key tidak valid atau Bot tidak ditemukan' });
     }
 
-    // 3. Validasi message
     const { message, username, history } = req.body;
     if (!message?.trim()) {
       return res.status(400).json({ error: 'Field "message" wajib diisi' });
@@ -256,7 +305,6 @@ router.post('/external', async (req, res) => {
 
     console.log(`[EXTERNAL] Bot: ${bot.name} | From: ${callerUsername} | Msg: ${message.substring(0, 80)}`);
 
-    // 4. Panggil AI — pakai system prompt + knowledge base bot yang sesungguhnya
     const startTime = Date.now();
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider,
@@ -271,10 +319,20 @@ router.post('/external', async (req, res) => {
     const durationMs  = Date.now() - startTime;
     const responseText = aiResponse?.text || aiResponse?.response || '';
 
-    // 5. WAHA Forward (fire & forget) — sama persis seperti chat internal
+    // ✅ NEW: Token log for external API calls too
+    logTokenUsage({
+      username:        `[EXT] ${callerUsername}`,
+      botName:         bot.name,
+      model,
+      provider,
+      durationMs,
+      usage:           aiResponse?.usage,
+      messagePreview:  message,
+      responsePreview: responseText,
+    });
+
     sendToWaha(bot, callerUsername, message, responseText);
 
-    // 6. Audit log
     const usage = normalizeUsage(aiResponse?.usage, model);
     await AuditService.log({
       req,
@@ -300,7 +358,6 @@ router.post('/external', async (req, res) => {
       },
     }).catch(() => {});
 
-    // 7. Response — field "response" konsisten dengan format internal
     res.json({
       success:  true,
       botName:  bot.name,

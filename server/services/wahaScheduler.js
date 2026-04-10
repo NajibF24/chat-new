@@ -4,7 +4,7 @@
 // ✅ UPDATED:
 //   - Per-target scheduling (send to specific targets by ID)
 //   - Global scheduling (send to all active targets)
-//   - Detailed logging for each schedule fire event
+//   - Detailed logging ONLY when schedule fires — no spam
 //   - 3 schedule types: daily, multiple, interval
 // ============================================================
 
@@ -17,7 +17,8 @@ function log(level, ...args) {
   const ts = new Date().toISOString();
   if (level === 'ERROR') console.error(ts, LOG_PREFIX, '❌', ...args);
   else if (level === 'WARN')  console.warn(ts,  LOG_PREFIX, '⚠️', ...args);
-  else                        console.log(ts,   LOG_PREFIX, level === 'OK' ? '✅' : 'ℹ️', ...args);
+  else if (level === 'OK')    console.log(ts,   LOG_PREFIX, '✅', ...args);
+  else                        console.log(ts,   LOG_PREFIX, 'ℹ️', ...args);
 }
 
 // Prevent double-firing within same minute
@@ -78,14 +79,14 @@ async function sendWahaMessage(wahaConfig, chatId, text) {
 // ── Generate AI response ──────────────────────────────────────
 async function generateAIResponse(bot, prompt) {
   try {
-    log('INFO', `Generating AI response for bot "${bot.name}" | prompt="${prompt.substring(0, 80)}"`);
+    log('INFO', `Generating AI for bot "${bot.name}" | prompt="${prompt.substring(0, 80)}"`);
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
       messages:       [],
       userContent:    prompt,
     });
-    log('OK', `AI response generated | length=${result.text?.length || 0}`);
+    log('OK', `AI response ready | length=${result.text?.length || 0}`);
     return result.text || null;
   } catch (err) {
     log('ERROR', `AI generation failed: ${err.message}`);
@@ -94,9 +95,6 @@ async function generateAIResponse(bot, prompt) {
 }
 
 // ── Fire a schedule ───────────────────────────────────────────
-// schedule.targetIds:
-//   []        → send to ALL active targets (global)
-//   ['id1', ] → send only to those specific targets
 async function fireSchedule(bot, schedule) {
   const wahaConfig = bot.wahaConfig;
   const schedLabel = schedule.label || String(schedule._id) || 'unnamed';
@@ -108,54 +106,44 @@ async function fireSchedule(bot, schedule) {
 
   const prompt = schedule.prompt || 'Give a helpful daily update summary.';
 
-  // Generate AI message
   const aiText = await generateAIResponse(bot, prompt);
   if (!aiText) {
     log('ERROR', `No AI response — aborting schedule "${schedLabel}"`);
     return;
   }
 
-  const formattedMsg = aiText;
-
-  // Resolve target list
   const allActiveTargets = (wahaConfig.targets || []).filter(t => t.active !== false);
 
   let resolvedTargets;
   if (!schedule.targetIds || schedule.targetIds.length === 0) {
-    // GLOBAL: send to all active targets
     resolvedTargets = allActiveTargets;
     log('INFO', `  Mode: GLOBAL → ${resolvedTargets.length} active targets`);
   } else {
-    // PER-TARGET: only send to specified targets
     resolvedTargets = allActiveTargets.filter(t =>
       schedule.targetIds.includes(String(t._id))
     );
-    log('INFO', `  Mode: PER-TARGET → ${resolvedTargets.length} matching targets (requested ${schedule.targetIds.length})`);
+    log('INFO', `  Mode: PER-TARGET → ${resolvedTargets.length} matching targets`);
   }
 
-  // Log each target
   resolvedTargets.forEach((t, i) => {
-    log('INFO', `  Target[${i}]: "${t.label || t.chatId}" type=${t.type} chatId=${t.chatId}`);
+    log('INFO', `  Target[${i}]: "${t.label || t.chatId}" chatId=${t.chatId}`);
   });
 
-  // Legacy chatId fallback
   const legacyChatId = wahaConfig.chatId;
   if (resolvedTargets.length === 0 && !legacyChatId) {
     log('WARN', `No targets resolved — nothing sent for schedule "${schedLabel}"`);
     return;
   }
 
-  // Send to resolved targets
   let sentCount = 0;
   for (const target of resolvedTargets) {
-    const ok = await sendWahaMessage(wahaConfig, target.chatId, formattedMsg);
+    const ok = await sendWahaMessage(wahaConfig, target.chatId, aiText);
     if (ok) sentCount++;
   }
 
-  // Fallback: legacy chatId
   if (resolvedTargets.length === 0 && legacyChatId) {
     log('INFO', `  Sending to legacy chatId: ${legacyChatId}`);
-    await sendWahaMessage(wahaConfig, legacyChatId, formattedMsg);
+    await sendWahaMessage(wahaConfig, legacyChatId, aiText);
     sentCount++;
   }
 
@@ -163,9 +151,10 @@ async function fireSchedule(bot, schedule) {
 }
 
 // ── Check if a schedule should fire right now ─────────────────
+// Returns: { should: boolean, reason: string }
 function shouldFireSchedule(botId, schedule) {
   if (!schedule.active && schedule.active !== undefined) {
-    return false; // explicitly disabled
+    return { should: false };
   }
 
   const schedId = String(schedule._id || schedule.label || 'unnamed');
@@ -177,12 +166,11 @@ function shouldFireSchedule(botId, schedule) {
 
     case 'daily': {
       const fireTime = schedule.time || '08:00';
-      if (nowHHMM !== fireTime) return false;
+      if (nowHHMM !== fireTime) return { should: false };
       const cacheKey = `${botId}:${schedId}:${today}:daily:${fireTime}`;
-      if (firedCache.has(cacheKey)) return false;
+      if (firedCache.has(cacheKey)) return { should: false };
       firedCache.add(cacheKey);
-      log('INFO', `Schedule "${schedule.label}" | daily | matched ${fireTime}`);
-      return true;
+      return { should: true, reason: `daily at ${fireTime}` };
     }
 
     case 'multiple': {
@@ -192,12 +180,11 @@ function shouldFireSchedule(botId, schedule) {
           const cacheKey = `${botId}:${schedId}:${today}:multi:${t}`;
           if (!firedCache.has(cacheKey)) {
             firedCache.add(cacheKey);
-            log('INFO', `Schedule "${schedule.label}" | multiple | matched ${t}`);
-            return true;
+            return { should: true, reason: `multiple at ${t}` };
           }
         }
       }
-      return false;
+      return { should: false };
     }
 
     case 'interval': {
@@ -205,31 +192,28 @@ function shouldFireSchedule(botId, schedule) {
       const endMin   = timeToMinutes(schedule.intervalEnd   || '17:00');
       const interval = Math.max(1, schedule.intervalMinutes || 60);
 
-      if (nowMin < startMin || nowMin > endMin) return false;
+      if (nowMin < startMin || nowMin > endMin) return { should: false };
 
       const nextFireKey = `${botId}:${schedId}:interval`;
       const nextFire    = intervalNextFire.get(nextFireKey);
       const now         = new Date();
 
       if (!nextFire) {
-        // First time in window — fire immediately, set next
         intervalNextFire.set(nextFireKey, new Date(now.getTime() + interval * 60000));
-        log('INFO', `Schedule "${schedule.label}" | interval | first fire (every ${interval}min)`);
-        return true;
+        return { should: true, reason: `interval first fire (every ${interval}min)` };
       }
 
       if (now >= nextFire) {
         intervalNextFire.set(nextFireKey, new Date(now.getTime() + interval * 60000));
-        log('INFO', `Schedule "${schedule.label}" | interval | interval elapsed`);
-        return true;
+        return { should: true, reason: `interval elapsed (every ${interval}min)` };
       }
 
-      return false;
+      return { should: false };
     }
 
     default:
-      log('WARN', `Unknown scheduleType "${schedule.scheduleType}" for schedule "${schedule.label}"`);
-      return false;
+      log('WARN', `Unknown scheduleType "${schedule.scheduleType}"`);
+      return { should: false };
   }
 }
 
@@ -250,24 +234,29 @@ function shouldFireLegacy(botId, wahaConfig) {
 }
 
 // ── Main scheduler tick (every 60 seconds) ────────────────────
+// ✅ FIX: Only log when something actually fires.
+//         Silent tick when nothing needs to run.
 async function schedulerTick() {
-  const nowHHMM = currentHHMM();
   try {
     const bots = await Bot.find({ 'wahaConfig.enabled': true }).lean();
+    if (bots.length === 0) return;
 
-    if (bots.length === 0) return; // silent if no WAHA bots
-
-    log('INFO', `Tick at ${nowHHMM} | checking ${bots.length} WAHA-enabled bots`);
+    let anyFired = false;
 
     for (const bot of bots) {
-      const wahaConfig  = bot.wahaConfig;
-      const schedules   = (wahaConfig.schedules || []);
+      const wahaConfig   = bot.wahaConfig;
+      const schedules    = wahaConfig.schedules || [];
       const activeScheds = schedules.filter(s => s.active !== false);
 
-      log('INFO', `Bot "${bot.name}" | ${activeScheds.length}/${schedules.length} active schedules | ${(wahaConfig.targets || []).filter(t => t.active).length} active targets`);
-
       for (const schedule of activeScheds) {
-        if (shouldFireSchedule(String(bot._id), schedule)) {
+        const { should, reason } = shouldFireSchedule(String(bot._id), schedule);
+        if (should) {
+          if (!anyFired) {
+            // First fire this tick — log the tick header once
+            log('INFO', `Tick at ${currentHHMM()} | firing schedules`);
+            anyFired = true;
+          }
+          log('INFO', `Bot "${bot.name}" | schedule "${schedule.label || 'unnamed'}" → ${reason}`);
           fireSchedule(bot, schedule).catch(err =>
             log('ERROR', `Schedule "${schedule.label}" fire error: ${err.message}`)
           );
@@ -276,13 +265,18 @@ async function schedulerTick() {
 
       // Legacy daily
       if (shouldFireLegacy(String(bot._id), wahaConfig) && wahaConfig.dailySchedule?.prompt) {
+        if (!anyFired) {
+          log('INFO', `Tick at ${currentHHMM()} | firing schedules`);
+          anyFired = true;
+        }
+        log('INFO', `Bot "${bot.name}" | legacy daily schedule firing`);
         const legacySched = {
           _id:          'legacy',
           label:        'Daily (Legacy)',
           prompt:       wahaConfig.dailySchedule.prompt,
           scheduleType: 'daily',
           time:         wahaConfig.dailySchedule.time,
-          targetIds:    [], // global
+          targetIds:    [],
           active:       true,
         };
         fireSchedule(bot, legacySched).catch(err =>
@@ -290,6 +284,9 @@ async function schedulerTick() {
         );
       }
     }
+
+    // ✅ Completely silent when nothing fires — no more spam
+
   } catch (err) {
     log('ERROR', `Tick error: ${err.message}`);
   }
@@ -307,10 +304,10 @@ function cleanFiredCache() {
 
 // ── Start ──────────────────────────────────────────────────────
 export const startWahaScheduler = () => {
-  log('OK', 'WAHA Flexible Scheduler starting (interval: 60s)...');
-  schedulerTick(); // run immediately
+  log('OK', 'WAHA Flexible Scheduler started (interval: 60s) — silent when idle');
+  schedulerTick();
   setInterval(schedulerTick, 60 * 1000);
-  setInterval(cleanFiredCache, 60 * 60 * 1000); // clean hourly
+  setInterval(cleanFiredCache, 60 * 60 * 1000);
 };
 
 export default startWahaScheduler;
