@@ -1,4 +1,11 @@
 // server/services/ai-core.service.js
+// ============================================================
+// PATCH CHANGES:
+//   1. isPptCommand() — multi-language detection (ID, EN, Malay)
+//   2. processMessage() — extract images from chat attachment for PPT
+//   3. _handlePptCommand() — images come from attachment, NOT knowledge base
+//      Knowledge base = text content (RAG) + template .pptx only
+// ============================================================
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -253,16 +260,43 @@ const PPT_RESPONSE_MARKERS = [
   'fallback mode',
 ];
 
+/**
+ * ✅ UPDATED: Multi-language PPT command detection
+ * Supports: Indonesian, English, Malay, mixed
+ */
 function isPptCommand(message = '') {
   const t = (message || '').trim().toLowerCase();
-  return (
-    t.startsWith('/ppt') ||
-    t.startsWith('/slide') ||
-    t.startsWith('/presentation') ||
-    /^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t) ||
-    (/\b(presentasi|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
-      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t))
-  );
+
+  // ── Prefix commands ──────────────────────────────────────
+  if (t.startsWith('/ppt'))          return true;
+  if (t.startsWith('/slide'))        return true;
+  if (t.startsWith('/presentation')) return true;
+
+  // ── Indonesia ────────────────────────────────────────────
+  if (/^(buatkan|buat|bikin|tolong\s+buat|tolong\s+buatkan|bikinin)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t)) return true;
+  if (
+    /\b(presentasi|powerpoint|ppt|slide\s+deck|deck)\b/i.test(t) &&
+    /\b(buat|buatkan|bikin|bikinin|tolong|jadikan|konversi|ubah|rangkum|ringkas|summarikan)\b/i.test(t)
+  ) return true;
+  if (/\b(jadikan|ubah|konversi|ringkas|rangkum)\b.{0,40}\b(presentasi|ppt|slide|powerpoint)\b/i.test(t)) return true;
+  // "dari dokumen ini buatkan presentasi", "dari file ini buat ppt"
+  if (/\b(dari\s+(dokumen|file|ini|laporan|data))\b.{0,40}\b(presentasi|ppt|slide)\b/i.test(t)) return true;
+
+  // ── English ──────────────────────────────────────────────
+  if (/^(create|make|generate|build|prepare|convert|turn)\s+(a\s+|an\s+|me\s+a\s+)?(presentation|ppt|slides?|powerpoint|deck)/i.test(t)) return true;
+  if (
+    /\b(presentation|powerpoint|ppt|slide\s+deck|slideshow|slides)\b/i.test(t) &&
+    /\b(create|make|generate|build|prepare|convert|turn\s+into|summarize\s+into|from\s+this|based\s+on)\b/i.test(t)
+  ) return true;
+  if (/\b(turn|convert|transform)\b.{0,30}\b(presentation|slides?|ppt|powerpoint|deck)\b/i.test(t)) return true;
+  // "make a ppt from this document", "create slides from this file"
+  if (/\b(from\s+(this|the)\s+(document|file|report|doc|data))\b.{0,40}\b(presentation|slides?|ppt|powerpoint)\b/i.test(t)) return true;
+  if (/\b(presentation|slides?|ppt|powerpoint)\b.{0,40}\b(from\s+(this|the)\s+(document|file|report|doc|data))\b/i.test(t)) return true;
+
+  // ── Malay ─────────────────────────────────────────────────
+  if (/\b(buat|hasilkan|jadikan|cipta)\b.{0,30}\b(persembahan|slaid|pembentangan)\b/i.test(t)) return true;
+
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -312,6 +346,47 @@ class AICoreService {
     } catch { return ''; }
   }
 
+  /**
+   * ✅ NEW: Extract images from a file uploaded via chat message.
+   * Only works for .docx and .pptx — these contain embedded images.
+   * This is SEPARATE from knowledge base image extraction.
+   */
+  async extractImagesFromAttachment(attachedFile) {
+    if (!attachedFile) return [];
+
+    const filePath     = attachedFile.serverPath || attachedFile.path;
+    const originalName = attachedFile.originalname || attachedFile.filename || '';
+    const mimetype     = attachedFile.mimetype || '';
+    const ext          = path.extname(originalName).toLowerCase();
+
+    const supportedExts = ['.docx', '.pptx'];
+    const supportedMime = [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ];
+
+    if (!supportedExts.includes(ext) && !supportedMime.includes(mimetype)) {
+      return [];
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      console.warn(`[PPT] Attachment file not found: ${filePath}`);
+      return [];
+    }
+
+    try {
+      const { extractedImages } = await KnowledgeBaseService.extractContent(
+        filePath, originalName, mimetype
+      );
+      const images = extractedImages || [];
+      console.log(`[PPT] Extracted ${images.length} images from chat attachment: ${originalName}`);
+      return images;
+    } catch (err) {
+      console.error(`[PPT] Failed to extract images from attachment: ${err.message}`);
+      return [];
+    }
+  }
+
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
     let bot = await Bot.findById(botId);
     if (!bot) throw new Error('Bot not found');
@@ -323,10 +398,21 @@ class AICoreService {
       threadId = newThread._id;
     }
 
+    // ✅ UPDATED: PPT command check — extract images from attachment, not knowledge base
     if (isPptCommand(message)) {
-      return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
+      let attachmentImages = [];
+      if (attachedFile) {
+        // Gambar untuk PPT diambil dari file yang di-upload user di chat
+        attachmentImages = await this.extractImagesFromAttachment(attachedFile);
+      }
+      return this._handlePptCommand({
+        userId, botId, bot, message, threadId, history,
+        attachedFile,       // untuk ekstrak teks konten
+        attachmentImages,   // gambar dari file upload user (bukan knowledge base)
+      });
     }
 
+    // ── Normal chat (non-PPT) — perilaku tidak berubah ──────
     let contextData = '';
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
@@ -438,9 +524,10 @@ class AICoreService {
   }
 
   // ─────────────────────────────────────────────────────────
-  // PPT COMMAND HANDLER (class method — no 'function' keyword)
+  // PPT COMMAND HANDLER
+  // ✅ UPDATED: attachmentImages dari file chat, bukan knowledge base
   // ─────────────────────────────────────────────────────────
-  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
+  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile = null, attachmentImages = [] }) {
     try {
       // ── STEP 0: Load DB history ──────────────────────────────
       let dbHistory = [];
@@ -453,11 +540,11 @@ class AICoreService {
         }
       } catch (e) { console.warn('[PPT] DB history error:', e.message); }
 
-      // ── STEP 0.5: Find template & extract images from knowledge base ──
-      const freshBot = await Bot.findById(botId).lean();
+      // ── STEP 0.5: Template dari knowledge base, gambar dari attachment ──
+      const freshBot     = await Bot.findById(botId).lean();
       const knowledgeFiles = freshBot?.knowledgeFiles || [];
 
-      // Find template PPTX if configured
+      // Find template PPTX dari knowledge base (untuk tema/style)
       let templatePath = null;
       if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
         const templateFile = knowledgeFiles.find(f =>
@@ -466,11 +553,11 @@ class AICoreService {
         );
         if (templateFile && fs.existsSync(templateFile.path)) {
           templatePath = templateFile.path;
-          console.log(`[PPT] Using template: ${templateFile.originalName}`);
+          console.log(`[PPT] Using template from knowledge base: ${templateFile.originalName}`);
         }
       }
 
-      // If no explicit template, auto-detect any .pptx in knowledge base
+      // Auto-detect template .pptx dari knowledge base kalau belum ada
       if (!templatePath) {
         const pptxFile = knowledgeFiles.find(f =>
           f.originalName?.toLowerCase().endsWith('.pptx') &&
@@ -482,13 +569,15 @@ class AICoreService {
         }
       }
 
-      // Get extracted images from relevant knowledge files (Word/PPTX)
-      const extractedImages = KnowledgeBaseService.getExtractedImages(
-        knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
-      );
-      console.log(`[PPT] Found ${extractedImages.length} extracted images from knowledge base`);
+      // ✅ GAMBAR: dari file attachment user di chat (bukan knowledge base)
+      const extractedImages = attachmentImages;
+      if (extractedImages.length > 0) {
+        console.log(`[PPT] Using ${extractedImages.length} images from chat attachment`);
+      } else {
+        console.log(`[PPT] No images from attachment — text-only generation`);
+      }
 
-      // Build knowledge context for AI content generation
+      // Teks knowledge base TETAP dipakai untuk konten (RAG) — tapi BUKAN gambar
       let knowledgeCtx = '';
       if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
         knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
@@ -512,14 +601,37 @@ class AICoreService {
       // ── STEP 2: CONTENT GENERATION ──────────────────────────
       console.log('[PPT] Step 1 — generating content...');
 
+      // ✅ Ekstrak teks dari file attachment untuk sumber konten PPT
+      let attachmentText = '';
+      if (attachedFile) {
+        try {
+          attachmentText = await this.extractFileContent(attachedFile);
+          if (attachmentText) {
+            console.log(`[PPT] Extracted text from attachment: ${attachmentText.length} chars`);
+          }
+        } catch (e) {
+          console.warn('[PPT] Failed to extract attachment text:', e.message);
+        }
+      }
+
       let contentUserMsg = '';
       if (historicalContent) {
-        contentUserMsg = `Generate a professional presentation based on this conversation and knowledge base context.\nIMPORTANT: Match language exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\n`;
+        contentUserMsg = `Generate a professional presentation based on this conversation and context.\nIMPORTANT: Match language exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\n`;
       } else {
         contentUserMsg = `Generate a professional presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout.\n\n`;
       }
 
-      if (knowledgeCtx) {
+      // ✅ Prioritas sumber konten:
+      // 1. Teks dari file attachment (paling relevan — langsung dari user)
+      // 2. Teks dari knowledge base (RAG — background knowledge bot)
+      // 3. Prompt user saja
+      if (attachmentText) {
+        contentUserMsg += `DOCUMENT CONTENT (use this as the PRIMARY source for slide content — extract key points, data, diagrams mentioned, and structure):\n${attachmentText.substring(0, 8000)}\n\n`;
+        if (knowledgeCtx) {
+          // Knowledge base jadi referensi tambahan saja
+          contentUserMsg += `ADDITIONAL KNOWLEDGE BASE CONTEXT:\n${knowledgeCtx.substring(0, 3000)}\n\n`;
+        }
+      } else if (knowledgeCtx) {
         contentUserMsg += `KNOWLEDGE BASE CONTEXT (use this as main content source):\n${knowledgeCtx.substring(0, 6000)}\n\n`;
       }
 
@@ -538,7 +650,7 @@ class AICoreService {
       const titleMatch = slideContent.match(/^#\s+(.+)/m);
       const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
 
-      console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars | Images: ${extractedImages.length}`);
+      console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars | Images from attachment: ${extractedImages.length}`);
 
       // ── STEP 3: JSON CONVERSION ──────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
@@ -576,7 +688,7 @@ class AICoreService {
         outputDir,
         styleDesc: templatePath ? 'Custom Template' : 'GYS Gamma Style',
         templatePath,
-        extractedImages,
+        extractedImages, // ✅ gambar dari attachment, bukan knowledge base
       });
 
       // ── STEP 5: BUILD RESPONSE ───────────────────────────────
@@ -600,17 +712,20 @@ class AICoreService {
         .join('\n');
 
       const templateNote = result.usedTemplate
-        ? '\n🎨 **Template:** Custom template from knowledge base applied'
+        ? '\n🎨 **Template:** Custom template applied'
         : '';
       const imageNote = extractedImages.length > 0
-        ? `\n🖼️ **Gambar:** ${extractedImages.length} gambar dari dokumen knowledge base diintegrasikan`
+        ? `\n🖼️ **Images:** ${extractedImages.length} image(s) from your uploaded document integrated into slides`
+        : '';
+      const sourceNote = attachmentText
+        ? `\n📄 **Source:** Content extracted from your uploaded document`
         : '';
 
       const responseMarkdown = isEnglish
         ? `✅ **GYS Presentation successfully generated!**
 
 📊 **Title:** ${title}
-📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}
+📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}${sourceNote}
 
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
@@ -620,7 +735,7 @@ ${layoutSummary}`
         : `✅ **Presentasi GYS berhasil dibuat!**
 
 📊 **Judul:** ${title}
-📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}
+📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}${sourceNote}
 
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
@@ -628,7 +743,18 @@ ${layoutSummary}`
 **Layout yang dipilih per slide:**
 ${layoutSummary}`;
 
-      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      // Save attachment info
+      let savedAttachments = [];
+      if (attachedFile) {
+        savedAttachments.push({
+          name: attachedFile.originalname || attachedFile.filename,
+          path: `/api/files/${attachedFile.filename}`,
+          serverPath: attachedFile.path,
+          type: 'file',
+        });
+      }
+
+      await new Chat({ userId, botId, threadId, role: 'user', content: message, attachedFiles: savedAttachments }).save();
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],

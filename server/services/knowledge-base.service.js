@@ -1,5 +1,13 @@
 // server/services/knowledge-base.service.js
-// ✅ UPDATED: Added image extraction from Word/PPT documents
+// ============================================================
+// PATCH CHANGES:
+//   - buildKnowledgeContext() — hapus mention gambar dari context string
+//     (gambar untuk PPT sudah tidak dari knowledge base)
+//   - getExtractedImages() — tetap ada tapi tidak dipanggil untuk PPT
+//     (masih bisa dipakai untuk keperluan lain di masa depan)
+//   - extractContent() — tidak berubah, masih extract gambar saat upload
+//     knowledge base (untuk keperluan selain PPT)
+// ============================================================
 
 import fs      from 'fs';
 import path    from 'path';
@@ -28,11 +36,13 @@ class KnowledgeBaseService {
   /**
    * Extract text content AND images from a file.
    * Returns { content: string, summary: string, extractedImages: [] }
+   * 
+   * NOTE: extractedImages disimpan ke DB untuk keperluan knowledge base.
+   * Untuk PPT generation, gambar diambil dari file attachment chat (bukan sini).
    */
   async extractContent(filePath, originalName, mimetype) {
     const ext = path.extname(originalName).toLowerCase();
 
-    // Ensure image output dir exists
     if (!fs.existsSync(IMAGE_OUTPUT_DIR)) {
       fs.mkdirSync(IMAGE_OUTPUT_DIR, { recursive: true });
     }
@@ -41,15 +51,11 @@ class KnowledgeBaseService {
       let content = '';
       let extractedImages = [];
 
-      // ── PDF ───────────────────────────────────────────────
       if (ext === '.pdf' || mimetype === 'application/pdf') {
         const buffer = fs.readFileSync(filePath);
         const data   = await pdf(buffer);
         content      = data.text || '';
-        // PDF image extraction is complex; skip for now
-        // (would need pdf2pic or similar)
 
-      // ── DOCX / DOC ─────────────────────────────────────── 
       } else if (
         ext === '.docx' || ext === '.doc' ||
         mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
@@ -57,13 +63,10 @@ class KnowledgeBaseService {
       ) {
         const result = await mammoth.extractRawText({ path: filePath });
         content      = result.value || '';
-
-        // ✅ NEW: Extract images from DOCX
         if (ext === '.docx') {
           extractedImages = await this._extractImagesFromDocx(filePath, originalName);
         }
 
-      // ── XLSX / XLS ────────────────────────────────────────
       } else if (
         ext === '.xlsx' || ext === '.xls' ||
         mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
@@ -77,24 +80,19 @@ class KnowledgeBaseService {
         });
         content = parts.join('\n\n');
 
-      // ── PPTX / PPT ────────────────────────────────────────
       } else if (
         ext === '.pptx' || ext === '.ppt' ||
         mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
         mimetype === 'application/vnd.ms-powerpoint'
       ) {
         content = await this._extractPptContent(filePath, originalName);
-
-        // ✅ NEW: Extract images from PPTX
         if (ext === '.pptx') {
           extractedImages = await this._extractImagesFromPptx(filePath, originalName);
         }
 
-      // ── CSV ───────────────────────────────────────────────
       } else if (ext === '.csv' || mimetype === 'text/csv') {
         content = fs.readFileSync(filePath, 'utf8');
 
-      // ── Plain Text / Markdown ─────────────────────────────
       } else if (
         ext === '.txt' || ext === '.md' ||
         (mimetype && mimetype.startsWith('text/'))
@@ -109,7 +107,6 @@ class KnowledgeBaseService {
         }
       }
 
-      // Truncate very large content
       const MAX_CHARS = 80000;
       if (content.length > MAX_CHARS) {
         content = content.substring(0, MAX_CHARS) + '\n\n[... konten dipotong ...]';
@@ -128,7 +125,6 @@ class KnowledgeBaseService {
     }
   }
 
-  // ── Extract images from DOCX ──────────────────────────────
   async _extractImagesFromDocx(filePath, originalName) {
     const images = [];
     try {
@@ -136,7 +132,6 @@ class KnowledgeBaseService {
       const data   = fs.readFileSync(filePath);
       const zip    = await JSZip.loadAsync(data);
 
-      // DOCX images are in word/media/
       const imageEntries = Object.keys(zip.files).filter(name =>
         name.startsWith('word/media/') && !zip.files[name].dir
       );
@@ -146,7 +141,6 @@ class KnowledgeBaseService {
         const origName = path.basename(imageEntries[i]);
         const ext      = path.extname(origName).toLowerCase();
 
-        // Only common image types
         if (!['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(ext)) continue;
 
         const mimeMap = {
@@ -154,8 +148,8 @@ class KnowledgeBaseService {
           '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
         };
 
-        const imgBuffer  = await entry.async('nodebuffer');
-        const safeBase   = path.basename(originalName, path.extname(originalName))
+        const imgBuffer   = await entry.async('nodebuffer');
+        const safeBase    = path.basename(originalName, path.extname(originalName))
           .replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
         const imgFilename = `docx_${safeBase}_img${i + 1}${ext}`;
         const imgPath     = path.join(IMAGE_OUTPUT_DIR, imgFilename);
@@ -180,7 +174,6 @@ class KnowledgeBaseService {
     return images;
   }
 
-  // ── Extract images from PPTX ──────────────────────────────
   async _extractImagesFromPptx(filePath, originalName) {
     const images = [];
     try {
@@ -188,7 +181,6 @@ class KnowledgeBaseService {
       const data   = fs.readFileSync(filePath);
       const zip    = await JSZip.loadAsync(data);
 
-      // PPTX images are in ppt/media/
       const imageEntries = Object.keys(zip.files).filter(name =>
         name.startsWith('ppt/media/') && !zip.files[name].dir
       );
@@ -203,8 +195,8 @@ class KnowledgeBaseService {
         const ext   = path.extname(imageEntries[i]).toLowerCase();
         if (!mimeMap[ext]) continue;
 
-        const imgBuffer  = await entry.async('nodebuffer');
-        const safeBase   = path.basename(originalName, path.extname(originalName))
+        const imgBuffer   = await entry.async('nodebuffer');
+        const safeBase    = path.basename(originalName, path.extname(originalName))
           .replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
         const imgFilename = `pptx_${safeBase}_img${i + 1}${ext}`;
         const imgPath     = path.join(IMAGE_OUTPUT_DIR, imgFilename);
@@ -218,7 +210,7 @@ class KnowledgeBaseService {
           url:      imgUrl,
           mimeType: mimeMap[ext],
           index:    i,
-          caption:  `Image ${i + 1} from ${path.basename(originalName, '.pptx')} (slide area)`,
+          caption:  `Image ${i + 1} from ${path.basename(originalName, '.pptx')}`,
         });
       }
 
@@ -229,7 +221,6 @@ class KnowledgeBaseService {
     return images;
   }
 
-  // ── PPT text extraction ───────────────────────────────────
   async _extractPptContent(filePath, originalName) {
     if (officeparserParsePptx) {
       try {
@@ -274,6 +265,7 @@ class KnowledgeBaseService {
 
   /**
    * Build knowledge context string for AI prompt injection.
+   * ✅ UPDATED: Tidak lagi menyebut gambar — gambar untuk PPT dari attachment chat
    */
   buildKnowledgeContext(knowledgeFiles = [], userMessage = '', knowledgeMode = 'relevant') {
     if (knowledgeMode === 'disabled' || !knowledgeFiles.length) return '';
@@ -297,13 +289,6 @@ class KnowledgeBaseService {
     for (const f of filesToInclude) {
       context += `--- File: ${f.originalName} ---\n`;
       context += (f.content || '(kosong)').substring(0, 15000);
-
-      // Mention extracted images in context so AI knows about them
-      const imgs = f.extractedImages || [];
-      if (imgs.length > 0) {
-        context += `\n[File ini memiliki ${imgs.length} gambar/visual yang tersedia untuk PPT]\n`;
-      }
-
       context += `\n\n`;
     }
 
@@ -312,8 +297,10 @@ class KnowledgeBaseService {
   }
 
   /**
-   * Get all extracted images from relevant knowledge files.
-   * Used by PPT service to embed images into slides.
+   * Get extracted images from knowledge base files.
+   * ✅ NOTE: Untuk PPT generation, JANGAN panggil ini.
+   *          Gambar PPT diambil dari file attachment chat user.
+   *          Method ini tetap ada untuk keperluan lain di masa depan.
    */
   getExtractedImages(knowledgeFiles = [], userMessage = '', knowledgeMode = 'relevant') {
     if (knowledgeMode === 'disabled' || !knowledgeFiles.length) return [];
@@ -332,7 +319,6 @@ class KnowledgeBaseService {
     const allImages = [];
     for (const f of filesToInclude) {
       const imgs = (f.extractedImages || []).filter(img => {
-        // Only include images that actually exist on disk
         return img.path && fs.existsSync(img.path);
       });
       allImages.push(...imgs.map(img => ({ ...img, sourceFile: f.originalName })));
