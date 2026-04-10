@@ -9,8 +9,7 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont \
-    tzdata
+    ttf-freefont
 
 # 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
@@ -32,8 +31,7 @@ RUN mkdir -p /usr/src/app/data && \
     mkdir -p /usr/src/app/uploads/knowledge && \
     mkdir -p /usr/src/app/public/embed && \
     chown -R node:node /usr/src/app
-COPY docker-start.sh /usr/src/app/docker-start.sh
-RUN chmod +x /usr/src/app/docker-start.sh
+
 # 6. Beralih ke User 'node' demi keamanan (Non-Root)
 USER node
 
@@ -45,4 +43,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # 8. Entrypoint menggunakan dumb-init untuk menangani signal terminasi (SIGTERM) dengan benar
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["sh", "/usr/src/app/docker-start.sh"]
+CMD ["node", "server.js"]

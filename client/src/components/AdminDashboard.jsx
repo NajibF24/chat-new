@@ -9,8 +9,6 @@ import { Line, Doughnut } from 'react-chartjs-2';
 import BotAvatar from './BotAvatar';
 import AvatarPicker from './AvatarPicker';
 import EmbedCodeModal from './EmbedCodeModal';
-// --- IMPORT KOMPONEN BARU ---
-import WahaConfigSection from './WahaConfigSection';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, ArcElement, Filler);
 
@@ -79,44 +77,12 @@ const TIER_GROUP_LABEL = {
 };
 
 const ALL_CAPABILITIES = [
-  {
-    id: 'webSearch',
-    icon: '🌐',
-    label: 'Web Search',
-    desc: 'Bot can browse the internet for up-to-date information. Supported by OpenAI GPT-4o, GPT-4.1, GPT-5 series (NOT o-series reasoning models, Claude, or Gemini).',
-    providers: ['openai'],
-    modelNote: 'GPT-4o, GPT-4.1, GPT-5 series only — not o3/o4-mini',
-  },
-  {
-    id: 'codeInterpreter',
-    icon: '💻',
-    label: 'Code Interpreter',
-    desc: 'Bot can write and execute Python code for data analysis.',
-    providers: ['openai'],
-  },
-  {
-    id: 'imageGeneration',
-    icon: '🎨',
-    label: 'Image Generation',
-    desc: 'Bot can create images using DALL-E.',
-    providers: ['openai'],
-  },
-  {
-    id: 'canvas',
-    icon: '📝',
-    label: 'Canvas Mode',
-    desc: 'Interactive document editing and canvas mode.',
-    providers: ['openai'],
-  },
-  {
-    id: 'fileSearch',
-    icon: '📂',
-    label: 'File Search (RAG)',
-    desc: 'Semantic search across the entire knowledge base.',
-    providers: ['openai', 'anthropic'],
-  },
+  { id: 'webSearch',       icon: '🌐', label: 'Web Search',        desc: 'Bot can browse the internet for up-to-date information', providers: ['openai'] },
+  { id: 'codeInterpreter', icon: '💻', label: 'Code Interpreter',  desc: 'Bot can write and execute Python code', providers: ['openai'] },
+  { id: 'imageGeneration', icon: '🎨', label: 'Image Generation',  desc: 'Bot can create images using DALL-E', providers: ['openai'] },
+  { id: 'canvas',          icon: '📝', label: 'Canvas Mode',       desc: 'Interactive document editing and canvas mode', providers: ['openai'] },
+  { id: 'fileSearch',      icon: '📂', label: 'File Search (RAG)', desc: 'Semantic search across the entire knowledge base', providers: ['openai', 'anthropic'] },
 ];
- 
 
 const KNOWLEDGE_MODES = [
   { id: 'relevant', label: '🎯 Relevant Only', desc: 'Inject knowledge only when relevant' },
@@ -144,14 +110,24 @@ const initialBotState = {
   prompt: '',
   starterQuestions: [],
   knowledgeMode: 'relevant',
-  aiProvider: { provider: 'openai', model: 'gpt-4o', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 2000 },
+  pptTemplateFileId: null,
+  aiProvider: { provider: 'openai', model: 'gpt-4o', apiKey: '', endpoint: '', temperature: 0.1, maxTokens: 8000 },
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
   smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '' },
   kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
   azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
   wahaConfig: {
-    enabled: false, endpoint: '', chatId: '', session: 'default', apiKey: '',
-    dailySchedule: { enabled: false, time: '08:00', prompt: '' }
+    enabled: false,
+    endpoint: '',
+    session: 'default',
+    apiKey: '',
+    webhookEnabled: false,
+    webhookSecret: '',
+    botPhoneNumber: '',
+    targets: [],
+    schedules: [],
+    chatId: '',
+    dailySchedule: { enabled: false, time: '08:00', prompt: '' },
   },
   onedriveConfig: { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '' },
   avatar: { type: 'emoji', emoji: '🤖', bgColor: '#6366f1', textColor: '#ffffff' },
@@ -168,9 +144,9 @@ function groupModelsByTier(models) {
 // API KEY WIDGET
 // ─────────────────────────────────────────────────────────────
 function ApiKeyWidget({ botId, hasKey }) {
-  const [state,     setState]    = useState('hidden');
+  const [state,    setState]    = useState('hidden');
   const [keyValue, setKeyValue] = useState('');
-  const [copied,    setCopied]   = useState(false);
+  const [copied,   setCopied]   = useState(false);
   const [serverHasKey, setServerHasKey] = useState(hasKey);
 
   const hideTimer = useRef(null);
@@ -286,8 +262,8 @@ function ApiKeyWidget({ botId, hasKey }) {
 // ─────────────────────────────────────────────────────────────
 const AUDIT_CATEGORY_META = {
   auth:      { icon: '🔐', label: 'Auth',      color: 'bg-blue-50   text-blue-700   border-blue-200'    },
-  bot:        { icon: '🤖', label: 'Bot',       color: 'bg-violet-50 text-violet-700 border-violet-200'  },
-  user:      { icon: '👤', label: 'User',      color: 'bg-amber-50  text-amber-700  border-amber-200'    },
+  bot:       { icon: '🤖', label: 'Bot',       color: 'bg-violet-50 text-violet-700 border-violet-200'  },
+  user:      { icon: '👤', label: 'User',      color: 'bg-amber-50  text-amber-700  border-amber-200'   },
   knowledge: { icon: '📚', label: 'Knowledge', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   export:    { icon: '⬇️', label: 'Export',    color: 'bg-sky-50    text-sky-700    border-sky-200'      },
   chat:      { icon: '💬', label: 'AI Chat',   color: 'bg-rose-50   text-rose-700   border-rose-200'    },
@@ -429,9 +405,9 @@ function DetailPanel({ detail, action }) {
 function AdminDashboard({ user, handleLogout }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab]   = useState('dashboard');
-  const [stats, setStats]            = useState(null);
-  const [users, setUsers]            = useState([]);
-  const [bots,  setBots]             = useState([]);
+  const [stats, setStats]           = useState(null);
+  const [users, setUsers]           = useState([]);
+  const [bots,  setBots]            = useState([]);
   const [chatLogs, setChatLogs]     = useState([]);
   const [logPage, setLogPage]       = useState(1);
   const [logTotalPages, setLogTotalPages] = useState(1);
@@ -457,21 +433,21 @@ function AdminDashboard({ user, handleLogout }) {
   const [embedBot, setEmbedBot] = useState(null);
 
   // Audit Trail state
-  const [auditLogs,        setAuditLogs]        = useState([]);
-  const [auditPage,        setAuditPage]        = useState(1);
+  const [auditLogs,       setAuditLogs]       = useState([]);
+  const [auditPage,       setAuditPage]       = useState(1);
   const [auditTotalPages, setAuditTotalPages] = useState(1);
-  const [auditTotal,       setAuditTotal]      = useState(0);
-  const [auditLoading,     setAuditLoading]    = useState(false);
-  const [auditCategory,    setAuditCategory]   = useState('');
-  const [auditSearch,      setAuditSearch]     = useState('');
-  const [auditDateFrom,    setAuditDateFrom]   = useState('');
-  const [auditDateTo,      setAuditDateTo]     = useState('');
-  const [auditExpanded,    setAuditExpanded]   = useState(null);
+  const [auditTotal,      setAuditTotal]      = useState(0);
+  const [auditLoading,    setAuditLoading]    = useState(false);
+  const [auditCategory,   setAuditCategory]   = useState('');
+  const [auditSearch,     setAuditSearch]     = useState('');
+  const [auditDateFrom,   setAuditDateFrom]   = useState('');
+  const [auditDateTo,     setAuditDateTo]     = useState('');
+  const [auditExpanded,   setAuditExpanded]   = useState(null);
   const [auditTokenStats, setAuditTokenStats] = useState(null);
 
-  useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []);
-  useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage]);
-  useEffect(() => { if (activeTab === 'audit' && user?.isAdmin) fetchAuditLogs(); }, [activeTab, auditPage, auditCategory]);
+  useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeTab === 'audit' && user?.isAdmin) fetchAuditLogs(); }, [activeTab, auditPage, auditCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchStats    = async () => { try { const r = await axios.get('/api/admin/stats'); setStats(r.data); } catch {} };
   const fetchUsers    = async () => { if (!user?.isAdmin) return; try { const r = await axios.get('/api/admin/users'); setUsers(r.data.users || []); } catch {} };
@@ -524,13 +500,36 @@ function AdminDashboard({ user, handleLogout }) {
 
   const handleEditBot = (bot) => {
     setEditingBot(bot);
+
+    const wahaConfigForForm = {
+      enabled:        bot.wahaConfig?.enabled        || false,
+      endpoint:       bot.wahaConfig?.endpoint       || '',
+      session:        bot.wahaConfig?.session        || 'default',
+      apiKey:         bot.wahaConfig?.apiKey         || '',
+      webhookEnabled: bot.wahaConfig?.webhookEnabled || false,
+      webhookSecret:  bot.wahaConfig?.webhookSecret  || '',
+      botPhoneNumber: bot.wahaConfig?.botPhoneNumber || '',
+      targets:        bot.wahaConfig?.targets        || [],
+      schedules:      bot.wahaConfig?.schedules      || [],
+      chatId: bot.wahaConfig?.chatId || '',
+      dailySchedule: {
+        enabled: bot.wahaConfig?.dailySchedule?.enabled || false,
+        time:    bot.wahaConfig?.dailySchedule?.time    || '08:00',
+        prompt:  bot.wahaConfig?.dailySchedule?.prompt  || '',
+      },
+    };
+
     setBotForm({
-      name: bot.name, description: bot.description || '',
-      persona: bot.persona || '', tone: bot.tone || 'professional',
+      name: bot.name,
+      description: bot.description || '',
+      persona: bot.persona || '',
+      tone: bot.tone || 'professional',
       systemPrompt: bot.systemPrompt || '',
       prompt: bot.prompt || '',
       starterQuestions: bot.starterQuestions || [],
       knowledgeMode: bot.knowledgeMode || 'relevant',
+      pptTemplateFileId: bot.pptTemplateFileId || null,
+
       aiProvider: {
         provider:    bot.aiProvider?.provider    || 'openai',
         model:       bot.aiProvider?.model       || 'gpt-4o',
@@ -539,6 +538,7 @@ function AdminDashboard({ user, handleLogout }) {
         temperature: bot.aiProvider?.temperature ?? 0.1,
         maxTokens:   bot.aiProvider?.maxTokens   ?? 2000,
       },
+
       capabilities: {
         webSearch:       bot.capabilities?.webSearch       || false,
         codeInterpreter: bot.capabilities?.codeInterpreter || false,
@@ -546,39 +546,34 @@ function AdminDashboard({ user, handleLogout }) {
         canvas:          bot.capabilities?.canvas          || false,
         fileSearch:      bot.capabilities?.fileSearch      || false,
       },
+
       smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', ...bot.smartsheetConfig },
       kouventaConfig:    { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
       onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
-      wahaConfig: {
-        enabled:         bot.wahaConfig?.enabled         || false,
-        endpoint:        bot.wahaConfig?.endpoint        || '',
-        chatId:          bot.wahaConfig?.chatId          || '',
-        session:         bot.wahaConfig?.session         || 'default',
-        apiKey:          bot.wahaConfig?.apiKey          || '',
-        incomingEnabled: bot.wahaConfig?.incomingEnabled || false,
-        // ✅ TAMBAH INI:
-        targets:         bot.wahaConfig?.targets         || [],
-        schedules:       bot.wahaConfig?.schedules       || [],
-        dailySchedule: {
-          enabled: bot.wahaConfig?.dailySchedule?.enabled || false,
-          time:    bot.wahaConfig?.dailySchedule?.time    || '08:00',
-          prompt:  bot.wahaConfig?.dailySchedule?.prompt  || '',
-        },
-      },
+
+      wahaConfig: wahaConfigForForm,
+
       avatar: bot.avatar || { type: 'emoji', emoji: '🤖', bgColor: '#6366f1' },
     });
+
     setKnowledgeFiles(bot.knowledgeFiles || []);
-    setBotModalTab('basic'); setTestAIState(null); setShowBotModal(true);
+    setBotModalTab('basic');
+    setTestAIState(null);
+    setShowBotModal(true);
   };
 
   const handleSaveBot = async (e) => {
     e.preventDefault();
     try {
       const { botApiKey: _omit, ...payload } = botForm;
-      const cleanPayload = { ...payload, starterQuestions: botForm.starterQuestions.filter(q => q.trim()) };
+      const cleanPayload = {
+        ...payload,
+        starterQuestions: botForm.starterQuestions.filter(q => q.trim()),
+        pptTemplateFileId: botForm.pptTemplateFileId
+      };
       if (editingBot) await axios.put(`/api/admin/bots/${editingBot._id}`, cleanPayload);
-      else             await axios.post('/api/admin/bots', cleanPayload);
+      else            await axios.post('/api/admin/bots', cleanPayload);
       setShowBotModal(false); fetchBots(); fetchStats();
     } catch (err) { alert(err.response?.data?.error || err.message); }
   };
@@ -690,7 +685,7 @@ function AdminDashboard({ user, handleLogout }) {
   const currentProvider = botForm.aiProvider?.provider || 'openai';
   const availableModels = AI_PROVIDERS[currentProvider]?.models || [];
   const modelGroups     = groupModelsByTier(availableModels);
-  const providerCaps    = AI_PROVIDERS[currentProvider]?.capabilities || [];
+  const providerCaps    = AI_PROVIDERS[currentProvider]?.capabilities || []; // eslint-disable-line no-unused-vars
   const filteredBots    = bots.filter(b => b.name.toLowerCase().includes(botSearch.toLowerCase()));
   const activeCapCount  = Object.values(botForm.capabilities || {}).filter(Boolean).length;
   const isReasoningOrGpt5 = /^(o\d|gpt-5)/.test(botForm.aiProvider?.model || '');
@@ -749,14 +744,13 @@ function AdminDashboard({ user, handleLogout }) {
         {/* DASHBOARD */}
         {activeTab === 'dashboard' && stats && (
           <div className="space-y-6">
-            {/* Stats grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { title: 'Total Users',  value: stats.totalUsers,   icon: '👥', gradient: 'from-blue-500 to-blue-600',   light: 'bg-blue-50', text: 'text-blue-600'   },
+                { title: 'Total Users',  value: stats.totalUsers,   icon: '👥', gradient: 'from-blue-500 to-blue-600',    light: 'bg-blue-50', text: 'text-blue-600'   },
                 { title: 'Active Bots',  value: stats.totalBots,    icon: '🤖', gradient: 'from-emerald-500 to-emerald-600', light: 'bg-emerald-50', text: 'text-emerald-600' },
                 { title: 'Total Chats',  value: stats.totalChats,   icon: '💬', gradient: 'from-violet-500 to-violet-600', light: 'bg-violet-50', text: 'text-violet-600' },
                 { title: 'Threads',      value: stats.totalThreads, icon: '📂', gradient: 'from-amber-500 to-amber-600',  light: 'bg-amber-50',  text: 'text-amber-600'  },
-              ].map((s, i) => (
+              ].map((s) => (
                 <div key={s.title} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all group">
                   <div className="flex items-start justify-between mb-3">
                     <div className={`w-10 h-10 rounded-xl ${s.light} flex items-center justify-center text-xl group-hover:scale-110 transition-transform`}>{s.icon}</div>
@@ -768,7 +762,6 @@ function AdminDashboard({ user, handleLogout }) {
               ))}
             </div>
 
-            {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                 <div className="flex items-center justify-between mb-5">
@@ -804,7 +797,6 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
             </div>
 
-            {/* Top contributors */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
                 <div>
@@ -854,7 +846,6 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Create new card */}
               <div onClick={handleCreateBot} className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary/40 hover:bg-primary/2 transition-all min-h-[200px] group">
                 <div className="w-12 h-12 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center mb-3 text-gray-400 group-hover:border-primary group-hover:text-primary group-hover:bg-primary/5 transition-all">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
@@ -881,7 +872,6 @@ function AdminDashboard({ user, handleLogout }) {
                       <button onClick={() => handleEditBot(bot)} className="flex-shrink-0 text-xs font-semibold text-gray-500 hover:text-primary-dark bg-gray-50 hover:bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-100 transition-all">Edit</button>
                     </div>
 
-                    {/* Model badge */}
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {(() => {
                         const p = bot.aiProvider?.provider || 'openai';
@@ -1046,7 +1036,6 @@ function AdminDashboard({ user, handleLogout }) {
               </button>
             </div>
 
-            {/* Token stats */}
             {auditTokenStats && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
@@ -1066,7 +1055,6 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
             )}
 
-            {/* Filters */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="flex flex-col gap-1.5 min-w-[150px]">
@@ -1096,7 +1084,6 @@ function AdminDashboard({ user, handleLogout }) {
                   <button onClick={handleAuditReset} className="px-3 py-2 bg-gray-50 border border-gray-200 text-xs font-medium rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">Reset</button>
                 </div>
               </div>
-              {/* Category quick filter */}
               <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-gray-50">
                 <button onClick={() => { setAuditCategory(''); setAuditPage(1); setTimeout(fetchAuditLogs, 50); }}
                   className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-colors ${!auditCategory ? 'bg-primary-dark text-white border-primary-dark' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>All</button>
@@ -1109,7 +1096,6 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
             </div>
 
-            {/* Audit table */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               {auditLoading ? (
                 <div className="flex items-center justify-center py-16 gap-3 text-gray-400">
@@ -1215,7 +1201,6 @@ function AdminDashboard({ user, handleLogout }) {
       {showBotModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col border border-gray-100 overflow-hidden">
-            {/* Modal header */}
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center flex-shrink-0 bg-gray-50/50">
               <div className="flex items-center gap-3">
                 <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
@@ -1229,11 +1214,10 @@ function AdminDashboard({ user, handleLogout }) {
               </button>
             </div>
 
-            {/* Modal tabs */}
             <div className="flex border-b border-gray-100 bg-white px-4 overflow-x-auto flex-shrink-0">
               {[
-                { id: 'basic',         label: 'Basic',         icon: '📝' },
-                { id: 'ai',            label: 'AI & Model',   icon: '🤖' },
+                { id: 'basic',        label: 'Basic',        icon: '📝' },
+                { id: 'ai',           label: 'AI & Model',   icon: '🤖' },
                 { id: 'capabilities', label: `Capabilities${activeCapCount > 0 ? ` (${activeCapCount})` : ''}`, icon: '⚡' },
                 { id: 'knowledge',    label: `Knowledge${knowledgeFiles.length > 0 ? ` (${knowledgeFiles.length})` : ''}`, icon: '📚' },
                 { id: 'integrations', label: 'Integrations', icon: '🔌' },
@@ -1375,9 +1359,9 @@ function AdminDashboard({ user, handleLogout }) {
                       )}
                     </div>
                     <p className="text-[10px] mt-1">
-                      botForm.aiProvider?.apiKey
-                      ? <span className="text-amber-600 font-semibold">⚠️ Using a custom API Key (not from .env)</span>
-                      : <span className="text-emerald-600 font-semibold">✅ Using {AI_PROVIDERS[currentProvider]?.envKey || 'API Key'} from server .env</span>}
+                      {botForm.aiProvider?.apiKey
+                        ? <span className="text-amber-600 font-semibold">⚠️ Using a custom API Key (not from .env)</span>
+                        : <span className="text-emerald-600 font-semibold">✅ Using OPENAI_API_KEY from server .env</span>}
                     </p>
                   </div>
                   {(currentProvider === 'custom' || currentProvider === 'openai') && (
@@ -1416,117 +1400,180 @@ function AdminDashboard({ user, handleLogout }) {
 
               {/* CAPABILITIES TAB */}
               {botModalTab === 'capabilities' && (
-  <div className="space-y-4">
-    <div className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">
-      ⚡ Enable additional capabilities. Availability depends on the selected provider and model.
-      <span className="block mt-1 font-semibold">
-        🌐 Web Search works natively only with OpenAI GPT-4o / GPT-4.1 / GPT-5 series.
-        For Claude and Gemini, citations are provided automatically via the Bing/SerpAPI fallback
-        (set <code className="bg-violet-100 px-1 rounded">BING_SEARCH_API_KEY</code> or{' '}
-        <code className="bg-violet-100 px-1 rounded">SERPAPI_KEY</code> in your server .env).
-      </span>
-    </div>
-    <div className="space-y-3">
-      {ALL_CAPABILITIES.map(cap => {
-        const isSupported = cap.providers.includes(currentProvider);
-        const isOn = botForm.capabilities?.[cap.id] || false;
-        // Extra warning: web search enabled but model is o-series
-        const isOSeriesWithWebSearch = cap.id === 'webSearch' && isOn && /^o\d/.test(botForm.aiProvider?.model || '');
-        return (
-          <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 bg-gray-50' : isOn ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
-            <div className="flex items-start gap-3">
-              <span className="text-xl">{cap.icon}</span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-sm text-gray-800">{cap.label}</p>
-                  {!isSupported && (
-                    <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-semibold">
-                      Not available for {currentProvider}
-                    </span>
-                  )}
-                  {cap.modelNote && isSupported && (
-                    <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold border border-blue-100">
-                      {cap.modelNote}
-                    </span>
-                  )}
+                <div className="space-y-4">
+                  <div className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">⚡ Enable additional capabilities similar to ChatGPT. Availability depends on the selected provider and model.</div>
+                  <div className="space-y-3">
+                    {ALL_CAPABILITIES.map(cap => {
+                      const isSupported = cap.providers.includes(currentProvider);
+                      const isOn = botForm.capabilities?.[cap.id] || false;
+                      return (
+                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 bg-gray-50' : isOn ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
+                          <div className="flex items-start gap-3">
+                            <span className="text-xl">{cap.icon}</span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-sm text-gray-800">{cap.label}</p>
+                                {!isSupported && <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-semibold">Not available for {currentProvider}</span>}
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">{cap.desc}</p>
+                              <div className="flex gap-1 mt-1">{cap.providers.map(p => <span key={p} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold">{AI_PROVIDERS[p]?.icon} {p}</span>)}</div>
+                            </div>
+                          </div>
+                          <button type="button" disabled={!isSupported} onClick={() => setBotForm(f => ({ ...f, capabilities: { ...f.capabilities, [cap.id]: !isOn } }))}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-4 ${isOn && isSupported ? 'bg-primary-dark' : 'bg-gray-200'} ${!isSupported ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isOn && isSupported ? 'translate-x-6' : 'translate-x-1'}`} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {activeCapCount > 0 && <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">⚠️ <strong>{activeCapCount} capability{activeCapCount !== 1 ? 'ies' : ''} active.</strong> May require a paid API tier.</div>}
                 </div>
-                <p className="text-xs text-gray-400 mt-0.5">{cap.desc}</p>
-                <div className="flex gap-1 mt-1">
-                  {cap.providers.map(p => (
-                    <span key={p} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold">
-                      {AI_PROVIDERS[p]?.icon} {p}
-                    </span>
-                  ))}
-                </div>
-                {isOSeriesWithWebSearch && (
-                  <p className="text-[10px] text-orange-600 font-semibold mt-1.5">
-                    ⚠️ Web Search is not supported for o-series models. Disable this or switch to GPT-4o/GPT-4.1.
-                  </p>
-                )}
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={!isSupported}
-              onClick={() => setBotForm(f => ({ ...f, capabilities: { ...f.capabilities, [cap.id]: !isOn } }))}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-4 ${isOn && isSupported ? 'bg-primary-dark' : 'bg-gray-200'} ${!isSupported ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isOn && isSupported ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-    {activeCapCount > 0 && (
-      <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">
-        ⚠️ <strong>{activeCapCount} capability{activeCapCount !== 1 ? 'ies' : ''} active.</strong> May require a paid API tier.
-      </div>
-    )}
-  </div>
-)}
+              )}
 
               {/* KNOWLEDGE TAB */}
               {botModalTab === 'knowledge' && (
                 <div className="space-y-5">
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
                     📚 Upload documents as the bot's knowledge source. Supports <strong>PDF, Word, Excel, PowerPoint, TXT, CSV, MD</strong>.
-                    {!editingBot && <span className="block mt-1 font-bold text-amber-800">⚠️ Please save the bot first before uploading files.</span>}
+                    {!editingBot && (
+                      <span className="block mt-1 font-bold text-amber-800">
+                        ⚠️ Save the bot first before uploading files.
+                      </span>
+                    )}
                   </div>
+
                   <div>
-                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Knowledge Base Mode</label>
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">
+                      Knowledge Base Mode
+                    </label>
                     <div className="space-y-2">
                       {KNOWLEDGE_MODES.map(m => (
-                        <label key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${botForm.knowledgeMode === m.id ? 'border-primary bg-primary/5' : 'border-gray-100 hover:border-gray-200'}`}>
-                          <input type="radio" name="knowledgeMode" value={m.id} checked={botForm.knowledgeMode === m.id} onChange={() => setBotForm({ ...botForm, knowledgeMode: m.id })} className="accent-primary-dark" />
-                          <div><div className="text-sm font-semibold text-gray-800">{m.label}</div><div className="text-xs text-gray-400">{m.desc}</div></div>
+                        <label
+                          key={m.id}
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                            botForm.knowledgeMode === m.id
+                              ? 'border-primary bg-primary/5'
+                              : 'border-gray-100 hover:border-gray-200'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="knowledgeMode"
+                            value={m.id}
+                            checked={botForm.knowledgeMode === m.id}
+                            onChange={() => setBotForm({ ...botForm, knowledgeMode: m.id })}
+                            className="accent-primary-dark"
+                          />
+                          <div>
+                            <div className="text-sm font-semibold text-gray-800">{m.label}</div>
+                            <div className="text-xs text-gray-400">{m.desc}</div>
+                          </div>
                         </label>
                       ))}
                     </div>
                   </div>
-                  {editingBot && (
-                    <div>
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Upload Files</label>
-                      <div onClick={() => knowledgeInputRef.current?.click()} className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-amber-300 hover:bg-amber-50/50 transition-all">
-                        {knowledgeUploading
-                          ? <div className="flex flex-col items-center gap-2 text-amber-600"><div className="w-8 h-8 border-2 border-amber-200 border-t-amber-600 rounded-full animate-spin"/><p className="font-semibold text-sm">Processing files...</p></div>
-                          : <><div className="text-4xl mb-2">📁</div><p className="text-sm font-semibold text-gray-600">Click or drag & drop files</p><p className="text-xs text-gray-400 mt-1">PDF • Word • Excel • PowerPoint • TXT • CSV • MD</p></>}
-                      </div>
-                      <input ref={knowledgeInputRef} type="file" multiple accept={SUPPORTED_FILE_TYPES} className="hidden" onChange={handleKnowledgeUpload} />
+
+                  {editingBot && knowledgeFiles.some(f => f.originalName?.toLowerCase().endsWith('.pptx')) && (
+                    <div className="border border-indigo-100 bg-indigo-50 rounded-xl p-3">
+                      <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-2">
+                        🎨 Template PPT (dari Knowledge Base)
+                      </label>
+                      <select
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                        value={botForm.pptTemplateFileId || ''}
+                        onChange={e =>
+                          setBotForm({
+                            ...botForm,
+                            pptTemplateFileId: e.target.value || null
+                          })
+                        }
+                      >
+                        <option value="">— Gunakan tema GYS default —</option>
+                        {knowledgeFiles
+                          .filter(f => f.originalName?.toLowerCase().endsWith('.pptx'))
+                          .map(f => (
+                            <option key={f._id} value={f._id}>
+                              🎨 {f.originalName}
+                            </option>
+                          ))}
+                      </select>
+                      <p className="text-[9px] text-indigo-600 mt-1">
+                        Bot akan mengadopsi warna & font dari template PPTX yang dipilih saat membuat presentasi
+                      </p>
                     </div>
                   )}
+
+                  {editingBot && (
+                    <div>
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">
+                        Upload Files
+                      </label>
+                      <div
+                        onClick={() => knowledgeInputRef.current?.click()}
+                        className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-amber-300 hover:bg-amber-50/50 transition-all"
+                      >
+                        {knowledgeUploading ? (
+                          <div className="flex flex-col items-center gap-2 text-amber-600">
+                            <div className="w-8 h-8 border-2 border-amber-200 border-t-amber-600 rounded-full animate-spin"/>
+                            <p className="font-semibold text-sm">Processing files...</p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-4xl mb-2">📁</div>
+                            <p className="text-sm font-semibold text-gray-600">Click or drag & drop files</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              PDF • Word • Excel • PowerPoint • TXT • CSV • MD
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <input
+                        ref={knowledgeInputRef}
+                        type="file"
+                        multiple
+                        accept={SUPPORTED_FILE_TYPES}
+                        className="hidden"
+                        onChange={handleKnowledgeUpload}
+                      />
+                    </div>
+                  )}
+
                   {knowledgeFiles.length > 0 && (
                     <div>
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Documents ({knowledgeFiles.length})</label>
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">
+                        Documents ({knowledgeFiles.length})
+                      </label>
                       <div className="space-y-2">
                         {knowledgeFiles.map(f => (
-                          <div key={f._id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors">
-                            <span className="text-xl flex-shrink-0">{getFileIcon(f.originalName)}</span>
+                          <div
+                            key={f._id}
+                            className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors"
+                          >
+                            <span className="text-xl flex-shrink-0">
+                              {getFileIcon(f.originalName)}
+                            </span>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate text-gray-800">{f.originalName}</p>
-                              <p className="text-[10px] text-gray-400">{fmtSize(f.size)} · {new Date(f.uploadedAt).toLocaleDateString('en-US')}</p>
-                              {f.summary && <p className="text-[10px] text-gray-400 mt-1 line-clamp-2">{f.summary}</p>}
+                              <p className="text-sm font-semibold truncate text-gray-800">
+                                {f.originalName}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {fmtSize(f.size)} · {new Date(f.uploadedAt).toLocaleDateString('en-US')}
+                              </p>
+                              {f.summary && (
+                                <p className="text-[10px] text-gray-400 mt-1 line-clamp-2">
+                                  {f.summary}
+                                </p>
+                              )}
                             </div>
-                            {editingBot && <button onClick={() => handleDeleteKnowledge(f._id, f.originalName)} className="text-red-400 hover:text-red-600 text-xs font-bold flex-shrink-0 transition-colors">🗑</button>}
+                            {editingBot && (
+                              <button
+                                onClick={() => handleDeleteKnowledge(f._id, f.originalName)}
+                                className="text-red-400 hover:text-red-600 text-xs font-bold flex-shrink-0 transition-colors"
+                              >
+                                🗑
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1553,8 +1600,304 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   )}
 
-                  {/* --- GANTI BLOK WAHA LAMA DENGAN KOMPONEN --- */}
-                  <WahaConfigSection botForm={botForm} setBotForm={setBotForm} editingBot={editingBot} />
+                  {/* ──── WAHA WhatsApp Integration ──── */}
+                  {(() => {
+                    const waha = botForm.wahaConfig || {};
+                    const setWaha = (patch) => setBotForm(f => ({
+                      ...f,
+                      wahaConfig: { ...f.wahaConfig, ...patch }
+                    }));
+
+                    const targets = waha.targets || [];
+                    const schedules = waha.schedules || [];
+
+                    // ✅ FIX: Define newTarget and newSchedule inline
+                    const newTarget = () => ({ _id: Date.now().toString(), chatId: '', label: '', type: 'private', tagOnly: false, active: true });
+                    const newSchedule = () => ({ _id: Date.now().toString(), label: '', prompt: '', active: true, scheduleType: 'daily', time: '08:00', times: ['08:00'], intervalMinutes: 60, intervalStart: '08:00', intervalEnd: '17:00', targetIds: [] });
+
+                    const addTarget = () => setWaha({ targets: [...targets, newTarget()] });
+                    const removeTarget = (id) => setWaha({ targets: targets.filter(t => t._id !== id) });
+                    const updateTarget = (id, patch) => setWaha({ targets: targets.map(t => t._id === id ? { ...t, ...patch } : t) });
+
+                    const addSchedule = () => setWaha({ schedules: [...schedules, newSchedule()] });
+                    const removeSchedule = (id) => setWaha({ schedules: schedules.filter(s => s._id !== id) });
+                    const updateSchedule = (id, patch) => setWaha({ schedules: schedules.map(s => s._id === id ? { ...s, ...patch } : s) });
+
+                    return (
+                      <div className={`border-2 rounded-xl p-4 transition-all ${waha.enabled ? 'border-[#25D366]/40 bg-[#25D366]/5' : 'border-gray-100 bg-white'}`}>
+
+                        {/* HEADER */}
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">💬</span>
+                            <span className="font-semibold text-sm text-gray-800">WhatsApp Integration (WAHA)</span>
+                          </div>
+                          <button type="button"
+                            onClick={() => setWaha({ enabled: !waha.enabled })}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full ${waha.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 bg-white rounded-full transform ${waha.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+
+                        {waha.enabled && (
+                          <div className="space-y-4 mt-4 pt-4 border-t border-[#25D366]/20">
+
+                            {/* ── Basic Config ── */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="col-span-2">
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">WAHA Server URL</label>
+                                <input type="text" value={waha.endpoint || ''} onChange={e => setWaha({ endpoint: e.target.value })}
+                                  placeholder="http://your-waha-server:3000" className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
+                                <p className="text-[9px] text-gray-400 mt-0.5">Base URL saja, tanpa /api/sendText</p>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Session Name</label>
+                                <input type="text" value={waha.session || 'default'} onChange={e => setWaha({ session: e.target.value })}
+                                  placeholder="default" className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">WAHA API Key</label>
+                                <input type="password" value={waha.apiKey || ''} onChange={e => setWaha({ apiKey: e.target.value })}
+                                  placeholder="Secret API Key" className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
+                              </div>
+                            </div>
+
+                            {/* ── Webhook Config ── */}
+                            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <span className="text-xs font-semibold text-blue-800">🔗 Webhook (Terima Pesan Masuk)</span>
+                                  <p className="text-[9px] text-blue-600 mt-0.5">Bot merespons pesan dari WhatsApp secara real-time</p>
+                                </div>
+                                <button type="button" onClick={() => setWaha({ webhookEnabled: !waha.webhookEnabled })}
+                                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${waha.webhookEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}>
+                                  <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform ${waha.webhookEnabled ? 'translate-x-3.5' : 'translate-x-1'}`} />
+                                </button>
+                              </div>
+                              {waha.webhookEnabled && (
+                                <div className="space-y-2 pt-2 border-t border-blue-100">
+                                  <div className="bg-blue-100 border border-blue-200 rounded-lg px-2.5 py-2 text-[10px] text-blue-700">
+                                    <p className="font-bold mb-1">⚙️ Konfigurasi WAHA:</p>
+                                    <p>Set webhook URL ke: <code className="bg-blue-50 px-1 rounded font-mono">{window?.location?.origin || 'https://chat.gyssteel.com'}/api/waha/webhook/{editingBot?._id || 'BOT_ID'}</code></p>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Bot Phone Number</label>
+                                      <input type="text" value={waha.botPhoneNumber || ''} onChange={e => setWaha({ botPhoneNumber: e.target.value })}
+                                        placeholder="628123456789" className="w-full bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
+                                      <p className="text-[9px] text-gray-400 mt-0.5">Untuk deteksi @tag di grup</p>
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Webhook Secret (opsional)</label>
+                                      <input type="text" value={waha.webhookSecret || ''} onChange={e => setWaha({ webhookSecret: e.target.value })}
+                                        placeholder="Optional secret" className="w-full bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* ── Targets (Multiple) ── */}
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <span className="text-xs font-semibold text-gray-700">📱 Target Chats</span>
+                                  <p className="text-[9px] text-gray-400">Chat pribadi atau grup yang akan menerima/mengirim pesan</p>
+                                </div>
+                                <button type="button" onClick={addTarget} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Tambah Target</button>
+                              </div>
+                              <div className="space-y-2">
+                                {targets.length === 0 && (
+                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">Belum ada target. Klik &quot;+ Tambah Target&quot;</p>
+                                )}
+                                {targets.map(target => (
+                                  <div key={target._id} className={`border rounded-xl p-3 space-y-2 ${target.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex-1 grid grid-cols-3 gap-2">
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Label</label>
+                                          <input type="text" value={target.label || ''} onChange={e => updateTarget(target._id, { label: e.target.value })}
+                                            placeholder="e.g. HR Group" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        </div>
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Chat ID</label>
+                                          <input type="text" value={target.chatId || ''} onChange={e => updateTarget(target._id, { chatId: e.target.value })}
+                                            placeholder="628xxx@c.us or @g.us" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none font-mono" />
+                                        </div>
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Tipe</label>
+                                          <select value={target.type || 'private'} onChange={e => updateTarget(target._id, { type: e.target.value })}
+                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none">
+                                            <option value="private">💬 Pribadi</option>
+                                            <option value="group">👥 Grup</option>
+                                          </select>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col gap-1 flex-shrink-0">
+                                        {target.type === 'group' && (
+                                          <label className="flex items-center gap-1 text-[10px] cursor-pointer whitespace-nowrap">
+                                            <input type="checkbox" checked={target.tagOnly || false} onChange={e => updateTarget(target._id, { tagOnly: e.target.checked })} className="accent-[#25D366]" />
+                                            @tag only
+                                          </label>
+                                        )}
+                                        <label className="flex items-center gap-1 text-[10px] cursor-pointer">
+                                          <input type="checkbox" checked={target.active !== false} onChange={e => updateTarget(target._id, { active: e.target.checked })} className="accent-[#25D366]" />
+                                          Aktif
+                                        </label>
+                                        <button type="button" onClick={() => removeTarget(target._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Hapus</button>
+                                      </div>
+                                    </div>
+                                    {target.type === 'group' && target.tagOnly && (
+                                      <p className="text-[9px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                                        ⚡ Mode @tag: Bot hanya merespons ketika di-tag (@mention) di grup ini
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* ── Schedules (Flexible) ── */}
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <span className="text-xs font-semibold text-gray-700">⏰ Jadwal Pengiriman</span>
+                                  <p className="text-[9px] text-gray-400">Kirim pesan otomatis ke target secara terjadwal</p>
+                                </div>
+                                <button type="button" onClick={addSchedule} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Tambah Jadwal</button>
+                              </div>
+                              <div className="space-y-3">
+                                {schedules.length === 0 && (
+                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">Belum ada jadwal. Klik &quot;+ Tambah Jadwal&quot;</p>
+                                )}
+                                {schedules.map(sched => (
+                                  <div key={sched._id} className={`border rounded-xl p-3 space-y-3 ${sched.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                                    <div className="flex items-start gap-2">
+                                      <div className="flex-1 grid grid-cols-2 gap-2">
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Label Jadwal</label>
+                                          <input type="text" value={sched.label || ''} onChange={e => updateSchedule(sched._id, { label: e.target.value })}
+                                            placeholder="e.g. Morning Report" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        </div>
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Tipe Jadwal</label>
+                                          <select value={sched.scheduleType || 'daily'} onChange={e => updateSchedule(sched._id, { scheduleType: e.target.value })}
+                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none">
+                                            <option value="daily">📅 Daily (sekali/hari)</option>
+                                            <option value="multiple">🔢 Multiple times/hari</option>
+                                            <option value="interval">🔄 Interval (tiap N menit)</option>
+                                          </select>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col gap-1 flex-shrink-0 pt-4">
+                                        <label className="flex items-center gap-1 text-[10px] cursor-pointer">
+                                          <input type="checkbox" checked={sched.active !== false} onChange={e => updateSchedule(sched._id, { active: e.target.checked })} className="accent-[#25D366]" />
+                                          Aktif
+                                        </label>
+                                        <button type="button" onClick={() => removeSchedule(sched._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Hapus</button>
+                                      </div>
+                                    </div>
+
+                                    {sched.scheduleType === 'daily' && (
+                                      <div className="flex items-center gap-2">
+                                        <label className="text-[10px] font-semibold text-gray-500 whitespace-nowrap">Waktu:</label>
+                                        <input type="time" value={sched.time || '08:00'} onChange={e => updateSchedule(sched._id, { time: e.target.value })}
+                                          className="bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        <span className="text-[10px] text-gray-400">Kirim sekali per hari pada waktu ini</span>
+                                      </div>
+                                    )}
+                                    {sched.scheduleType === 'multiple' && (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-[10px] font-semibold text-gray-500">Waktu pengiriman:</label>
+                                          <button type="button" onClick={() => updateSchedule(sched._id, { times: [...(sched.times || []), '08:00'] })}
+                                            className="text-[10px] text-[#25D366] font-semibold">+ Tambah Waktu</button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                          {(sched.times || []).map((t, ti) => (
+                                            <div key={ti} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+                                              <input type="time" value={t} onChange={e => {
+                                                const newTimes = [...(sched.times || [])];
+                                                newTimes[ti] = e.target.value;
+                                                updateSchedule(sched._id, { times: newTimes });
+                                              }} className="bg-transparent text-xs outline-none" />
+                                              <button type="button" onClick={() => updateSchedule(sched._id, { times: sched.times.filter((_, i) => i !== ti) })}
+                                                className="text-red-400 hover:text-red-600 text-[10px] font-bold">✕</button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {sched.scheduleType === 'interval' && (
+                                      <div className="grid grid-cols-3 gap-2">
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Setiap (menit)</label>
+                                          <input type="number" min="5" max="1440" value={sched.intervalMinutes || 60}
+                                            onChange={e => updateSchedule(sched._id, { intervalMinutes: parseInt(e.target.value) || 60 })}
+                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        </div>
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Mulai Jam</label>
+                                          <input type="time" value={sched.intervalStart || '08:00'} onChange={e => updateSchedule(sched._id, { intervalStart: e.target.value })}
+                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        </div>
+                                        <div>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Selesai Jam</label>
+                                          <input type="time" value={sched.intervalEnd || '17:00'} onChange={e => updateSchedule(sched._id, { intervalEnd: e.target.value })}
+                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div>
+                                      <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Prompt untuk AI</label>
+                                      <input type="text" value={sched.prompt || ''} onChange={e => updateSchedule(sched._id, { prompt: e.target.value })}
+                                        placeholder="e.g. Buat laporan ringkasan hari ini" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                    </div>
+
+                                    {targets.length > 0 && (
+                                      <div>
+                                        <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-1">
+                                          Kirim ke: {(!sched.targetIds || sched.targetIds.length === 0) ? '(Semua target aktif)' : ''}
+                                        </label>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {targets.filter(t => t.active).map(t => (
+                                            <label key={t._id} className="flex items-center gap-1 text-[10px] cursor-pointer bg-white border border-gray-200 rounded-lg px-2 py-1">
+                                              <input type="checkbox"
+                                                checked={!sched.targetIds?.length || sched.targetIds.includes(t._id)}
+                                                onChange={e => {
+                                                  const curr = sched.targetIds || [];
+                                                  if (e.target.checked) {
+                                                    updateSchedule(sched._id, { targetIds: curr.filter(id => id !== t._id) });
+                                                  } else {
+                                                    if (!curr.includes(t._id)) updateSchedule(sched._id, { targetIds: [...curr, t._id] });
+                                                  }
+                                                }}
+                                                className="accent-[#25D366]" />
+                                              {t.label || t.chatId.substring(0, 15)}
+                                            </label>
+                                          ))}
+                                        </div>
+                                        <p className="text-[9px] text-gray-400 mt-1">Kosongkan = kirim ke semua target aktif</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Info box */}
+                            <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-xl px-3 py-2 text-[10px] text-green-800 space-y-0.5">
+                              <p className="font-bold">💡 Cara Kerja:</p>
+                              <p>• <strong>Webhook ON</strong>: Bot merespons pesan masuk secara real-time (set URL ke WAHA)</p>
+                              <p>• <strong>@tag Only</strong>: Bot di grup hanya merespons saat di-mention (@tag)</p>
+                              <p>• <strong>Jadwal</strong>: Bot mengirim pesan AI secara otomatis sesuai jadwal ke semua target</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Smartsheet / Kouventa / Azure Search */}
                   {[

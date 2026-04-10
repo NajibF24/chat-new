@@ -10,6 +10,15 @@ const knowledgeFileSchema = new mongoose.Schema({
   uploadedAt:   { type: Date, default: Date.now },
   content:      { type: String, default: '' },
   summary:      { type: String, default: '' },
+  // ── NEW: store extracted images from Word/PPT documents ──
+  extractedImages: [{ 
+    filename: String,   // saved image filename
+    path:     String,   // server path
+    url:      String,   // /api/files/... URL
+    mimeType: String,   // image/png, image/jpeg etc
+    index:    Number,   // position in document
+    caption:  String,   // AI-generated caption
+  }],
 }, { _id: true });
 
 // ── AI Provider Config Sub-Schema ────────────────────────────
@@ -19,7 +28,7 @@ const aiProviderSchema = new mongoose.Schema({
   apiKey:      { type: String, default: '' },
   endpoint:    { type: String, default: '' },
   temperature: { type: Number, default: 0.1 },
-  maxTokens:   { type: Number, default: 2000 },
+  maxTokens:   { type: Number, default: 8000 }, // ✅ UPDATED: default 8000
 }, { _id: false });
 
 // ── Bot Capabilities Sub-Schema ───────────────────────────────
@@ -31,31 +40,41 @@ const capabilitiesSchema = new mongoose.Schema({
   fileSearch:      { type: Boolean, default: false },
 }, { _id: false });
 
-// ── WAHA Scheduled Message Sub-Schema ────────────────────────
-// Supports flexible schedule: daily, hourly, or custom cron-like times
-const wahaScheduleItemSchema = new mongoose.Schema({
-  enabled:   { type: Boolean, default: false },
-  label:     { type: String, default: '' },      // User-friendly name e.g. "Morning Briefing"
-  prompt:    { type: String, default: '' },       // Message/prompt to send
-  // Schedule type: 'daily' (specific time), 'interval' (every N minutes), 'times' (multiple times per day)
-  scheduleType: {
-    type: String,
-    enum: ['daily', 'interval', 'times'],
-    default: 'daily',
-  },
-  time:        { type: String, default: '08:00' }, // For 'daily' type: HH:MM
-  intervalMin: { type: Number, default: 60 },       // For 'interval' type: every N minutes (min 15)
-  // For 'times' type: multiple times per day e.g. ["08:00", "12:00", "17:00"]
-  times:     { type: [String], default: [] },
+// ── WAHA Target Sub-Schema (NEW: multiple targets) ────────────
+const wahaTargetSchema = new mongoose.Schema({
+  chatId:   { type: String, required: true },  // 628xxxx@c.us or 12036xxxx@g.us
+  label:    { type: String, default: '' },     // user-friendly label e.g. "HR Group"
+  type:     { type: String, enum: ['private', 'group'], default: 'private' },
+  tagOnly:  { type: Boolean, default: false }, // group only: only reply when tagged
+  active:   { type: Boolean, default: true },
 }, { _id: true });
 
-// ── WAHA Target (Chat/Group) Sub-Schema ──────────────────────
-const wahaTargetSchema = new mongoose.Schema({
-  label:   { type: String, default: '' },          // e.g. "Engineering Team", "Management Group"
-  chatId:  { type: String, required: true },       // WhatsApp Chat/Group ID
-  enabled: { type: Boolean, default: true },
-  // Per-target schedules (overrides global if set)
-  schedules: { type: [wahaScheduleItemSchema], default: [] },
+// ── WAHA Schedule Item Sub-Schema (NEW: flexible scheduling) ──
+const wahaScheduleSchema = new mongoose.Schema({
+  label:     { type: String, default: '' },         // e.g. "Morning Report"
+  prompt:    { type: String, default: '' },         // trigger prompt for AI
+  active:    { type: Boolean, default: true },
+  
+  // Schedule type: 'daily' | 'interval' | 'multiple'
+  scheduleType: { 
+    type: String, 
+    enum: ['daily', 'interval', 'multiple'], 
+    default: 'daily' 
+  },
+
+  // For 'daily': single time e.g. "08:00"
+  time:      { type: String, default: '08:00' },
+
+  // For 'multiple': array of times e.g. ["08:00", "12:00", "17:00"]
+  times:     { type: [String], default: [] },
+
+  // For 'interval': repeat every N minutes
+  intervalMinutes: { type: Number, default: 60 },
+  intervalStart:   { type: String, default: '08:00' }, // start of active window
+  intervalEnd:     { type: String, default: '17:00' }, // end of active window
+
+  // Which targets to send to (if empty → send to all active targets)
+  targetIds: { type: [String], default: [] },
 }, { _id: true });
 
 // ── Main Bot Schema ───────────────────────────────────────────
@@ -63,6 +82,7 @@ const botSchema = new mongoose.Schema({
   name:        { type: String, required: true, unique: true },
   description: { type: String, default: '' },
 
+  // ✅ Who created this bot
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -78,7 +98,7 @@ const botSchema = new mongoose.Schema({
 
   starterQuestions: { type: [String], default: [] },
 
-  // ✅ API KEY — default kosong, tidak auto-generate
+  // ✅ API KEY
   botApiKey: { type: String, default: '' },
 
   // ── AI Provider ──────────────────────────────────────────
@@ -95,6 +115,10 @@ const botSchema = new mongoose.Schema({
     default: 'relevant'
   },
 
+  // ── PPT Template ─────────────────────────────────────────
+  // Store reference to an uploaded .pptx file in knowledgeFiles to use as template
+  pptTemplateFileId: { type: String, default: null }, // knowledgeFile._id
+
   // ── Avatar ───────────────────────────────────────────────
   avatar: {
     type:      { type: String, enum: ['image', 'emoji', 'icon'], default: 'emoji' },
@@ -105,24 +129,26 @@ const botSchema = new mongoose.Schema({
     textColor: { type: String, default: '#ffffff' },
   },
 
-  // ── WAHA WhatsApp Integration (UPDATED) ──────────────────
+  // ── WAHA WhatsApp Integration (UPDATED: full rewrite) ────
   wahaConfig: {
-    enabled:  { type: Boolean, default: false },
-    endpoint: { type: String, default: '' },
-    session:  { type: String, default: 'default' },
-    apiKey:   { type: String, default: '' },
-    incomingEnabled: { type: Boolean, default: false },
+    enabled:   { type: Boolean, default: false },
+    endpoint:  { type: String, default: '' },     // WAHA server base URL e.g. http://localhost:3000
+    session:   { type: String, default: 'default' },
+    apiKey:    { type: String, default: '' },
 
-    // ✅ NEW: Multiple targets (chat IDs / groups)
+    // Webhook config (for receiving messages FROM WhatsApp)
+    webhookEnabled: { type: Boolean, default: false },
+    webhookSecret:  { type: String, default: '' },  // optional secret to verify webhook calls
+    botPhoneNumber: { type: String, default: '' },  // bot's own WhatsApp number (for tag detection)
+
+    // Multiple targets (NEW)
     targets: { type: [wahaTargetSchema], default: [] },
 
-    // ── Legacy single chatId (kept for backward compat) ────
-    chatId:   { type: String, default: '' },
+    // Flexible schedules (NEW)
+    schedules: { type: [wahaScheduleSchema], default: [] },
 
-    // ── Global schedules (apply to ALL targets unless overridden) ──
-    schedules: { type: [wahaScheduleItemSchema], default: [] },
-
-    // ── Legacy single daily schedule (kept for backward compat) ──
+    // Legacy fields kept for backward compat
+    chatId:         { type: String, default: '' },
     dailySchedule: {
       enabled: { type: Boolean, default: false },
       time:    { type: String, default: '08:00' },
@@ -131,7 +157,7 @@ const botSchema = new mongoose.Schema({
   },
 
   // ── Other Integrations ───────────────────────────────────
-  smartsheetConfig: {
+  smartsheetConfig:  {
     enabled:        { type: Boolean, default: false },
     apiKey:         { type: String, default: '' },
     sheetId:        { type: String, default: '' },

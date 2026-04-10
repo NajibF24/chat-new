@@ -42,7 +42,7 @@ axios.interceptors.response.use(
   },
   error => {
     console.error('❌ Axios Response Error:', error.response?.status, error.config?.url);
-    
+
     // Detailed error logging
     if (error.response) {
       console.error('   Status:', error.response.status);
@@ -54,7 +54,7 @@ axios.interceptors.response.use(
     } else {
       console.error('   Error:', error.message);
     }
-    
+
     // Check cookies on error
     const cookies = document.cookie;
     if (!cookies) {
@@ -64,7 +64,7 @@ axios.interceptors.response.use(
       console.error('   2. CORS credentials: true');
       console.error('   3. Browser DevTools > Application > Cookies');
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -81,13 +81,13 @@ function App() {
     try {
       console.log('🔐 Checking authentication...');
       console.log('   Current cookies:', document.cookie || 'none');
-      
+
       const response = await axios.get('/api/auth/me');
       console.log('✅ Auth check successful:', response.data);
       setUser(response.data.user);
     } catch (error) {
       console.log('ℹ️  Not authenticated:', error.message);
-      
+
       // Check if it's a CORS or network error
       if (!error.response) {
         console.error('⚠️  Network error - backend might be down or CORS issue');
@@ -102,11 +102,11 @@ function App() {
     try {
       await axios.post('/api/auth/logout');
       setUser(null);
-      
+
       // Clear any local storage if needed
       localStorage.clear();
       sessionStorage.clear();
-      
+
       console.log('✅ Logged out successfully');
     } catch (error) {
       console.error('Logout error:', error);
@@ -138,14 +138,14 @@ function App() {
           </>
         ) : (
           <>
-            <Route 
-              path="/" 
-              element={<Chat user={user} handleLogout={handleLogout} />} 
+            <Route
+              path="/"
+              element={<Chat user={user} handleLogout={handleLogout} />}
             />
             {(user.isAdmin || user.isBotCreator) && (
-              <Route 
-                path="/admin" 
-                element={<AdminDashboard user={user} handleLogout={handleLogout} />} 
+              <Route
+                path="/admin"
+                element={<AdminDashboard user={user} handleLogout={handleLogout} />}
               />
             )}
             <Route path="*" element={<Navigate to="/" replace />} />

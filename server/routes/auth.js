@@ -184,7 +184,7 @@ router.post('/login', async (req, res) => {
     req.session.userId     = user._id;
     req.session.username   = user.username;
     req.session.isAdmin    = user.isAdmin;
-    req.session.isBotCreator = user.isBotCreator; 
+    req.session.isBotCreator = user.isBotCreator;
     req.session.authMethod = 'local';
 
     user.lastLogin = new Date();
@@ -247,13 +247,13 @@ router.post('/logout', (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   const user = await User.findById(req.session.userId)
     .populate('assignedBots').select('-password');
-  
+
   // Memastikan data sesi juga diupdate jika ada GET /me
   if (user) {
     req.session.isAdmin = user.isAdmin;
     req.session.isBotCreator = user.isBotCreator;
   }
-  
+
   res.json({ user });
 });
 

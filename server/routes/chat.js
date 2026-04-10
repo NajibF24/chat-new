@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import axios from 'axios';
 import AICoreService from '../services/ai-core.service.js';
 import { generateImage } from '../services/image.service.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -14,6 +14,7 @@ import AIProviderService from '../services/ai-provider.service.js';
 
 const router = express.Router();
 
+// Config Upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => { cb(null, 'data/files'); },
   filename: (req, file, cb) => {
@@ -23,8 +24,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
+// ── Helper: detect reasoning/GPT-5 model ─────────────────────
 const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(model);
 
+// ── Helper: normalize usage across providers ──────────────────
 function normalizeUsage(usage, model = '') {
   if (!usage) return null;
   const promptTokens     = usage.prompt_tokens       ?? usage.input_tokens      ?? usage.promptTokenCount     ?? 0;
@@ -37,16 +40,44 @@ function normalizeUsage(usage, model = '') {
   return { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens };
 }
 
+// ── Helper: kirim ke WAHA WhatsApp ───────────────────────────
+async function sendToWaha(bot, username, userMessage, aiResponse) {
+  if (!bot.wahaConfig?.enabled || !bot.wahaConfig?.chatId || !bot.wahaConfig?.endpoint) return;
+  try {
+    const waText = [
+      `🤖 *LOG CHAT BOT:* ${bot.name}`,
+      `👤 *User:* ${username || 'Unknown'}`,
+      `💬 *Pertanyaan:*\n${userMessage}`,
+      `🤖 *Jawaban:*\n${aiResponse}`,
+    ].join('\n');
+
+    await axios.post(bot.wahaConfig.endpoint, {
+      chatId:  bot.wahaConfig.chatId,
+      text:    waText,
+      session: bot.wahaConfig.session || 'default',
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(bot.wahaConfig.apiKey && { 'X-Api-Key': bot.wahaConfig.apiKey }),
+      },
+    });
+    console.log(`[WAHA] ✅ Sukses forward ke: ${bot.wahaConfig.chatId}`);
+  } catch (err) {
+    console.error('[WAHA] ❌ Gagal forward:', err.response?.data || err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENDPOINTS
+// ─────────────────────────────────────────────────────────────
+
 // 1. Upload File
 router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
-    filename:     req.file.filename,
-    originalname: req.file.originalname,
-    path:         req.file.path,
-    mimetype:     req.file.mimetype,
-    url:          `/api/files/${req.file.filename}`,
-    size:         req.file.size,
+    filename: req.file.filename, originalname: req.file.originalname,
+    path: req.file.path, mimetype: req.file.mimetype,
+    url: `/api/files/${req.file.filename}`, size: req.file.size,
   });
 });
 
@@ -137,97 +168,21 @@ router.post('/message', requireAuth, async (req, res) => {
       }
     }
 
-    // ── ✅ FIX UTAMA: Resolve physical server path untuk attachedFile ──
-    // Bug sebelumnya: hanya cek attachedFile?.filename
-    // Jika frontend kirim field dengan nama berbeda (name, file_name, dll)
-    // maka resolvedAttachedFile = null dan file tidak diproses sama sekali
-    let resolvedAttachedFile = null;
-
-    if (attachedFile) {
-      // ✅ Ekstrak filename dari berbagai kemungkinan field name yang dikirim frontend
-      const rawFilename = attachedFile.filename        // format standar dari /upload
-        || attachedFile.name                           // beberapa frontend pakai 'name'
-        || attachedFile.file_name                      // variasi lain
-        || (attachedFile.url && attachedFile.url.startsWith('/api/files/')
-            ? attachedFile.url.replace('/api/files/', '')  // ekstrak dari URL
-            : null);
-
-      if (rawFilename) {
-        const serverPath = path.join(process.cwd(), 'data', 'files', rawFilename);
-
-        // ✅ Cek apakah file benar-benar ada di disk
-        const fileExists = fs.existsSync(serverPath);
-
-        console.log(`[Chat] attachedFile received:`);
-        console.log(`  rawFilename  : ${rawFilename}`);
-        console.log(`  originalname : ${attachedFile.originalname || attachedFile.originalName || 'unknown'}`);
-        console.log(`  mimetype     : ${attachedFile.mimetype || attachedFile.type || 'unknown'}`);
-        console.log(`  serverPath   : ${serverPath}`);
-        console.log(`  fileExists   : ${fileExists}`);
-
-        if (fileExists) {
-          resolvedAttachedFile = {
-            // Normalize semua field name agar konsisten
-            filename:     rawFilename,
-            originalname: attachedFile.originalname || attachedFile.originalName || rawFilename,
-            mimetype:     attachedFile.mimetype || attachedFile.type || 'application/octet-stream',
-            size:         attachedFile.size || 0,
-            url:          attachedFile.url || `/api/files/${rawFilename}`,
-            path:         serverPath,
-            serverPath:   serverPath,
-          };
-        } else {
-          console.warn(`[Chat] ⚠️ File tidak ditemukan di disk: ${serverPath}`);
-          // Coba cari file dengan prefix yang cocok (fallback jika nama sedikit beda)
-          try {
-            const filesDir = path.join(process.cwd(), 'data', 'files');
-            const allFiles = fs.readdirSync(filesDir);
-            // Cari file yang mengandung bagian dari originalname
-            const origName = attachedFile.originalname || attachedFile.originalName || '';
-            const matchingFile = allFiles.find(f =>
-              f.includes(origName) || f.endsWith('---' + origName)
-            );
-            if (matchingFile) {
-              const altPath = path.join(filesDir, matchingFile);
-              console.log(`[Chat] ✅ Found via scan: ${matchingFile}`);
-              resolvedAttachedFile = {
-                filename:     matchingFile,
-                originalname: origName || matchingFile,
-                mimetype:     attachedFile.mimetype || attachedFile.type || 'application/octet-stream',
-                size:         attachedFile.size || 0,
-                url:          `/api/files/${matchingFile}`,
-                path:         altPath,
-                serverPath:   altPath,
-              };
-            }
-          } catch (scanErr) {
-            console.warn(`[Chat] File scan error: ${scanErr.message}`);
-          }
-        }
-      } else {
-        // ✅ Tidak ada filename sama sekali — log agar mudah debug
-        console.warn(`[Chat] ⚠️ attachedFile diterima tapi tidak ada field filename/name/url:`);
-        console.warn(`  Fields yang ada: ${Object.keys(attachedFile).join(', ')}`);
-        console.warn(`  Value: ${JSON.stringify(attachedFile).substring(0, 200)}`);
-      }
-    }
-
+    // ── Normal AI Message ────────────────────────────────────
     const startTime = Date.now();
     const result = await AICoreService.processMessage({
-      userId,
-      botId,
-      message,
-      attachedFile: resolvedAttachedFile,
-      threadId,
+      userId, botId, message, attachedFile, threadId,
       history: (history || []).map(m => ({ role: m.role, content: m.content })),
     });
     const durationMs = Date.now() - startTime;
 
+    // ── WAHA Forward (fire & forget) ─────────────────────────
+    sendToWaha(bot, sessionUsername, message, result?.response || '');
+
+    // ── Audit Log ────────────────────────────────────────────
     const usage = normalizeUsage(result?.usage, model);
     const auditDetail = {
       bot: botName, model, provider, durationMs, maxTokensConfig: maxTokens,
-      hasAttachment: Boolean(resolvedAttachedFile),
-      attachmentName: resolvedAttachedFile?.originalname || null,
       tokens: usage ? {
         prompt:     usage.promptTokens,
         completion: usage.completionTokens,
@@ -235,7 +190,7 @@ router.post('/message', requireAuth, async (req, res) => {
         ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
       } : null,
       ...(usage?.warningMaxTokens && {
-        warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}).`,
+        warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
       }),
       ...((!result?.response || result.response.trim() === '') && {
         emptyResponse: true,
@@ -254,8 +209,7 @@ router.post('/message', requireAuth, async (req, res) => {
     res.json(result);
 
   } catch (error) {
-    console.error('Chat Error:', error.message);
-    console.error('Chat Error stack:', error.stack);
+    console.error('Chat Error:', error);
     await AuditService.log({
       req, category: 'chat', action: 'AI_RESPONSE_ERROR', status: 'failed',
       targetName: req.body?.botId || 'unknown',
@@ -269,18 +223,27 @@ router.post('/message', requireAuth, async (req, res) => {
 // ============================================================
 // 🌐 EXTERNAL API CHAT — akses via x-api-key header
 // ============================================================
+// Contoh curl:
+//   curl -X POST https://domain/api/chat/external \
+//     -H "x-api-key: gys-bot-xxxx" \
+//     -H "Content-Type: application/json" \
+//     -d '{"message": "Give me what you got!", "username": "system.scheduler"}'
+// ============================================================
 router.post('/external', async (req, res) => {
   try {
+    // 1. Validasi API Key
     const apiKey = req.headers['x-api-key'];
     if (!apiKey) {
       return res.status(401).json({ error: 'Akses ditolak: x-api-key tidak ditemukan di header' });
     }
 
+    // 2. Cari bot berdasarkan API Key
     const bot = await Bot.findOne({ botApiKey: apiKey }).lean();
     if (!bot) {
       return res.status(403).json({ error: 'Akses ditolak: API Key tidak valid atau Bot tidak ditemukan' });
     }
 
+    // 3. Validasi message
     const { message, username, history } = req.body;
     if (!message?.trim()) {
       return res.status(400).json({ error: 'Field "message" wajib diisi' });
@@ -291,6 +254,9 @@ router.post('/external', async (req, res) => {
     const provider       = bot.aiProvider?.provider  || 'openai';
     const maxTokens      = bot.aiProvider?.maxTokens ?? 2000;
 
+    console.log(`[EXTERNAL] Bot: ${bot.name} | From: ${callerUsername} | Msg: ${message.substring(0, 80)}`);
+
+    // 4. Panggil AI — pakai system prompt + knowledge base bot yang sesungguhnya
     const startTime = Date.now();
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider,
@@ -305,6 +271,10 @@ router.post('/external', async (req, res) => {
     const durationMs  = Date.now() - startTime;
     const responseText = aiResponse?.text || aiResponse?.response || '';
 
+    // 5. WAHA Forward (fire & forget) — sama persis seperti chat internal
+    sendToWaha(bot, callerUsername, message, responseText);
+
+    // 6. Audit log
     const usage = normalizeUsage(aiResponse?.usage, model);
     await AuditService.log({
       req,
@@ -315,17 +285,27 @@ router.post('/external', async (req, res) => {
       targetName: bot.name,
       username:   callerUsername,
       detail: {
-        bot: bot.name, model, provider, durationMs, maxTokensConfig: maxTokens,
-        source: 'external_api',
+        bot:             bot.name,
+        model,
+        provider,
+        durationMs,
+        maxTokensConfig: maxTokens,
+        source:          'external_api',
         tokens: usage ? {
-          prompt: usage.promptTokens, completion: usage.completionTokens,
-          total: usage.totalTokens,
+          prompt:     usage.promptTokens,
+          completion: usage.completionTokens,
+          total:      usage.totalTokens,
           ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
         } : null,
       },
     }).catch(() => {});
 
-    res.json({ success: true, botName: bot.name, response: responseText });
+    // 7. Response — field "response" konsisten dengan format internal
+    res.json({
+      success:  true,
+      botName:  bot.name,
+      response: responseText,
+    });
 
   } catch (error) {
     console.error('[EXTERNAL] Error:', error);
