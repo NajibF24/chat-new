@@ -1,4 +1,8 @@
 // server/services/ai-core.service.js
+// ✅ PATCH: 
+//   1. PPT command now reads uploaded chat files (PDF/DOCX/XLSX) deeply
+//   2. Extracts images from uploaded documents for PPT embedding
+//   3. Token usage now consistent via normalizeUsage() from ai-provider.service.js
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -11,6 +15,7 @@ import Thread   from '../models/Thread.js';
 import Bot      from '../models/Bot.js';
 
 import AIProviderService      from './ai-provider.service.js';
+import { normalizeUsage }     from './ai-provider.service.js';
 import KnowledgeBaseService   from './knowledge-base.service.js';
 import SmartsheetLiveService  from './smartsheet-live.service.js';
 import FileManagerService     from './file-manager.service.js';
@@ -82,6 +87,16 @@ RULE #3 — RICH CONTENT STANDARDS (NO LAZY CONTENT)
 - TABLE: 3–5 columns, minimum 3 data rows, each cell has real content
 - CONTENT bullets: minimum 4 bullets, each 10+ words. No 2-word bullets ever.
 - CHART: insightText (2 sentences explaining business impact) + real numeric chartData
+
+═══════════════════════════════════════════════════════
+RULE #4 — WHEN SOURCE DOCUMENT IS PROVIDED
+═══════════════════════════════════════════════════════
+If the user uploaded a document (PDF, DOCX, XLSX, PPTX):
+- USE THE ACTUAL CONTENT from the document — do not hallucinate or invent data.
+- Extract the key structure: headings → slide titles, sections → slide groups.
+- Preserve specific numbers, names, dates, and statistics EXACTLY as in the document.
+- If the document has images referenced, note them in the slide as [IMAGE: description].
+- Build slides that faithfully represent the document's message and structure.
 
 ═══════════════════════════════════════════════════════
 OUTPUT FORMAT — exact syntax required
@@ -266,6 +281,149 @@ function isPptCommand(message = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
+// ✅ NEW: Extract images from an uploaded file (for chat PPT)
+// Returns array of { path, url, caption, mimeType }
+// ─────────────────────────────────────────────────────────────
+async function extractImagesFromUploadedFile(filePath, originalName) {
+  const ext = path.extname(originalName || '').toLowerCase();
+  const IMAGE_OUTPUT_DIR = path.join(process.cwd(), 'data', 'files', 'extracted-images');
+
+  if (!fs.existsSync(IMAGE_OUTPUT_DIR)) {
+    fs.mkdirSync(IMAGE_OUTPUT_DIR, { recursive: true });
+  }
+
+  const images = [];
+
+  try {
+    const JSZip = (await import('jszip')).default;
+    const data  = fs.readFileSync(filePath);
+    const zip   = await JSZip.loadAsync(data);
+
+    const mimeMap = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+    };
+
+    let mediaPrefix = '';
+    if (ext === '.docx') mediaPrefix = 'word/media/';
+    else if (ext === '.pptx') mediaPrefix = 'ppt/media/';
+    else if (ext === '.xlsx') mediaPrefix = 'xl/media/';
+
+    if (!mediaPrefix) return images;
+
+    const imageEntries = Object.keys(zip.files).filter(name =>
+      name.startsWith(mediaPrefix) && !zip.files[name].dir
+    );
+
+    const safeBase = path.basename(originalName, ext)
+      .replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+
+    for (let i = 0; i < imageEntries.length; i++) {
+      const entry    = zip.files[imageEntries[i]];
+      const imgExt   = path.extname(imageEntries[i]).toLowerCase();
+      if (!mimeMap[imgExt]) continue;
+
+      const imgBuffer  = await entry.async('nodebuffer');
+
+      // Skip very small images (icons, bullets, decorative) — < 5KB
+      if (imgBuffer.length < 5120) continue;
+
+      const imgFilename = `upload_${safeBase}_img${i + 1}${imgExt}`;
+      const imgPath     = path.join(IMAGE_OUTPUT_DIR, imgFilename);
+      const imgUrl      = `/api/files/extracted-images/${imgFilename}`;
+
+      fs.writeFileSync(imgPath, imgBuffer);
+      images.push({
+        filename: imgFilename,
+        path:     imgPath,
+        url:      imgUrl,
+        mimeType: mimeMap[imgExt],
+        index:    i,
+        caption:  `Image ${i + 1} from ${path.basename(originalName)}`,
+        sourceFile: originalName,
+      });
+    }
+
+    console.log(`[AICoreService] Extracted ${images.length} images from uploaded "${originalName}"`);
+  } catch (err) {
+    console.warn(`[AICoreService] Image extraction from upload failed:`, err.message);
+  }
+
+  return images;
+}
+
+// ─────────────────────────────────────────────────────────────
+// ✅ NEW: Deep read of uploaded document for PPT context
+// Returns structured text with section markers
+// ─────────────────────────────────────────────────────────────
+async function deepReadDocument(filePath, originalName, mimetype) {
+  const ext = path.extname(originalName || '').toLowerCase();
+  let content = '';
+
+  try {
+    if (ext === '.pdf' || mimetype === 'application/pdf') {
+      const buffer = fs.readFileSync(filePath);
+      const data   = await pdf(buffer);
+      content = data.text || '';
+
+    } else if (ext === '.docx' || ext === '.doc' || (mimetype || '').includes('wordprocessingml')) {
+      // Extract with full structure — paragraphs as sections
+      const result = await mammoth.extractRawText({ path: filePath });
+      content = result.value || '';
+
+    } else if (ext === '.xlsx' || ext === '.xls' || (mimetype || '').includes('spreadsheetml')) {
+      const workbook = XLSX.readFile(filePath);
+      const parts    = workbook.SheetNames.map(sheetName => {
+        const sheet = workbook.Sheets[sheetName];
+        const csv   = XLSX.utils.sheet_to_csv(sheet);
+        return `=== Sheet: ${sheetName} ===\n${csv}`;
+      });
+      content = parts.join('\n\n');
+
+    } else if (ext === '.pptx' || ext === '.ppt' || (mimetype || '').includes('presentationml')) {
+      // Extract text from each slide
+      try {
+        const JSZip   = (await import('jszip')).default;
+        const data    = fs.readFileSync(filePath);
+        const zip     = await JSZip.loadAsync(data);
+        const slides  = Object.keys(zip.files)
+          .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+          .sort((a, b) => {
+            const na = parseInt(a.match(/\d+/)[0]);
+            const nb = parseInt(b.match(/\d+/)[0]);
+            return na - nb;
+          });
+
+        const slideTexts = [];
+        for (const sf of slides) {
+          const xml     = await zip.files[sf].async('string');
+          const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
+          const text    = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').trim();
+          if (text) slideTexts.push(`[Slide ${slideTexts.length + 1}]\n${text}`);
+        }
+        content = slideTexts.join('\n\n');
+      } catch (e) {
+        content = `[PPTX: ${originalName} — gagal ekstrak teks: ${e.message}]`;
+      }
+
+    } else if (['.txt', '.md', '.csv'].includes(ext)) {
+      content = fs.readFileSync(filePath, 'utf8');
+    }
+
+    // Truncate to max 20000 chars (enough for large docs)
+    const MAX_CHARS = 20000;
+    if (content.length > MAX_CHARS) {
+      content = content.substring(0, MAX_CHARS) + '\n\n[... dokumen dipotong karena terlalu panjang ...]';
+    }
+  } catch (err) {
+    console.error(`[AICoreService] deepReadDocument error "${originalName}":`, err.message);
+    content = `[Error membaca dokumen "${originalName}": ${err.message}]`;
+  }
+
+  return content.trim();
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN SERVICE CLASS
 // ─────────────────────────────────────────────────────────────
 
@@ -324,7 +482,7 @@ class AICoreService {
     }
 
     if (isPptCommand(message)) {
-      return this._handlePptCommand({ userId, botId, bot, message, threadId, history });
+      return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
     }
 
     let contextData = '';
@@ -438,9 +596,10 @@ class AICoreService {
   }
 
   // ─────────────────────────────────────────────────────────
-  // PPT COMMAND HANDLER (class method — no 'function' keyword)
+  // PPT COMMAND HANDLER
+  // ✅ UPDATED: reads uploaded chat files deeply, extracts images
   // ─────────────────────────────────────────────────────────
-  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [] }) {
+  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
       // ── STEP 0: Load DB history ──────────────────────────────
       let dbHistory = [];
@@ -453,11 +612,10 @@ class AICoreService {
         }
       } catch (e) { console.warn('[PPT] DB history error:', e.message); }
 
-      // ── STEP 0.5: Find template & extract images from knowledge base ──
-      const freshBot = await Bot.findById(botId).lean();
+      // ── STEP 0.5: Knowledge base template + images ───────────
+      const freshBot     = await Bot.findById(botId).lean();
       const knowledgeFiles = freshBot?.knowledgeFiles || [];
 
-      // Find template PPTX if configured
       let templatePath = null;
       if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
         const templateFile = knowledgeFiles.find(f =>
@@ -466,29 +624,22 @@ class AICoreService {
         );
         if (templateFile && fs.existsSync(templateFile.path)) {
           templatePath = templateFile.path;
-          console.log(`[PPT] Using template: ${templateFile.originalName}`);
         }
       }
 
-      // If no explicit template, auto-detect any .pptx in knowledge base
       if (!templatePath) {
         const pptxFile = knowledgeFiles.find(f =>
           f.originalName?.toLowerCase().endsWith('.pptx') &&
           f.path && fs.existsSync(f.path)
         );
-        if (pptxFile) {
-          templatePath = pptxFile.path;
-          console.log(`[PPT] Auto-detected template: ${pptxFile.originalName}`);
-        }
+        if (pptxFile) templatePath = pptxFile.path;
       }
 
-      // Get extracted images from relevant knowledge files (Word/PPTX)
-      const extractedImages = KnowledgeBaseService.getExtractedImages(
+      // Images from knowledge base files
+      const kbExtractedImages = KnowledgeBaseService.getExtractedImages(
         knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
       );
-      console.log(`[PPT] Found ${extractedImages.length} extracted images from knowledge base`);
 
-      // Build knowledge context for AI content generation
       let knowledgeCtx = '';
       if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
         knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
@@ -496,7 +647,38 @@ class AICoreService {
         );
       }
 
-      // ── STEP 1: User request context ────────────────────────
+      // ── STEP 1: ✅ NEW — Read uploaded chat document ─────────
+      let uploadedDocContent = '';
+      let uploadedDocImages  = [];
+      let uploadedDocName    = '';
+
+      if (attachedFile) {
+        const physicalPath = attachedFile.serverPath || attachedFile.path;
+        const originalName = attachedFile.originalname || attachedFile.filename || '';
+        uploadedDocName    = originalName;
+
+        if (physicalPath && fs.existsSync(physicalPath)) {
+          console.log(`[PPT] Reading uploaded document: "${originalName}"`);
+
+          // Deep read of document text
+          uploadedDocContent = await deepReadDocument(physicalPath, originalName, attachedFile.mimetype);
+
+          // Extract images from document
+          const ext = path.extname(originalName).toLowerCase();
+          if (['.docx', '.pptx', '.xlsx'].includes(ext)) {
+            uploadedDocImages = await extractImagesFromUploadedFile(physicalPath, originalName);
+            console.log(`[PPT] Extracted ${uploadedDocImages.length} images from uploaded "${originalName}"`);
+          }
+
+          console.log(`[PPT] Document content: ${uploadedDocContent.length} chars`);
+        }
+      }
+
+      // Combine all images: uploaded doc images + knowledge base images
+      const allExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
+      console.log(`[PPT] Total images available: ${allExtractedImages.length} (uploaded: ${uploadedDocImages.length}, KB: ${kbExtractedImages.length})`);
+
+      // ── STEP 2: Build content user message ───────────────────
       const userRequest = message || '';
       const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
 
@@ -509,27 +691,43 @@ class AICoreService {
           .substring(0, 8000);
       }
 
-      // ── STEP 2: CONTENT GENERATION ──────────────────────────
+      // ── STEP 3: CONTENT GENERATION ──────────────────────────
       console.log('[PPT] Step 1 — generating content...');
 
       let contentUserMsg = '';
-      if (historicalContent) {
-        contentUserMsg = `Generate a professional presentation based on this conversation and knowledge base context.\nIMPORTANT: Match language exactly. Auto-detect best layout per slide.\n\nHistory:\n${historicalContent}\n\n`;
-      } else {
-        contentUserMsg = `Generate a professional presentation for this request.\nIMPORTANT: Match language exactly. Auto-detect best layout.\n\n`;
+
+      // ✅ Priority 1: Uploaded document content
+      if (uploadedDocContent) {
+        contentUserMsg += `=== DOKUMEN YANG DI-UPLOAD: "${uploadedDocName}" ===\n`;
+        contentUserMsg += uploadedDocContent + '\n\n';
+        contentUserMsg += `=== INSTRUKSI ===\n`;
+        contentUserMsg += `Buat presentasi berdasarkan dokumen di atas. `;
+        contentUserMsg += `Gunakan konten dokumen sebagai sumber utama — jangan mengarang data.\n`;
+        contentUserMsg += `Struktur slide harus mencerminkan struktur dokumen aslinya.\n`;
+        if (uploadedDocImages.length > 0) {
+          contentUserMsg += `Dokumen memiliki ${uploadedDocImages.length} gambar — tandai slide yang relevan dengan [HAS_IMAGE].\n`;
+        }
+        contentUserMsg += `\n`;
       }
 
+      // Priority 2: Knowledge base context
       if (knowledgeCtx) {
-        contentUserMsg += `KNOWLEDGE BASE CONTEXT (use this as main content source):\n${knowledgeCtx.substring(0, 6000)}\n\n`;
+        contentUserMsg += `KNOWLEDGE BASE CONTEXT:\n${knowledgeCtx.substring(0, 4000)}\n\n`;
       }
 
-      contentUserMsg += `User request: ${userRequest}`;
+      // Priority 3: Historical conversation
+      if (historicalContent) {
+        contentUserMsg += `RIWAYAT PERCAKAPAN:\n${historicalContent}\n\n`;
+      }
+
+      contentUserMsg += `PERMINTAAN USER: ${userRequest}\n\n`;
+      contentUserMsg += `PENTING: Match bahasa user (Indonesia → Bahasa Indonesia). Auto-detect best layout per slide.`;
 
       const contentResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: PPT_CONTENT_SYSTEM_PROMPT,
-        messages: [],
-        userContent: contentUserMsg,
+        systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
+        messages:       [],
+        userContent:    contentUserMsg,
       });
 
       const slideContent = contentResult.text;
@@ -538,16 +736,22 @@ class AICoreService {
       const titleMatch = slideContent.match(/^#\s+(.+)/m);
       const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
 
-      console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars | Images: ${extractedImages.length}`);
+      // ✅ Log token usage for content generation
+      const contentUsage = normalizeUsage(contentResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
+      if (contentUsage) {
+        console.log(`[PPT] Content tokens — prompt: ${contentUsage.prompt_tokens}, completion: ${contentUsage.completion_tokens}, total: ${contentUsage.total_tokens}`);
+      }
 
-      // ── STEP 3: JSON CONVERSION ──────────────────────────────
+      console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
+
+      // ── STEP 4: JSON CONVERSION ──────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
 
       const jsonResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: PPT_JSON_SYSTEM_PROMPT,
-        messages: [],
-        userContent: `Convert this presentation to JSON:\n\n${slideContent}`,
+        systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
+        messages:       [],
+        userContent:    `Convert this presentation to JSON:\n\n${slideContent}`,
       });
 
       let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
@@ -567,24 +771,23 @@ class AICoreService {
       const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
 
-      // ── STEP 4: RENDER PPTX ──────────────────────────────────
+      // ── STEP 5: RENDER PPTX ──────────────────────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generate({
         pptData,
         slideContent,
         title,
         outputDir,
-        styleDesc: templatePath ? 'Custom Template' : 'GYS Gamma Style',
+        styleDesc:       templatePath ? 'Custom Template' : 'GYS Gamma Style',
         templatePath,
-        extractedImages,
+        extractedImages: allExtractedImages,
       });
 
-      // ── STEP 5: BUILD RESPONSE ───────────────────────────────
+      // ── STEP 6: BUILD RESPONSE ───────────────────────────────
       const reqLower = userRequest.toLowerCase();
-      const reqEng   = reqLower.includes('english') || reqLower.includes('inggris');
       const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
       const indWords = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
-      const isEnglish = reqEng || engWords.length > indWords.length;
+      const isEnglish = engWords.length > indWords.length;
 
       const layoutIcons = {
         TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
@@ -600,17 +803,27 @@ class AICoreService {
         .join('\n');
 
       const templateNote = result.usedTemplate
-        ? '\n🎨 **Template:** Custom template from knowledge base applied'
+        ? '\n🎨 **Template:** Custom template applied'
         : '';
-      const imageNote = extractedImages.length > 0
-        ? `\n🖼️ **Gambar:** ${extractedImages.length} gambar dari dokumen knowledge base diintegrasikan`
+      const imageNote = allExtractedImages.length > 0
+        ? `\n🖼️ **Gambar:** ${allExtractedImages.length} gambar diintegrasikan ke dalam slide`
+        : '';
+      const docNote = uploadedDocName
+        ? `\n📄 **Sumber:** Presentasi dibuat dari "${uploadedDocName}"`
+        : '';
+
+      // ✅ Total token usage across both AI calls
+      const jsonUsage = normalizeUsage(jsonResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
+      const totalTokens = (contentUsage?.total_tokens || 0) + (jsonUsage?.total_tokens || 0);
+      const tokenNote = totalTokens > 0
+        ? `\n📊 **Token digunakan:** ${totalTokens.toLocaleString()} total`
         : '';
 
       const responseMarkdown = isEnglish
         ? `✅ **GYS Presentation successfully generated!**
 
 📊 **Title:** ${title}
-📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}
+📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
 
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
@@ -620,7 +833,7 @@ ${layoutSummary}`
         : `✅ **Presentasi GYS berhasil dibuat!**
 
 📊 **Judul:** ${title}
-📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}
+📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
 
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})

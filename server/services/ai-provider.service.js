@@ -94,7 +94,6 @@ export const BOT_CAPABILITIES = {
 
 // ─────────────────────────────────────────────────────────────
 // Helper: Detect non-chat models (instruct / completions only)
-// These are NOT supported by v1/chat/completions endpoint
 // ─────────────────────────────────────────────────────────────
 const NON_CHAT_PATTERNS = [
   /instruct/i,
@@ -115,40 +114,76 @@ function isChatModel(model) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Helper: Detect which parameter convention a model uses
+// ✅ NEW: Normalize usage object to a consistent shape
+// Works for OpenAI, Anthropic, Gemini, and Custom providers
+// Always returns: { prompt_tokens, completion_tokens, total_tokens,
+//                   reasoning_tokens?, provider }
 // ─────────────────────────────────────────────────────────────
+export function normalizeUsage(rawUsage, provider = 'openai', model = '') {
+  if (!rawUsage) return null;
 
-/**
- * Models that use `max_completion_tokens` instead of `max_tokens`:
- *   - All GPT-5.x variants (gpt-5, gpt-5.1, gpt-5.2, gpt-5-pro, gpt-5-mini, etc.)
- *   - All o-series reasoning models (o1, o3, o4, o4-mini, o3-mini, etc.)
- *
- * Models that do NOT support `temperature`:
- *   - o-series reasoning models only
- */
+  let prompt     = 0;
+  let completion = 0;
+  let total      = 0;
+  let reasoning  = null;
+
+  if (provider === 'anthropic') {
+    // Anthropic: { input_tokens, output_tokens }
+    prompt     = rawUsage.input_tokens  ?? 0;
+    completion = rawUsage.output_tokens ?? 0;
+    total      = prompt + completion;
+
+  } else if (provider === 'google') {
+    // Gemini: { promptTokenCount, candidatesTokenCount, totalTokenCount }
+    prompt     = rawUsage.promptTokenCount     ?? 0;
+    completion = rawUsage.candidatesTokenCount ?? 0;
+    total      = rawUsage.totalTokenCount       ?? (prompt + completion);
+
+  } else {
+    // OpenAI / Custom: { prompt_tokens, completion_tokens, total_tokens }
+    prompt     = rawUsage.prompt_tokens     ?? 0;
+    completion = rawUsage.completion_tokens ?? 0;
+    total      = rawUsage.total_tokens       ?? (prompt + completion);
+
+    // o-series reasoning tokens
+    const rt = rawUsage.completion_tokens_details?.reasoning_tokens;
+    if (rt != null) reasoning = rt;
+  }
+
+  // Reasoning token warning for o-series
+  const isReasoningModel = /^o\d/.test(model);
+  const warningMaxTokens = isReasoningModel && reasoning != null
+    ? reasoning >= (completion * 0.9)
+    : false;
+
+  return {
+    prompt_tokens:     prompt,
+    completion_tokens: completion,
+    total_tokens:      total,
+    ...(reasoning !== null && { reasoning_tokens: reasoning }),
+    warningMaxTokens,
+    provider,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Helper: model parameter convention
+// ─────────────────────────────────────────────────────────────
 function getModelParams(model, temp, maxTok) {
-  const isReasoningModel = /^o\d/.test(model);   // o1, o3, o4, o3-mini, o4-mini
-  const isGpt5Plus       = /^gpt-5/.test(model);  // gpt-5, gpt-5.1, gpt-5.2, gpt-5-mini, gpt-5-nano
-
-  // GPT-5+ and o-series both use max_completion_tokens
+  const isReasoningModel = /^o\d/.test(model);
+  const isGpt5Plus       = /^gpt-5/.test(model);
   const useCompletionTokens = isReasoningModel || isGpt5Plus;
-
-  // GPT-5+ only supports temperature = 1 (default), so we omit it entirely.
-  // o-series reasoning models also do not support temperature.
-  const omitTemperature = isReasoningModel || isGpt5Plus;
+  const omitTemperature     = isReasoningModel || isGpt5Plus;
 
   const params = {};
-
   if (useCompletionTokens) {
     params.max_completion_tokens = maxTok;
   } else {
     params.max_tokens = maxTok;
   }
-
   if (!omitTemperature) {
     params.temperature = temp;
   }
-
   return params;
 }
 
@@ -164,34 +199,14 @@ class AIProviderService {
     return '';
   }
 
-  /**
-   * Build OpenAI tools array based on bot capabilities config
-   */
-  //buildTools(providerConfig, capabilities = {}) {
- //   if (providerConfig?.provider !== 'openai') return undefined;
-
- //   const tools = [];
- //   const model = providerConfig?.model || '';
-
-    // Web Search — supported on gpt-4o, gpt-4.1+, gpt-5+, o-series
-//    const supportsWebSearch = capabilities.webSearch &&
-  //    (model.includes('4.1') || model.startsWith('gpt-5') || /^o\d/.test(model) || model.includes('4o'));
-   // if (supportsWebSearch) {
-    //  tools.push({ type: 'web_search_preview' });
-   // }
-
-    // Code Interpreter
- //   if (capabilities.codeInterpreter) {
- //     tools.push({ type: 'code_interpreter', container: { type: 'auto' } });
- //   }
   buildTools(providerConfig, capabilities = {}) {
-    // Kita kembalikan undefined (kosong) karena provider Anda
-    // hanya mendukung type 'function', bukan native tools OpenAI.
+    // Tools disabled — provider only supports 'function' type
     return undefined;
   }
 
   /**
    * Route to correct provider and return { text, usage }
+   * usage is always normalized via normalizeUsage()
    */
   async generateCompletion({ providerConfig = {}, systemPrompt, messages, userContent, capabilities = {} }) {
     const provider = providerConfig?.provider || 'openai';
@@ -224,7 +239,6 @@ class AIProviderService {
 
   // ── OpenAI ─────────────────────────────────────────────────
   async _callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities = {} }) {
-    // Guard: reject non-chat models early with a clear message
     if (!isChatModel(model)) {
       throw new Error(
         `Model "${model}" tidak didukung untuk chat (bukan chat model). ` +
@@ -236,7 +250,7 @@ class AIProviderService {
     if (endpoint) clientConfig.baseURL = endpoint;
     const openai = new OpenAI(clientConfig);
 
-    const tools      = this.buildTools({ provider: 'openai', model }, capabilities);
+    const tools       = this.buildTools({ provider: 'openai', model }, capabilities);
     const tokenParams = getModelParams(model, temp, maxTok);
 
     const body = {
@@ -252,22 +266,17 @@ class AIProviderService {
     if (tools) body.tools = tools;
 
     const completion = await openai.chat.completions.create(body);
+    const choice     = completion.choices[0];
 
-    // Handle tool call responses (web search returns tool_calls first)
-    const choice = completion.choices[0];
-
-    // Debug: log raw response shape when content is empty
     if (!choice?.message?.content) {
       console.warn(`[AI DEBUG] model=${model} finish_reason=${choice?.finish_reason} message_keys=${Object.keys(choice?.message || {}).join(',')}`);
       if (choice?.message?.refusal) console.warn(`[AI DEBUG] refusal: ${choice.message.refusal}`);
-      // Log full completion for deep inspection (truncated)
       console.warn('[AI DEBUG] raw completion:', JSON.stringify(completion).substring(0, 800));
     }
 
-    // Primary: chat completions content
     let text = choice?.message?.content || '';
 
-    // Fallback 1: Responses API style — completion.output array (GPT-5 variants)
+    // Fallback 1: Responses API style (GPT-5 variants)
     if (!text && completion.output) {
       text = (completion.output || [])
         .filter(o => o.type === 'message')
@@ -297,7 +306,9 @@ class AIProviderService {
       text = followUp.choices[0]?.message?.content || '';
     }
 
-    return { text, usage: completion.usage };
+    // ✅ Normalize usage
+    const usage = normalizeUsage(completion.usage, 'openai', model);
+    return { text, usage };
   }
 
   // ── Anthropic Claude ───────────────────────────────────────
@@ -328,7 +339,10 @@ class AIProviderService {
     );
 
     const text = response.data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
-    return { text, usage: response.data.usage };
+
+    // ✅ Normalize usage — Anthropic uses input_tokens / output_tokens
+    const usage = normalizeUsage(response.data.usage, 'anthropic', model);
+    return { text, usage };
   }
 
   // ── Google Gemini ──────────────────────────────────────────
@@ -355,7 +369,10 @@ class AIProviderService {
     );
 
     const text = response.data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-    return { text, usage: response.data.usageMetadata };
+
+    // ✅ Normalize usage — Gemini uses promptTokenCount / candidatesTokenCount
+    const usage = normalizeUsage(response.data.usageMetadata, 'google', model);
+    return { text, usage };
   }
 
   // ── Custom / OpenAI-compatible ─────────────────────────────
@@ -374,10 +391,12 @@ class AIProviderService {
         { role: 'user', content: userText },
       ],
       temperature: temp,
-      max_tokens: maxTok,
+      max_tokens:  maxTok,
     });
 
-    return { text: completion.choices[0].message.content, usage: completion.usage };
+    // ✅ Normalize usage — custom endpoints follow OpenAI schema
+    const usage = normalizeUsage(completion.usage, 'custom', model);
+    return { text: completion.choices[0].message.content, usage };
   }
 
   async testConnection(providerConfig) {
@@ -385,8 +404,8 @@ class AIProviderService {
       const result = await this.generateCompletion({
         providerConfig,
         systemPrompt: 'You are a test assistant.',
-        messages: [],
-        userContent: 'Reply with exactly: "Connection OK"',
+        messages:     [],
+        userContent:  'Reply with exactly: "Connection OK"',
       });
       return { ok: true, message: result.text?.substring(0, 100), model: providerConfig.model };
     } catch (err) {
