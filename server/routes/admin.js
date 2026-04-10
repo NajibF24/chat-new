@@ -764,15 +764,48 @@ router.post('/bots/:id/knowledge', requireAdminOrBotCreator, knowledgeUpload.arr
     if (!req.files || req.files.length === 0)
       return res.status(400).json({ error: 'Tidak ada file yang di-upload' });
 
+    // ✅ PATCH: extractedImages sekarang disimpan ke DB
     const results = [];
     for (const file of req.files) {
-      const { content, summary } = await KnowledgeBaseService.extractContent(file.path, file.originalname, file.mimetype);
-      bot.knowledgeFiles.push({
-        filename: file.filename, originalName: file.originalname,
-        mimetype: file.mimetype, size: file.size, path: file.path,
-        content, summary, uploadedAt: new Date(),
+      console.log(new Date().toISOString(), '[Admin/Knowledge] Processing file:', file.originalname, `(${(file.size / 1024).toFixed(1)} KB)`);
+
+      const { content, summary, extractedImages } = await KnowledgeBaseService.extractContent(
+        file.path, file.originalname, file.mimetype
+      );
+
+      console.log(
+        new Date().toISOString(),
+        '[Admin/Knowledge] ✅ Processed:', file.originalname,
+        `| chars=${content.length}`,
+        `| images=${(extractedImages || []).length}`
+      );
+      (extractedImages || []).forEach((img, i) => {
+        console.log(
+          new Date().toISOString(),
+          '[Admin/Knowledge]  ├─ Image[' + i + ']:', img.filename,
+          '(' + img.mimeType + ')',
+          '→', img.url
+        );
       });
-      results.push({ name: file.originalname, size: file.size, summary });
+
+      bot.knowledgeFiles.push({
+        filename:        file.filename,
+        originalName:    file.originalname,
+        mimetype:        file.mimetype,
+        size:            file.size,
+        path:            file.path,
+        content,
+        summary,
+        uploadedAt:      new Date(),
+        extractedImages: extractedImages || [],   // ✅ FIXED: now saved to DB
+      });
+
+      results.push({
+        name:       file.originalname,
+        size:       file.size,
+        summary,
+        imageCount: (extractedImages || []).length,  // ✅ Report image count back
+      });
     }
 
     await bot.save();
@@ -780,7 +813,7 @@ router.post('/bots/:id/knowledge', requireAdminOrBotCreator, knowledgeUpload.arr
     AuditService.log({
       req, category: 'knowledge', action: 'KNOWLEDGE_UPLOAD',
       targetId: bot._id, targetName: bot.name,
-      detail: { files: results.map(f => ({ name: f.name, size: f.size })) },
+      detail: { files: results.map(f => ({ name: f.name, size: f.size, imageCount: f.imageCount })) },
     });
 
     res.json({ message: `${results.length} file berhasil diproses`, files: results, totalFiles: bot.knowledgeFiles.length });
@@ -827,10 +860,14 @@ router.post('/bots/:id/knowledge/:fileId/reprocess', requireAdminOrBotCreator, a
     if (!fs.existsSync(kFile.path))
       return res.status(400).json({ error: 'Physical file not found, please re-upload' });
 
-    const { content, summary } = await KnowledgeBaseService.extractContent(kFile.path, kFile.originalName, kFile.mimetype);
-    kFile.content = content; kFile.summary = summary;
+    const { content, summary, extractedImages } = await KnowledgeBaseService.extractContent(
+      kFile.path, kFile.originalName, kFile.mimetype
+    );
+    kFile.content          = content;
+    kFile.summary          = summary;
+    kFile.extractedImages  = extractedImages || [];  // ✅ Also update on reprocess
     await bot.save();
-    res.json({ message: 'File berhasil diproses ulang', summary });
+    res.json({ message: 'File berhasil diproses ulang', summary, imageCount: (extractedImages || []).length });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 

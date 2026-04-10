@@ -167,23 +167,6 @@ class AIProviderService {
   /**
    * Build OpenAI tools array based on bot capabilities config
    */
-  //buildTools(providerConfig, capabilities = {}) {
- //   if (providerConfig?.provider !== 'openai') return undefined;
-
- //   const tools = [];
- //   const model = providerConfig?.model || '';
-
-    // Web Search — supported on gpt-4o, gpt-4.1+, gpt-5+, o-series
-//    const supportsWebSearch = capabilities.webSearch &&
-  //    (model.includes('4.1') || model.startsWith('gpt-5') || /^o\d/.test(model) || model.includes('4o'));
-   // if (supportsWebSearch) {
-    //  tools.push({ type: 'web_search_preview' });
-   // }
-
-    // Code Interpreter
- //   if (capabilities.codeInterpreter) {
- //     tools.push({ type: 'code_interpreter', container: { type: 'auto' } });
- //   }
   buildTools(providerConfig, capabilities = {}) {
     // Kita kembalikan undefined (kosong) karena provider Anda
     // hanya mendukung type 'function', bukan native tools OpenAI.
@@ -323,7 +306,7 @@ class AIProviderService {
           'anthropic-version': '2023-06-01',
           'content-type':      'application/json',
         },
-        timeout: 60000,
+        timeout: 300000, // ✅ PATCH: 5 minutes — needed for PPT generation (2x AI calls)
       }
     );
 

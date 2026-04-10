@@ -112,7 +112,8 @@ app.use('/api/chat',        chatRoutes);
 app.use('/api/smartsheet',  smartsheetRoutes);
 app.use('/api/embed',       embedRoutes);
 app.use('/api/pptx',        pptxRoutes);
-app.use('/api/waha',        wahaRoutes); // ✅ NEW: WAHA webhook receiver
+app.use('/api/waha',        wahaRoutes);         // standard route
+app.use('/api/webhook/waha', wahaRoutes);        // ✅ PATCH: alias for WHATSAPP_HOOK_URL=.../api/webhook/waha/:botId
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
