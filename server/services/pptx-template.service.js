@@ -1,8 +1,17 @@
 // server/services/pptx-template.service.js
-// FIXED:
-//  1. Slide IMAGE tanpa gambar → hapus shape Image 0, render sebagai CONTENT biasa
-//  2. Slide NON-IMAGE → hapus semua p:pic agar tidak ada broken image dari template
-//  3. Font/teks tidak tertutup gambar
+// ============================================================
+// REWRITE: True template-based PPTX generation
+//
+// Strategy:
+//   1. Open the template .pptx (which is a ZIP file)
+//   2. Read the slide master + slide layouts from the template
+//   3. For each AI-generated slide, clone the closest matching
+//      layout XML from the template as the base
+//   4. Inject AI content into the cloned slide XML
+//   5. This means every slide inherits: background, fonts,
+//      colors, logo placement, footer, decorative shapes —
+//      exactly as defined in the template file
+// ============================================================
 
 import AdmZip from 'adm-zip';
 import path   from 'path';
@@ -21,482 +30,473 @@ function escapeXml(str = '') {
     .replace(/'/g,  '&apos;');
 }
 
-function buildTxBody(bodyPrAttrs, paragraphs) {
-  return `<p:txBody><a:bodyPr ${bodyPrAttrs}/><a:lstStyle/>${paragraphs.join('')}</p:txBody>`;
-}
-
-function makePara(text, opts = {}) {
-  const {
-    sz       = 1800,
-    bold     = false,
-    color    = null,
-    align    = null,
-    typeface = 'Tahoma',
-    spcBef   = 100,
-    marL     = 12700,
-  } = opts;
-
-  const boldAttr  = bold  ? ' b="1"' : '';
+// Build a text run with given options
+function makeRun(text, opts = {}) {
+  const { sz = 1800, bold = false, color = null, typeface = null } = opts;
+  const boldAttr  = bold ? ' b="1"' : '';
   const colorEl   = color ? `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>` : '';
+  const fontEl    = typeface ? `<a:latin typeface="${typeface}"/>` : '';
+  return `<a:r><a:rPr lang="en-US" sz="${sz}"${boldAttr} dirty="0">${colorEl}${fontEl}</a:rPr><a:t>${escapeXml(text)}</a:t></a:r>`;
+}
+
+// Build a paragraph
+function makePara(text, opts = {}) {
+  const { align = null, marL = 0, indent = 0, bullet = false, spcBef = 0 } = opts;
   const alignAttr = align ? ` algn="${align}"` : '';
-
-  return `<a:p><a:pPr marL="${marL}"${alignAttr}><a:buNone/><a:spcBef><a:spcPts val="${spcBef}"/></a:spcBef></a:pPr><a:r><a:rPr lang="en-US" sz="${sz}"${boldAttr} spc="-95" dirty="0">${colorEl}<a:latin typeface="${typeface}"/></a:rPr><a:t>${escapeXml(text)}</a:t></a:r></a:p>`;
-}
-
-function makeBulletPara(text, opts = {}) {
-  const { sz = 1400, color = '555555', typeface = 'Tahoma' } = opts;
-  return `<a:p><a:pPr marL="228600" indent="-228600"><a:spcBef><a:spcPts val="100"/></a:spcBef><a:buChar char="•"/></a:pPr><a:r><a:rPr lang="en-US" sz="${sz}" dirty="0"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:latin typeface="${typeface}"/></a:rPr><a:t>${escapeXml(text)}</a:t></a:r></a:p>`;
-}
-
-// ─────────────────────────────────────────────────────────────
-// REPLACE TEXT IN NAMED SHAPE
-// ─────────────────────────────────────────────────────────────
-
-function replaceShapeText(slideXml, shapeName, newParagraphs, bodyPrAttrs = 'wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"') {
-  const spRegex = /(<p:sp>)([\s\S]*?)(<\/p:sp>)/g;
-  return slideXml.replace(spRegex, (fullMatch, open, inner, close) => {
-    if (!inner.includes(`name="${shapeName}"`)) return fullMatch;
-    const newTxBody = buildTxBody(bodyPrAttrs, newParagraphs);
-    const replaced  = inner.replace(/<p:txBody>[\s\S]*?<\/p:txBody>/, newTxBody);
-    return open + replaced + close;
-  });
+  const marAttr   = marL ? ` marL="${marL}"` : '';
+  const indAttr   = indent ? ` indent="${indent}"` : '';
+  const bulletEl  = bullet
+    ? `<a:buChar char="•"/>`
+    : `<a:buNone/>`;
+  const spcEl = spcBef ? `<a:spcBef><a:spcPts val="${spcBef}"/></a:spcBef>` : '';
+  return `<a:p><a:pPr${alignAttr}${marAttr}${indAttr}>${bulletEl}${spcEl}</a:pPr>${makeRun(text, opts)}</a:p>`;
 }
 
 // ─────────────────────────────────────────────────────────────
-// FIX 1: REMOVE SHAPE BY NAME (p:sp atau p:pic)
-// Digunakan untuk hapus "Image 0" saat tidak ada gambar
-// ─────────────────────────────────────────────────────────────
-
-function removeShapeByName(slideXml, shapeName) {
-  // Hapus p:sp dengan name tertentu
-  let result = slideXml.replace(
-    /(<p:sp>)([\s\S]*?)(<\/p:sp>)/g,
-    (fullMatch, open, inner, close) => {
-      if (inner.includes(`name="${shapeName}"`)) return '';
-      return fullMatch;
-    }
-  );
-  // Hapus p:pic dengan name tertentu
-  result = result.replace(
-    /(<p:pic>)([\s\S]*?)(<\/p:pic>)/g,
-    (fullMatch, open, inner, close) => {
-      if (inner.includes(`name="${shapeName}"`)) return '';
-      return fullMatch;
-    }
-  );
-  return result;
-}
-
-// ─────────────────────────────────────────────────────────────
-// FIX 2: REMOVE ALL p:pic SHAPES FROM SLIDE
-// Untuk non-IMAGE slides agar tidak ada broken image dari template
-// ─────────────────────────────────────────────────────────────
-
-function removeAllPicShapes(slideXml) {
-  return slideXml.replace(/<p:pic>[\s\S]*?<\/p:pic>/g, '');
-}
-
-// ─────────────────────────────────────────────────────────────
-// REPLACE IMAGE IN NAMED p:pic SHAPE (r:embed)
-// ─────────────────────────────────────────────────────────────
-
-function replaceShapeImage(slideXml, shapeName, newRId) {
-  const picRegex = /(<p:pic>)([\s\S]*?)(<\/p:pic>)/g;
-  return slideXml.replace(picRegex, (fullMatch, open, inner, close) => {
-    if (!inner.includes(`name="${shapeName}"`)) return fullMatch;
-    const replaced = inner.replace(/(r:embed=")[^"]*(")/g, `$1${newRId}$2`);
-    return open + replaced + close;
-  });
-}
-
-// ─────────────────────────────────────────────────────────────
-// BUILD SLIDE XML — inject AI content into cloned template
-// ─────────────────────────────────────────────────────────────
-
-function buildSlideXml(templateXml, slideData, imageRId = null) {
-  const layout = (slideData.layout || 'CONTENT').toUpperCase();
-  let xml      = templateXml;
-
-  // Always clear Divider placeholder
-  xml = replaceShapeText(xml, 'Divider', [makePara('', { sz: 100 })]);
-
-  const TEAL = '01775A';
-  const DARK = '1F1F1F';
-  const GRAY = '555555';
-
-  switch (layout) {
-
-    case 'TITLE': {
-      const titleText = (slideData.title || '').substring(0, 100);
-      const titleLen  = titleText.length;
-      const titleSz   = titleLen > 60 ? 2800 : titleLen > 40 ? 3400 : 4400;
-
-      xml = replaceShapeText(xml, 'MainTitle', [
-        makePara(titleText, { sz: titleSz, typeface: 'Inter SemiBold', marL: 0, align: 'ctr', spcBef: 600 }),
-      ], 'spcFirstLastPara="1" wrap="square" lIns="91425" tIns="91425" rIns="91425" bIns="91425" anchor="ctr" anchorCtr="1"');
-
-      const subLines = [
-        slideData.subtitle,
-        slideData.presenter,
-        slideData.date,
-      ].filter(Boolean).map(t => makePara(t, { sz: 1600, color: 'FFFFFF', align: 'ctr', marL: 12700 }));
-
-      if (subLines.length) {
-        xml = replaceShapeText(xml, 'TextBox 3', subLines, 'wrap="square"');
-      }
-      break;
-    }
-
-    case 'SECTION': {
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2800, bold: true, color: TEAL }),
-        ...(slideData.subtitle ? [makePara(slideData.subtitle, { sz: 1600, color: GRAY })] : []),
-      ]);
-      xml = replaceShapeText(xml, 'Subtitle', [makePara('', { sz: 1000 })]);
-      break;
-    }
-
-    case 'CLOSING': {
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || 'Thank You', { sz: 2200, bold: true, color: TEAL }),
-        ...(slideData.subtitle ? [makePara(slideData.subtitle, { sz: 1600, color: GRAY })] : []),
-        ...(slideData.contact  ? [makePara(slideData.contact,  { sz: 1400, color: GRAY })] : []),
-      ]);
-      break;
-    }
-
-    case 'GRID': {
-      const items = (slideData.items || []).slice(0, 4);
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-      const bodyParas = items.flatMap(item => [
-        makePara(`${item.icon || '▪'} ${item.title || ''}`, { sz: 1600, bold: true, color: DARK }),
-        ...(item.text ? [makePara(item.text, { sz: 1300, color: GRAY, marL: 342900 })] : []),
-        makePara('', { sz: 600 }),
-      ]);
-      xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
-      break;
-    }
-
-    case 'STATS': {
-      const stats = (slideData.stats || []).slice(0, 4);
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-      const bodyParas = stats.flatMap(s => [
-        makePara(`${s.icon || '📊'} ${s.value || ''} — ${s.label || ''}`, { sz: 2000, bold: true, color: TEAL }),
-        ...(s.sub ? [makePara(s.sub, { sz: 1300, color: GRAY, marL: 342900 })] : []),
-        makePara('', { sz: 600 }),
-      ]);
-      xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
-      break;
-    }
-
-    case 'TIMELINE': {
-      const steps = slideData.steps || [];
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-      const bodyParas = steps.flatMap((s, i) => [
-        makePara(`${i + 1}. ${s.time || ''} — ${s.title || ''}`, { sz: 1600, bold: true, color: TEAL }),
-        ...(s.text ? [makePara(s.text, { sz: 1300, color: GRAY, marL: 342900 })] : []),
-        makePara('', { sz: 600 }),
-      ]);
-      xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
-      break;
-    }
-
-    case 'TWO_COLUMN': {
-      const left  = (slideData.leftBullets  || slideData.left  || []).filter(Boolean);
-      const right = (slideData.rightBullets || slideData.right || []).filter(Boolean);
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-      const bodyParas = [
-        ...(slideData.leftTitle  ? [makePara(slideData.leftTitle,  { sz: 1600, bold: true, color: DARK })] : []),
-        ...left.map(b  => makeBulletPara(String(b))),
-        makePara('', { sz: 800 }),
-        ...(slideData.rightTitle ? [makePara(slideData.rightTitle, { sz: 1600, bold: true, color: TEAL })] : []),
-        ...right.map(b => makeBulletPara(String(b), { color: TEAL })),
-      ];
-      xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
-      break;
-    }
-
-    case 'TABLE': {
-      const headers = slideData.tableHeaders || [];
-      const rows    = slideData.tableRows    || [];
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-      const bodyParas = [
-        ...(headers.length ? [makePara(headers.join('  |  '), { sz: 1400, bold: true, color: TEAL })] : []),
-        ...(headers.length ? [makePara('─'.repeat(50), { sz: 800, color: GRAY })] : []),
-        ...rows.map(row => makePara(
-          (Array.isArray(row) ? row : [row]).join('  |  '),
-          { sz: 1300, color: GRAY }
-        )),
-      ];
-      xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
-      break;
-    }
-
-    case 'CHART': {
-      const cfg  = slideData.chartConfig || {};
-      const data = cfg.data || [];
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-      const bodyParas = [
-        ...(slideData.insightText ? [makePara(`💡 ${slideData.insightText}`, { sz: 1500, bold: true, color: TEAL })] : []),
-        makePara('', { sz: 600 }),
-        ...data.flatMap(series => {
-          const labels = series.labels || [];
-          const values = series.values || [];
-          return [
-            makePara(`📊 ${series.name || 'Data'}`, { sz: 1400, bold: true, color: DARK }),
-            ...labels.map((l, i) => makePara(`${l}: ${values[i] ?? '—'}`, { sz: 1300, color: GRAY, marL: 342900 })),
-          ];
-        }),
-      ];
-      xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
-      break;
-    }
-
-    case 'QUOTE': {
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(`"${slideData.quote || slideData.title || ''}"`, { sz: 2400, color: TEAL, align: 'ctr', marL: 0 }),
-        ...(slideData.author ? [makePara(`— ${slideData.author}`, { sz: 1600, color: GRAY, align: 'ctr', marL: 0 })] : []),
-      ]);
-      break;
-    }
-
-    case 'IMAGE': {
-      // Selalu isi Title
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-
-      if (imageRId) {
-        // ADA GAMBAR: inject ke shape Image 0
-        xml = replaceShapeImage(xml, 'Image 0', imageRId);
-        // Caption di Subtitle
-        if (slideData.caption) {
-          xml = replaceShapeText(xml, 'Subtitle', [
-            makePara(slideData.caption, { sz: 1300, color: GRAY }),
-          ], 'wrap="square" lIns="91440" tIns="0"');
-        }
-      } else {
-        // TIDAK ADA GAMBAR: hapus shape Image 0, render sebagai CONTENT biasa
-        // Hapus semua p:pic dari slide
-        xml = removeAllPicShapes(xml);
-        // Juga hapus shape bernama "Image 0" jika masih ada sebagai p:sp
-        xml = removeShapeByName(xml, 'Image 0');
-        xml = removeShapeByName(xml, 'Image 1');
-        xml = removeShapeByName(xml, 'Image 2');
-
-        // Render caption/body/bullets sebagai konten teks biasa
-        const content = slideData.caption || slideData.body || '';
-        const bullets = slideData.bullets || [];
-        const bodyParas = bullets.length > 0
-          ? bullets.map(b => makeBulletPara(String(b)))
-          : content
-            ? [makePara(content, { sz: 1400, color: GRAY, marL: 91440 })]
-            : [makePara('', { sz: 1400 })];
-        xml = replaceShapeText(xml, 'Subtitle', bodyParas, 'wrap="square" lIns="91440" tIns="0"');
-      }
-      break;
-    }
-
-    case 'CONTENT':
-    default: {
-      xml = replaceShapeText(xml, 'Title', [
-        makePara(slideData.title || '', { sz: 2200, bold: true, color: TEAL }),
-      ]);
-      const bullets = (slideData.bullets || []).filter(Boolean);
-      const body    = bullets.length > 0
-        ? bullets.map(b => makeBulletPara(String(b)))
-        : slideData.body ? [makePara(slideData.body, { sz: 1400, color: GRAY })] : [];
-      if (body.length) {
-        xml = replaceShapeText(xml, 'Subtitle', body, 'wrap="square" lIns="91440" tIns="0"');
-      }
-      break;
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // FIX UTAMA: Untuk semua layout NON-IMAGE, hapus semua p:pic
-  // agar tidak ada broken image dari template yang menempel
-  // ─────────────────────────────────────────────────────────────
-  if (layout !== 'IMAGE') {
-    xml = removeAllPicShapes(xml);
-  }
-
-  return xml;
-}
-
-// ─────────────────────────────────────────────────────────────
-// RELS PARSING
-// ─────────────────────────────────────────────────────────────
-
-function parseRels(relsXml) {
-  const map  = {};
-  const tags = [...relsXml.matchAll(/<Relationship\b([^>]+?)\/>/gs)];
-  for (const tag of tags) {
-    const attrs   = tag[1];
-    const idM     = attrs.match(/\bId="([^"]+)"/);
-    const targetM = attrs.match(/\bTarget="([^"]+)"/);
-    if (idM && targetM) map[idM[1]] = targetM[1];
-  }
-  return map;
-}
-
-function parseSlideList(presXml) {
-  const tags = [...presXml.matchAll(/<p:sldId\b([^>]+?)\/>/gs)];
-  return tags.map(tag => {
-    const attrs = tag[1];
-    const idM   = attrs.match(/\bid="(\d+)"/);
-    const rIdM  = attrs.match(/\br:id="([^"]+)"/);
-    return { id: idM?.[1] || '0', rId: rIdM?.[1] || '' };
-  }).filter(s => s.rId);
-}
-
-function resolveTarget(target) {
-  if (!target) return null;
-  let t = target.replace(/^\//, '');
-  if (t.startsWith('../')) return 'ppt/' + t.replace(/^\.\.\//, '');
-  if (t.startsWith('slides/')) return 'ppt/' + t;
-  if (!t.startsWith('ppt/')) return 'ppt/' + t;
-  return t;
-}
-
-function findEntry(zip, ...candidates) {
-  for (const c of candidates) {
-    if (!c) continue;
-    const e = zip.getEntry(c) || zip.getEntry(c.replace(/^\//, ''));
-    if (e) return e;
-  }
-  return null;
-}
-
-// ─────────────────────────────────────────────────────────────
-// ANALYZE TEMPLATE
+// TEMPLATE ANALYSIS
+// Opens the .pptx zip and maps out all available slides,
+// layouts, and masters so we can clone from them.
 // ─────────────────────────────────────────────────────────────
 
 function analyzeTemplate(zip) {
+  // Read presentation manifest
   const presEntry = zip.getEntry('ppt/presentation.xml');
   const relsEntry = zip.getEntry('ppt/_rels/presentation.xml.rels');
-  if (!presEntry || !relsEntry) return null;
+  if (!presEntry || !relsEntry) {
+    throw new Error('Invalid PPTX: missing presentation.xml or its .rels');
+  }
 
-  const presXml   = presEntry.getData().toString('utf8');
-  const relsXml   = relsEntry.getData().toString('utf8');
-  const slideList = parseSlideList(presXml);
-  const relsMap   = parseRels(relsXml);
+  const presXml = presEntry.getData().toString('utf8');
+  const relsXml = relsEntry.getData().toString('utf8');
 
-  console.log(`[PPT Template] Found ${slideList.length} slides in sldIdLst`);
-  console.log(`[PPT Template] Slide rels: ${Object.entries(relsMap).filter(([,v]) => v.includes('slide')).map(([k,v])=>`${k}→${v}`).join(', ')}`);
+  // Parse relationships: rId → target path
+  const relsMap = {};
+  for (const m of relsXml.matchAll(/<Relationship\b([^>]+?)\/>/gs)) {
+    const idM     = m[1].match(/\bId="([^"]+)"/);
+    const targetM = m[1].match(/\bTarget="([^"]+)"/);
+    if (idM && targetM) relsMap[idM[1]] = targetM[1];
+  }
 
+  // Parse slide list from sldIdLst
+  const slideList = [];
+  for (const m of presXml.matchAll(/<p:sldId\b([^>]+?)\/>/gs)) {
+    const idM   = m[1].match(/\bid="(\d+)"/);
+    const rIdM  = m[1].match(/\br:id="([^"]+)"/);
+    if (idM && rIdM) slideList.push({ id: idM[1], rId: rIdM[1] });
+  }
+
+  // Resolve a target path to the actual zip entry path
+  function resolveTarget(target) {
+    if (!target) return null;
+    let t = target.replace(/^\//, '');
+    if (t.startsWith('../')) t = 'ppt/' + t.replace(/^\.\.\//, '');
+    else if (t.startsWith('slides/')) t = 'ppt/' + t;
+    else if (!t.startsWith('ppt/')) t = 'ppt/' + t;
+    return t;
+  }
+
+  function getEntry(...candidates) {
+    for (const c of candidates) {
+      if (!c) continue;
+      const e = zip.getEntry(c) || zip.getEntry(c.replace(/^\//, ''));
+      if (e) return e;
+    }
+    return null;
+  }
+
+  // Build slide info list
   const slides = [];
   for (const { id, rId } of slideList) {
     const rawTarget = relsMap[rId];
     if (!rawTarget || !rawTarget.includes('slide')) continue;
 
-    const entry = findEntry(zip,
-      resolveTarget(rawTarget),
-      rawTarget,
-      'ppt/' + rawTarget,
-    );
+    const entryPath = resolveTarget(rawTarget);
+    const entry     = getEntry(entryPath, rawTarget, 'ppt/' + rawTarget);
+    if (!entry) continue;
 
-    if (!entry) {
-      console.warn(`[PPT Template] Entry not found for rId=${rId} target="${rawTarget}"`);
-      continue;
+    const slideXml  = entry.getData().toString('utf8');
+
+    // Find what layout this slide uses (from its own .rels)
+    const slideRelPath  = entry.entryName.replace(/\.xml$/, '.xml.rels')
+      .replace('ppt/slides/', 'ppt/slides/_rels/');
+    const slideRelEntry = getEntry(slideRelPath);
+
+    let layoutPath = null;
+    let layoutEntry = null;
+    if (slideRelEntry) {
+      const sRelsXml = slideRelEntry.getData().toString('utf8');
+      const layoutM  = sRelsXml.match(/Type="[^"]*slideLayout"[^>]*Target="([^"]+)"/);
+      if (layoutM) {
+        layoutPath  = resolveTarget(layoutM[1]);
+        layoutEntry = getEntry(layoutPath);
+      }
     }
 
-    const slideXml = entry.getData().toString('utf8');
-    const txCount  = (slideXml.match(/<p:txBody>/g) || []).length;
-    const names    = [...slideXml.matchAll(/cNvPr id="\d+" name="([^"]+)"/g)].map(m => m[1]);
-    const hasPic   = slideXml.includes('<p:blipFill>');
+    // Get shape names in this slide to understand its purpose
+    const shapeNames = [...slideXml.matchAll(/cNvPr id="\d+" name="([^"]+)"/g)].map(m => m[1]);
 
-    slides.push({ index: slides.length, path: entry.entryName, rId, txCount, names, hasPic });
-    console.log(`[PPT Template] slide${slides.length}: txBody=${txCount} names=[${names.slice(0,5).join(',')}] hasPic=${hasPic}`);
+    // Classify slide type by shape names and content
+    let slideType = classifySlide(slideXml, shapeNames);
+
+    slides.push({
+      index:       slides.length,
+      entryPath:   entry.entryName,
+      xml:         slideXml,
+      relPath:     slideRelEntry ? slideRelEntry.entryName : null,
+      layoutPath,
+      layoutEntry,
+      shapeNames,
+      slideType,
+    });
   }
 
-  if (slides.length === 0) return null;
+  if (slides.length === 0) {
+    throw new Error('Template has no slides');
+  }
 
-  const titleSlide   = slides[0];
-  const closingSlide = slides[slides.length - 1];
-  const contentSlide = slides.find(s => s.names.includes('Title') && s.names.includes('Subtitle'))
-                    || slides.find(s => s.names.includes('Title'))
-                    || (slides.length > 1 ? slides[1] : slides[0]);
+  // Pick representative slides for each layout type we need
+  // Priority: find slides that best match each type
+  const titleSlide   = slides.find(s => s.slideType === 'TITLE')   || slides[0];
+  const closingSlide = slides.find(s => s.slideType === 'CLOSING') || slides[slides.length - 1];
+  const contentSlide = slides.find(s => s.slideType === 'CONTENT') || slides[1] || slides[0];
 
-  console.log(`[PPT Template] TITLE=slide${titleSlide.index+1}(${titleSlide.path}) CONTENT=slide${contentSlide.index+1}(${contentSlide.path}) CLOSING=slide${closingSlide.index+1}(${closingSlide.path})`);
+  // For section dividers: pick a slide with minimal text shapes
+  const sectionSlide = slides.find(s => s.slideType === 'SECTION') || contentSlide;
 
-  // Cari slide dengan Image 0 shape untuk template IMAGE
-  const imageSlide = slides.find(s => s.hasPic && s.names.includes('Image 0'))
-               || slides.find(s => s.hasPic)
-               || contentSlide;
+  console.log(`[PPT Template] Analyzed ${slides.length} slides:`);
+  slides.forEach(s => console.log(`  slide${s.index + 1}: type=${s.slideType} shapes=[${s.shapeNames.slice(0,4).join(',')}]`));
 
-  return { slides, titleSlide, contentSlide, closingSlide, imageSlide };
+  return {
+    slides,
+    titleSlide,
+    contentSlide,
+    closingSlide,
+    sectionSlide,
+    getEntry,
+    resolveTarget,
+  };
 }
+
+// Classify a slide by examining its content
+function classifySlide(xml, names) {
+  const lowerNames = names.map(n => n.toLowerCase());
+  const lowerXml   = xml.toLowerCase();
+
+  // Look for large centered title-only layout (typically slide 1)
+  if (lowerNames.some(n => n.includes('maintitle') || n.includes('main title'))) return 'TITLE';
+
+  // Check text content for closing indicators
+  if (lowerXml.includes('thank you') || lowerXml.includes('terima kasih') ||
+      lowerXml.includes('thank') || lowerNames.some(n => n.includes('closing'))) {
+    return 'CLOSING';
+  }
+
+  // Has a title and subtitle/body — generic content layout
+  const hasTitle = lowerNames.some(n =>
+    n.includes('title') || n.includes('judul') || n === 'title 1' || n === 'title'
+  );
+  const hasBody = lowerNames.some(n =>
+    n.includes('subtitle') || n.includes('content') || n.includes('body') ||
+    n.includes('text') || n.includes('placeholder')
+  );
+
+  if (hasTitle && hasBody) return 'CONTENT';
+  if (hasTitle) return 'SECTION';
+
+  return 'CONTENT';
+}
+
+// ─────────────────────────────────────────────────────────────
+// INJECT CONTENT INTO TEMPLATE SLIDE XML
+//
+// This is the key function: instead of building slides from
+// scratch, we take the template slide XML as-is and surgically
+// replace the text inside named shapes.
+//
+// The template's backgrounds, decorations, logos, colors,
+// and layout all remain untouched.
+// ─────────────────────────────────────────────────────────────
+
+function injectIntoSlide(templateXml, slideData, options = {}) {
+  let xml = templateXml;
+
+  const layout = (slideData.layout || 'CONTENT').toUpperCase();
+
+  // Build the content paragraphs based on layout type
+  const paragraphs = buildParagraphs(slideData, options);
+
+  // Strategy: find text body placeholders in the template and replace their content
+  // We look for <p:txBody> inside <p:sp> elements and replace based on position/name
+
+  xml = replaceTextBodies(xml, paragraphs, layout);
+
+  // If slide has an image to inject, add it
+  if (slideData.imagePath && fs.existsSync(slideData.imagePath) && options.imageRId) {
+    xml = injectImage(xml, slideData.imagePath, options.imageRId);
+  }
+
+  return xml;
+}
+
+// Build paragraph arrays for each part of the slide
+function buildParagraphs(slideData, options = {}) {
+  const layout  = (slideData.layout || 'CONTENT').toUpperCase();
+  const { primaryColor = '006A4E', accentColor = '00A878', darkColor = '111827', grayColor = '6B7280' } = options;
+
+  switch (layout) {
+    case 'TITLE': {
+      const title    = slideData.title    || '';
+      const subtitle = slideData.subtitle || '';
+      const meta     = [slideData.presenter, slideData.date].filter(Boolean).join('   •   ');
+      return {
+        title: [
+          makePara(title, { sz: 4400, bold: true, color: 'FFFFFF', align: 'ctr' }),
+        ],
+        body: [
+          ...(subtitle ? [makePara(subtitle, { sz: 2000, color: 'CCEEDF', align: 'ctr' })] : []),
+          ...(meta     ? [makePara(meta,     { sz: 1400, color: 'A8D5C2', align: 'ctr' })] : []),
+        ],
+      };
+    }
+
+    case 'SECTION': {
+      return {
+        title: [makePara(slideData.title || '', { sz: 3600, bold: true, color: primaryColor })],
+        body:  slideData.subtitle
+          ? [makePara(slideData.subtitle, { sz: 1800, color: grayColor })]
+          : [],
+      };
+    }
+
+    case 'GRID': {
+      const items = (slideData.items || []).slice(0, 4);
+      return {
+        title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
+        body: items.flatMap(item => [
+          makePara(`${item.icon || '▪'} ${item.title || ''}`, { sz: 1700, bold: true, color: darkColor, spcBef: 200 }),
+          makePara(item.text || '', { sz: 1350, color: grayColor, marL: 342900 }),
+        ]),
+      };
+    }
+
+    case 'STATS': {
+      const stats = (slideData.stats || []).slice(0, 4);
+      return {
+        title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
+        body: stats.flatMap(s => [
+          makePara(`${s.icon || '◆'} ${s.value || ''}`, { sz: 3200, bold: true, color: primaryColor, spcBef: 300 }),
+          makePara(s.label || '', { sz: 1500, bold: true, color: darkColor }),
+          ...(s.sub ? [makePara(s.sub, { sz: 1200, color: grayColor })] : []),
+        ]),
+      };
+    }
+
+    case 'TIMELINE': {
+      const steps = slideData.steps || [];
+      return {
+        title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
+        body: steps.flatMap((s, i) => [
+          makePara(`${i + 1}. ${s.time || ''} — ${s.title || ''}`, { sz: 1600, bold: true, color: primaryColor, spcBef: 200 }),
+          makePara(s.text || '', { sz: 1300, color: grayColor, marL: 342900 }),
+        ]),
+      };
+    }
+
+    case 'TWO_COLUMN': {
+      const left  = (slideData.leftBullets  || slideData.left  || []).filter(Boolean);
+      const right = (slideData.rightBullets || slideData.right || []).filter(Boolean);
+      return {
+        title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
+        body: [
+          ...(slideData.leftTitle  ? [makePara(slideData.leftTitle,  { sz: 1700, bold: true, color: darkColor, spcBef: 200 })] : []),
+          ...left.map(b  => makePara(String(b), { sz: 1400, color: grayColor,    bullet: true, marL: 342900, indent: -342900 })),
+          makePara('', { sz: 600 }),
+          ...(slideData.rightTitle ? [makePara(slideData.rightTitle, { sz: 1700, bold: true, color: accentColor, spcBef: 200 })] : []),
+          ...right.map(b => makePara(String(b), { sz: 1400, color: grayColor,    bullet: true, marL: 342900, indent: -342900 })),
+        ],
+      };
+    }
+
+    case 'TABLE': {
+      const headers = slideData.tableHeaders || [];
+      const rows    = slideData.tableRows    || [];
+      return {
+        title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
+        body: [
+          ...(headers.length ? [makePara(headers.join('  |  '), { sz: 1500, bold: true, color: primaryColor })] : []),
+          ...rows.map(row =>
+            makePara((Array.isArray(row) ? row : [row]).join('  |  '), { sz: 1300, color: grayColor })
+          ),
+        ],
+      };
+    }
+
+    case 'CHART': {
+      const cfg  = slideData.chartConfig || {};
+      const data = cfg.data || [];
+      return {
+        title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
+        body: [
+          ...(slideData.insightText ? [makePara(`💡 ${slideData.insightText}`, { sz: 1500, bold: true, color: primaryColor })] : []),
+          ...data.flatMap(series => [
+            makePara(`▸ ${series.name || 'Data'}`, { sz: 1400, bold: true, color: darkColor, spcBef: 200 }),
+            ...( series.labels || []).map((l, i) =>
+              makePara(`${l}: ${(series.values || [])[i] ?? '—'}`, { sz: 1300, color: grayColor, marL: 342900 })
+            ),
+          ]),
+        ],
+      };
+    }
+
+    case 'QUOTE': {
+      return {
+        title: [
+          makePara(`"${slideData.quote || slideData.title || ''}"`, { sz: 2800, color: primaryColor, align: 'ctr' }),
+          ...(slideData.author ? [makePara(`— ${slideData.author}`, { sz: 1600, color: grayColor, align: 'ctr' })] : []),
+        ],
+        body: [],
+      };
+    }
+
+    case 'CLOSING': {
+      return {
+        title: [makePara(slideData.title || 'Thank You', { sz: 4800, bold: true, color: 'FFFFFF', align: 'ctr' })],
+        body: [
+          ...(slideData.subtitle ? [makePara(slideData.subtitle, { sz: 2000, color: 'CCEEDF', align: 'ctr' })] : []),
+          ...(slideData.contact  ? [makePara(slideData.contact,  { sz: 1500, color: 'A8D5C2', align: 'ctr' })] : []),
+        ],
+      };
+    }
+
+    default: { // CONTENT
+      const bullets = (slideData.bullets || []).filter(Boolean);
+      return {
+        title: [makePara(slideData.title || '', { sz: 2400, bold: true, color: primaryColor })],
+        body: bullets.length > 0
+          ? bullets.map(b => makePara(String(b), { sz: 1600, color: grayColor, bullet: true, marL: 342900, indent: -342900 }))
+          : slideData.body
+            ? [makePara(slideData.body, { sz: 1600, color: grayColor })]
+            : [],
+      };
+    }
+  }
+}
+
+// Replace text bodies in the slide XML
+// We find ALL <p:txBody> elements (in order) and replace:
+//   - First txBody  → title content
+//   - Second txBody → body content
+// This works because PowerPoint slides always have title first, body second
+function replaceTextBodies(xml, paragraphs, layout) {
+  const bodyOpenTag  = '<p:txBody>';
+  const bodyCloseTag = '</p:txBody>';
+
+  let replaced = 0;
+  let result   = xml;
+  let searchFrom = 0;
+
+  while (replaced < 2) {
+    const startIdx = result.indexOf(bodyOpenTag, searchFrom);
+    if (startIdx === -1) break;
+
+    const endIdx = result.indexOf(bodyCloseTag, startIdx);
+    if (endIdx === -1) break;
+
+    const before = result.substring(0, startIdx);
+    const after  = result.substring(endIdx + bodyCloseTag.length);
+
+    // Extract the <a:bodyPr> from original to preserve layout/sizing
+    const originalBody  = result.substring(startIdx, endIdx + bodyCloseTag.length);
+    const bodyPrMatch   = originalBody.match(/<a:bodyPr[^>]*\/>/);
+    const lstStyleMatch = originalBody.match(/<a:lstStyle[^>]*(?:\/>|>[\s\S]*?<\/a:lstStyle>)/);
+
+    const bodyPr   = bodyPrMatch   ? bodyPrMatch[0]   : '<a:bodyPr/>';
+    const lstStyle = lstStyleMatch ? lstStyleMatch[0] : '<a:lstStyle/>';
+
+    // Get paragraphs for this slot
+    const paras = replaced === 0
+      ? (paragraphs.title || [])
+      : (paragraphs.body  || []);
+
+    // Build new txBody — keep original bodyPr so positioning stays correct
+    const newBody = `${bodyOpenTag}${bodyPr}${lstStyle}${paras.join('')}${bodyCloseTag}`;
+
+    result     = before + newBody + after;
+    searchFrom = before.length + newBody.length;
+    replaced++;
+  }
+
+  return result;
+}
+
+// Inject an image into the slide (replace existing image placeholder or append)
+function injectImage(xml, imagePath, rId) {
+  // Look for existing pic element to replace
+  const picMatch = xml.match(/<p:pic>[\s\S]*?<\/p:pic>/);
+  if (picMatch) {
+    // Replace the r:embed attribute in the existing pic
+    const newPic = picMatch[0].replace(/(r:embed=")[^"]*(")/g, `$1${rId}$2`);
+    return xml.replace(picMatch[0], newPic);
+  }
+
+  // No existing pic — insert one before </p:spTree>
+  const picXml = `
+<p:pic>
+  <p:nvPicPr>
+    <p:cNvPr id="99" name="Injected Image"/>
+    <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>
+    <p:nvPr/>
+  </p:nvPicPr>
+  <p:blipFill>
+    <a:blip r:embed="${rId}"/>
+    <a:stretch><a:fillRect/></a:stretch>
+  </p:blipFill>
+  <p:spPr>
+    <a:xfrm><a:off x="4572000" y="1143000"/><a:ext cx="4000000" cy="2800000"/></a:xfrm>
+    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+  </p:spPr>
+</p:pic>`;
+
+  return xml.replace('</p:spTree>', picXml + '</p:spTree>');
+}
+
+// ─────────────────────────────────────────────────────────────
+// PICK WHICH TEMPLATE SLIDE TO CLONE FOR A GIVEN LAYOUT
+// ─────────────────────────────────────────────────────────────
 
 function pickTemplateSlide(analysis, layout) {
-  const L = layout.toUpperCase();
-  if (L === 'TITLE')   return analysis.titleSlide;
-  if (L === 'CLOSING') return analysis.closingSlide;
-  // Untuk IMAGE: gunakan imageSlide HANYA jika ada gambar yang akan di-inject
-  // Jika tidak ada gambar, gunakan contentSlide biasa
-  // Keputusan ini diambil di generate() bukan di sini
-  if (L === 'IMAGE')   return analysis.imageSlide;
-  return analysis.contentSlide;
+  const L = (layout || 'CONTENT').toUpperCase();
+  switch (L) {
+    case 'TITLE':   return analysis.titleSlide;
+    case 'CLOSING': return analysis.closingSlide;
+    case 'SECTION': return analysis.sectionSlide;
+    default:        return analysis.contentSlide;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
-// FIND TEMPLATE PPTX IN KNOWLEDGE BASE
-// ─────────────────────────────────────────────────────────────
-
-function findPptxTemplate(bot) {
-  if (!bot?.knowledgeFiles?.length) return null;
-
-  const priorityWords = ['template', 'gys', 'master', 'tema', 'theme'];
-  const pptxFiles = bot.knowledgeFiles.filter(f => {
-    const filePath = f.path || f.serverPath || '';
-    return /\.(pptx?)$/i.test(f.originalName) && filePath && fs.existsSync(filePath);
-  });
-
-  if (!pptxFiles.length) return null;
-
-  const sorted = [...pptxFiles].sort((a, b) => {
-    const aS = priorityWords.filter(w => a.originalName.toLowerCase().includes(w)).length;
-    const bS = priorityWords.filter(w => b.originalName.toLowerCase().includes(w)).length;
-    return bS - aS;
-  });
-
-  const chosen   = sorted[0];
-  const filePath = chosen.path || chosen.serverPath;
-  console.log(`[PPT Template] Template: "${chosen.originalName}" at "${filePath}"`);
-  return { filePath, fileName: chosen.originalName };
-}
-
-// ─────────────────────────────────────────────────────────────
-// UPDATE MANIFEST FILES
+// MANIFEST UPDATERS
 // ─────────────────────────────────────────────────────────────
 
 function updatePresentationXml(presXml, relsXml, newSlides) {
-  const existingSlideIds = [...presXml.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)]
-    .map(m => parseInt(m[1]))
-    .filter(id => id < 400);
-  let maxId = existingSlideIds.length > 0 ? Math.max(256, ...existingSlideIds) : 256;
+  // Find max existing slide ID
+  const existingIds = [...presXml.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)]
+    .map(m => parseInt(m[1])).filter(id => id < 10000);
+  let maxId = existingIds.length > 0 ? Math.max(256, ...existingIds) : 256;
 
   let sldIdBlock = '';
   const newRels  = [];
 
-  newSlides.forEach((slide, i) => {
+  newSlides.forEach((s, i) => {
     maxId++;
-    const rId   = `rId_gen_${i + 1}`;
-    slide._rId  = rId;
+    const rId  = `rId_new_${i + 1}`;
+    s._rId     = rId;
     sldIdBlock += `<p:sldId id="${maxId}" r:id="${rId}"/>`;
-    newRels.push(`<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/${slide.name}"/>`);
+    newRels.push(
+      `<Relationship Id="${rId}" ` +
+      `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" ` +
+      `Target="slides/${s.name}"/>`
+    );
   });
 
   const updatedPres = presXml.replace(
@@ -504,33 +504,54 @@ function updatePresentationXml(presXml, relsXml, newSlides) {
     `<p:sldIdLst>${sldIdBlock}</p:sldIdLst>`
   );
 
+  // Remove old slide rels, add new ones
   let updatedRels = relsXml.replace(
-    /<Relationship\b[^>]*\/slide"[^>]*\/>/g, ''
+    /<Relationship\b[^>]*presentationml\.slide"[^>]*\/>/g, ''
   );
-  updatedRels = updatedRels.replace('</Relationships>', newRels.join('\n') + '\n</Relationships>');
+  updatedRels = updatedRels.replace(
+    '</Relationships>',
+    newRels.join('\n') + '\n</Relationships>'
+  );
 
   return { updatedPres, updatedRels };
 }
 
 function updateContentTypes(ctXml, slideNames) {
-  let updated = ctXml.replace(/<Override[^>]+presentationml\.slide\+xml[^>]+\/>/g, '');
+  let updated = ctXml.replace(
+    /<Override[^>]+presentationml\.slide\+xml[^>]+\/>/g, ''
+  );
   const overrides = slideNames.map(n =>
-    `<Override PartName="/ppt/slides/${n}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`
+    `<Override PartName="/ppt/slides/${n}" ` +
+    `ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`
   ).join('\n');
   return updated.replace('</Types>', overrides + '\n</Types>');
 }
 
-function buildCleanRels(slideLayoutTarget = '../slideLayouts/slideLayout2.xml', imageTarget = null) {
-  const imageRel = imageTarget
-    ? `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${imageTarget}"/>`
-    : '';
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="${slideLayoutTarget}"/>${imageRel}</Relationships>`;
+// Get layout target from slide rels XML
+function getLayoutTarget(slideRelXml) {
+  const m = slideRelXml?.match(/Type="[^"]*slideLayout"[^>]*Target="([^"]+)"/);
+  return m ? m[1] : '../slideLayouts/slideLayout1.xml';
 }
 
-// ─────────────────────────────────────────────────────────────
-// MIME → extension map
-// ─────────────────────────────────────────────────────────────
+// Build a clean slide rels XML (slide → layout, optionally + image)
+function buildSlideRels(layoutTarget, imageTarget = null) {
+  const imgRel = imageTarget
+    ? `<Relationship Id="rId2" ` +
+      `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" ` +
+      `Target="${imageTarget}"/>`
+    : '';
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rId1" ` +
+    `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" ` +
+    `Target="${layoutTarget}"/>` +
+    imgRel +
+    `</Relationships>`
+  );
+}
 
+// Mime type → file extension map
 function mimeToExt(mime = '') {
   if (mime.includes('png'))  return '.png';
   if (mime.includes('jpeg') || mime.includes('jpg')) return '.jpeg';
@@ -540,174 +561,227 @@ function mimeToExt(mime = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MAIN SERVICE
+// MAIN PUBLIC API
 // ─────────────────────────────────────────────────────────────
 
 const PptxTemplateService = {
 
-  hasTemplate(bot) {
-    return findPptxTemplate(bot) !== null;
+  /**
+   * Returns true if templatePath is a valid .pptx file
+   */
+  isValidTemplate(templatePath) {
+    if (!templatePath) return false;
+    if (!fs.existsSync(templatePath)) return false;
+    if (!/\.pptx?$/i.test(templatePath)) return false;
+    try {
+      const zip = new AdmZip(templatePath);
+      return Boolean(zip.getEntry('ppt/presentation.xml'));
+    } catch {
+      return false;
+    }
   },
 
-  async generate({ bot, pptData, title, outputDir, docxImages = [] }) {
+  /**
+   * Generate a PPTX file using the given template as master.
+   *
+   * @param {object} params
+   * @param {string} params.templatePath  - Path to the .pptx template file
+   * @param {object} params.pptData       - { slides: [...] } from AI
+   * @param {string} params.title         - Presentation title
+   * @param {string} params.outputDir     - Directory to save the output file
+   * @param {Array}  params.selectedImages - [{ path, caption, slideIndex }] — images chosen by AI
+   *
+   * @returns {object} { pptxFile, pptxUrl, pptxName, slideCount, usedTemplate }
+   */
+  async generate({ templatePath, pptData, title, outputDir, selectedImages = [] }) {
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-    const templateInfo = findPptxTemplate(bot);
-    if (!templateInfo) return null;
-
-    let zip;
+    // Open template
+    let templateZip;
     try {
-      zip = new AdmZip(templateInfo.filePath);
+      templateZip = new AdmZip(templatePath);
     } catch (err) {
-      console.error('[PPT Template] Cannot open ZIP:', err.message);
-      return null;
+      throw new Error(`Cannot open template PPTX: ${err.message}`);
     }
 
-    const analysis = analyzeTemplate(zip);
-    if (!analysis) {
-      console.error('[PPT Template] Template analysis failed');
-      return null;
-    }
+    // Analyze template structure
+    const analysis = analyzeTemplate(templateZip);
 
-    const newZip   = new AdmZip(templateInfo.filePath);
-    const toRemove = newZip.getEntries()
+    // Extract theme colors from template for text injection
+    const themeColors = extractThemeColors(templateZip);
+    console.log(`[PPT Template] Theme colors: primary=${themeColors.primaryColor} accent=${themeColors.accentColor}`);
+
+    // Create output zip starting from a copy of the template
+    // (this preserves ALL template assets: media, fonts, theme, master, layouts)
+    const outputZip = new AdmZip(templatePath);
+
+    // Remove all existing content slides (keep everything else: master, layouts, theme, media)
+    const toRemove = outputZip.getEntries()
       .filter(e => /^ppt\/slides\/(slide\d+\.xml|_rels\/slide\d+\.xml\.rels)$/.test(e.entryName))
       .map(e => e.entryName);
+    toRemove.forEach(name => { try { outputZip.deleteFile(name); } catch {} });
+    console.log(`[PPT Template] Removed ${toRemove.length} original slides, generating ${pptData.slides?.length || 0} new slides`);
 
-    toRemove.forEach(name => { try { newZip.deleteFile(name); } catch {} });
-    console.log(`[PPT Template] Removed ${toRemove.length} old slide entries, generating ${pptData.slides?.length || 0} new slides`);
+    // Track new slides for manifest update
+    const newSlideInfos = [];
+    const slides = pptData.slides || [];
 
-    const slides       = pptData.slides || [];
-    const newSlideInfo = [];
-
-    const existingMedia = newZip.getEntries()
+    // Track existing media files to avoid name collisions
+    const existingMedia = outputZip.getEntries()
       .filter(e => e.entryName.startsWith('ppt/media/'))
       .map(e => e.entryName);
     let mediaCounter = existingMedia.length + 1;
 
+    // Build a lookup: slideIndex → image info
+    const imageBySlide = {};
+    for (const img of selectedImages) {
+      if (img.slideIndex !== undefined && img.slideIndex !== null) {
+        imageBySlide[img.slideIndex] = img;
+      }
+    }
+
     for (let i = 0; i < slides.length; i++) {
-      const slideData = slides[i];
-      const slideNum  = i + 1;
+      const sd       = slides[i];
+      const slideNum = i + 1;
       const slideName    = `slide${slideNum}.xml`;
       const slidePath    = `ppt/slides/${slideName}`;
       const slideRelPath = `ppt/slides/_rels/${slideName}.rels`;
 
-      const isImageLayout = (slideData.layout || '').toUpperCase() === 'IMAGE';
+      // Pick the best template slide to clone
+      const templateSlide = pickTemplateSlide(analysis, sd.layout);
 
-      // Untuk IMAGE dengan gambar: pakai imageSlide template
-      // Untuk IMAGE tanpa gambar: pakai contentSlide (tidak ada broken image)
-      // Untuk layout lain: pakai template yang sesuai
-      let templateSlide;
-      if (isImageLayout && docxImages.length > 0) {
-        // Cek apakah ada gambar valid untuk slide ini
-        const imgIndex = typeof slideData.imageIndex === 'number' ? slideData.imageIndex : 0;
-        const imgObj   = docxImages[imgIndex] || docxImages[0];
-        templateSlide  = imgObj ? analysis.imageSlide : analysis.contentSlide;
-      } else if (isImageLayout) {
-        // Tidak ada gambar sama sekali → gunakan contentSlide
-        templateSlide = analysis.contentSlide;
-      } else {
-        templateSlide = pickTemplateSlide(analysis, slideData.layout || 'CONTENT');
-      }
-
-      const templateEntry = findEntry(zip, templateSlide.path);
-      const templateXml   = templateEntry
-        ? templateEntry.getData().toString('utf8')
-        : buildMinimalSlideXml();
-
-      const templateRelPath  = `ppt/slides/_rels/${path.basename(templateSlide.path)}.rels`;
-      const templateRelEntry = findEntry(zip, templateRelPath);
-      let layoutTarget = '../slideLayouts/slideLayout2.xml';
-      if (templateRelEntry) {
-        const tRels = templateRelEntry.getData().toString('utf8');
-        const lm = tRels.match(/Target="(\.\.\/slideLayouts\/[^"]+)"/);
-        if (lm) layoutTarget = lm[1];
-      }
-
-      // Inject image untuk layout IMAGE (hanya jika ada gambar)
-      let imageRId    = null;
-      let imageTarget = null;
-
-      if (isImageLayout && docxImages.length > 0) {
-        const imgIndex = typeof slideData.imageIndex === 'number'
-          ? slideData.imageIndex
-          : 0;
-        const img = docxImages[imgIndex] || docxImages[0];
-
-        if (img) {
-          const ext       = mimeToExt(img.mime);
-          const mediaName = `image_injected_${mediaCounter}${ext}`;
-          const mediaPath = `ppt/media/${mediaName}`;
-          const imgBuffer = img.data || Buffer.from(img.base64 || '', 'base64');
-
-          newZip.addFile(mediaPath, imgBuffer);
-          imageRId    = `rId2`;
-          imageTarget = `../media/${mediaName}`;
-          mediaCounter++;
-
-          console.log(`[PPT Template] Slide ${slideNum} IMAGE: injected ${mediaName} (index=${imgIndex})`);
+      // Get layout target from the template slide's rels
+      let layoutTarget = '../slideLayouts/slideLayout1.xml';
+      if (templateSlide.relPath) {
+        const tRelEntry = templateZip.getEntry(templateSlide.relPath);
+        if (tRelEntry) {
+          layoutTarget = getLayoutTarget(tRelEntry.getData().toString('utf8'));
         }
       }
 
-      const newSlideXml = buildSlideXml(templateXml, slideData, imageRId);
-      // Untuk rels: hanya tambahkan image rel jika benar-benar ada gambar
-      const relXml = buildCleanRels(layoutTarget, imageTarget);
+      // Handle image for this slide
+      let imageRId    = null;
+      let imageTarget = null;
+      const imgInfo   = imageBySlide[i];
 
-      newZip.addFile(slidePath,    Buffer.from(newSlideXml, 'utf8'));
-      newZip.addFile(slideRelPath, Buffer.from(relXml, 'utf8'));
-      newSlideInfo.push({ name: slideName });
+      if (imgInfo && imgInfo.path && fs.existsSync(imgInfo.path)) {
+        const imgBuffer  = fs.readFileSync(imgInfo.path);
+        const ext        = mimeToExt(imgInfo.mimeType || '');
+        const mediaName  = `img_injected_${mediaCounter}${ext}`;
+        const mediaPath  = `ppt/media/${mediaName}`;
 
-      const layoutLabel = isImageLayout && !imageRId ? 'IMAGE→CONTENT' : (slideData.layout || 'CONTENT');
-      console.log(`[PPT Template] Slide ${slideNum} (${layoutLabel}) ← ${path.basename(templateSlide.path)}`);
+        outputZip.addFile(mediaPath, imgBuffer);
+        imageRId    = 'rId2';
+        imageTarget = `../media/${mediaName}`;
+        mediaCounter++;
+
+        console.log(`[PPT Template] Slide ${slideNum}: injecting image ${mediaName}`);
+      }
+
+      // Clone template slide XML and inject content
+      const clonedXml = injectIntoSlide(
+        templateSlide.xml,
+        sd,
+        { ...themeColors, imageRId }
+      );
+
+      // Build slide rels
+      const relXml = buildSlideRels(layoutTarget, imageTarget);
+
+      // Add to output zip
+      outputZip.addFile(slidePath,    Buffer.from(clonedXml, 'utf8'));
+      outputZip.addFile(slideRelPath, Buffer.from(relXml,    'utf8'));
+      newSlideInfos.push({ name: slideName });
+
+      console.log(`[PPT Template] Slide ${slideNum} (${sd.layout || 'CONTENT'}) ← cloned from ${path.basename(templateSlide.entryPath)}`);
     }
 
-    if (!newSlideInfo.length) {
-      console.error('[PPT Template] No slides generated');
-      return null;
+    if (newSlideInfos.length === 0) {
+      throw new Error('No slides were generated');
     }
 
-    // Update manifest
-    const presXml = newZip.getEntry('ppt/presentation.xml')?.getData().toString('utf8') || '';
-    const relsXml = newZip.getEntry('ppt/_rels/presentation.xml.rels')?.getData().toString('utf8') || '';
-    const ctXml   = newZip.getEntry('[Content_Types].xml')?.getData().toString('utf8') || '';
+    // Update presentation.xml and its .rels to reference new slides
+    const presXml = outputZip.getEntry('ppt/presentation.xml')?.getData().toString('utf8') || '';
+    const relsXml = outputZip.getEntry('ppt/_rels/presentation.xml.rels')?.getData().toString('utf8') || '';
+    const ctXml   = outputZip.getEntry('[Content_Types].xml')?.getData().toString('utf8') || '';
 
-    const { updatedPres, updatedRels } = updatePresentationXml(presXml, relsXml, newSlideInfo);
-    const updatedCt = updateContentTypes(ctXml, newSlideInfo.map(s => s.name));
+    const { updatedPres, updatedRels } = updatePresentationXml(presXml, relsXml, newSlideInfos);
+    const updatedCt = updateContentTypes(ctXml, newSlideInfos.map(s => s.name));
 
-    newZip.updateFile('ppt/presentation.xml',            Buffer.from(updatedPres, 'utf8'));
-    newZip.updateFile('ppt/_rels/presentation.xml.rels', Buffer.from(updatedRels, 'utf8'));
-    newZip.updateFile('[Content_Types].xml',             Buffer.from(updatedCt,   'utf8'));
+    outputZip.updateFile('ppt/presentation.xml',            Buffer.from(updatedPres, 'utf8'));
+    outputZip.updateFile('ppt/_rels/presentation.xml.rels', Buffer.from(updatedRels, 'utf8'));
+    outputZip.updateFile('[Content_Types].xml',             Buffer.from(updatedCt,   'utf8'));
 
-    // Update title in core.xml
-    const coreEntry = newZip.getEntry('docProps/core.xml');
+    // Update document title in core.xml
+    const coreEntry = outputZip.getEntry('docProps/core.xml');
     if (coreEntry) {
       let coreXml = coreEntry.getData().toString('utf8');
-      coreXml = coreXml.includes('<dc:title>')
-        ? coreXml.replace(/<dc:title>.*?<\/dc:title>/, `<dc:title>${escapeXml(title)}</dc:title>`)
-        : coreXml.replace('</cp:coreProperties>', `<dc:title>${escapeXml(title)}</dc:title></cp:coreProperties>`);
-      newZip.updateFile('docProps/core.xml', Buffer.from(coreXml, 'utf8'));
+      const safeTitle = escapeXml(title || 'Presentation');
+      if (coreXml.includes('<dc:title>')) {
+        coreXml = coreXml.replace(/<dc:title>.*?<\/dc:title>/, `<dc:title>${safeTitle}</dc:title>`);
+      } else {
+        coreXml = coreXml.replace('</cp:coreProperties>', `<dc:title>${safeTitle}</dc:title></cp:coreProperties>`);
+      }
+      outputZip.updateFile('docProps/core.xml', Buffer.from(coreXml, 'utf8'));
     }
 
-    const safeTitle = (title || 'Presentation').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').substring(0, 40);
-    const filename  = `GYS-${safeTitle}-${Date.now()}.pptx`;
-    const filepath  = path.join(outputDir, filename);
-    newZip.writeZip(filepath);
+    // Save output file
+    const safeTitle  = (title || 'Presentation').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').substring(0, 40);
+    const filename   = `GYS-${safeTitle}-${Date.now()}.pptx`;
+    const filepath   = path.join(outputDir, filename);
+    outputZip.writeZip(filepath);
 
-    console.log(`✅ [PPT Template] "${filename}" — ${newSlideInfo.length} slides — template: "${templateInfo.fileName}"`);
+    console.log(`✅ [PPT Template] "${filename}" — ${newSlideInfos.length} slides — template: "${path.basename(templatePath)}"`);
 
     return {
       pptxFile:     filepath,
       pptxUrl:      `/api/files/${filename}`,
       pptxName:     filename,
-      slideCount:   newSlideInfo.length,
-      usedTemplate: templateInfo.fileName,
+      slideCount:   newSlideInfos.length,
+      usedTemplate: path.basename(templatePath),
       usedFallback: false,
     };
   },
 };
 
-function buildMinimalSlideXml() {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id="10" name="Title"/><p:cNvSpPr txBox="1"><a:spLocks/></p:cNvSpPr><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="1260430" y="360712"/><a:ext cx="7500000" cy="380000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="2200" b="1" dirty="0"/><a:t>Slide</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id="12" name="Subtitle"/><p:cNvSpPr txBox="1"><a:spLocks/></p:cNvSpPr><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="822000" y="800000"/><a:ext cx="7500000" cy="3900000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="91440" tIns="0"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1400" dirty="0"/><a:t></a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+// ─────────────────────────────────────────────────────────────
+// Extract primary brand colors from template theme XML
+// These are used when injecting text so colors match the template
+// ─────────────────────────────────────────────────────────────
+
+function extractThemeColors(zip) {
+  const defaults = {
+    primaryColor: '006A4E',
+    accentColor:  '00A878',
+    darkColor:    '111827',
+    grayColor:    '6B7280',
+  };
+
+  try {
+    const themeFiles = zip.getEntries()
+      .filter(e => /ppt\/theme\/theme\d*\.xml$/.test(e.entryName));
+    if (!themeFiles.length) return defaults;
+
+    const themeXml = themeFiles[0].getData().toString('utf8');
+
+    // Extract accent colors
+    const accents = [];
+    for (const m of themeXml.matchAll(/<a:accent\d[^>]*>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/g)) {
+      accents.push(m[1].toUpperCase());
+    }
+
+    // Extract dk1 (dark text color)
+    const dk1M = themeXml.match(/<a:dk1>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
+
+    return {
+      primaryColor: accents[0] || defaults.primaryColor,
+      accentColor:  accents[1] || accents[0] || defaults.accentColor,
+      darkColor:    dk1M ? dk1M[1].toUpperCase() : defaults.darkColor,
+      grayColor:    defaults.grayColor,
+    };
+  } catch {
+    return defaults;
+  }
 }
 
 export default PptxTemplateService;
