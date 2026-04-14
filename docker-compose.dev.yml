@@ -1,0 +1,134 @@
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: mongo
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27019}:27017"
+    environment:
+      - TZ=Asia/Jakarta
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-admin123}
+    volumes:
+      - /home/admingys/internal-chat-picture/data/mongodb:/data/db
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - internal-chat-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  server:
+    image: ${CI_REGISTRY_IMAGE:-internal-chat}/server:dev
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: internal-chat-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-5001}:5000"
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Jakarta
+      - NODE_ENV=development
+      - PORT=5000
+      - SERVER_PORT=5000
+      - MONGODB_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-admin123}@mongo:27017/internal-chat?authSource=admin&retryWrites=true&w=majority
+      - SESSION_SECRET=${SESSION_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SMARTSHEET_API_KEY=${SMARTSHEET_API_KEY}
+      - SMARTSHEET_PRIMARY_SHEET_ID=${SMARTSHEET_PRIMARY_SHEET_ID:-7472905240661892}
+      - LDAP_ENABLED=${LDAP_ENABLED:-true}
+      - LDAP_URL=${LDAP_URL}
+      - LDAP_TLS_REJECT_UNAUTHORIZED=${LDAP_TLS_REJECT_UNAUTHORIZED:-false}
+      - LDAP_BIND_DN=${LDAP_BIND_DN}
+      - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD}
+      - LDAP_SEARCH_BASE=${LDAP_SEARCH_BASE}
+      - LDAP_SEARCH_FILTER=${LDAP_SEARCH_FILTER}
+      - LDAP_USERNAME_ATTRIBUTE=${LDAP_USERNAME_ATTRIBUTE:-sAMAccountName}
+      - LDAP_MAIL_ATTRIBUTE=${LDAP_MAIL_ATTRIBUTE:-mail}
+      - LDAP_DISPLAYNAME_ATTRIBUTE=${LDAP_DISPLAYNAME_ATTRIBUTE:-cn}
+      - LDAP_FIRSTNAME_ATTRIBUTE=${LDAP_FIRSTNAME_ATTRIBUTE:-givenName}
+      - LDAP_LASTNAME_ATTRIBUTE=${LDAP_LASTNAME_ATTRIBUTE:-sn}
+      - LDAP_ADMIN_GROUPS=${LDAP_ADMIN_GROUPS}
+      - ALLOW_LOCAL_AUTH=${ALLOW_LOCAL_AUTH:-true}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - FRONTEND_URL=${FRONTEND_URL}
+    volumes:
+      - /home/admingys/internal-chat-picture/server/data:/usr/src/app/data
+      - /home/admingys/internal-chat-picture/server/uploads:/usr/src/app/uploads
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - internal-chat-network
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 384M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:5000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  client:
+    image: ${CI_REGISTRY_IMAGE:-internal-chat}/client:dev
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=${REACT_APP_API_URL:-http://172.16.31.48:5001}
+    container_name: internal-chat-client
+    restart: unless-stopped
+    ports:
+      - "${CLIENT_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    environment:
+      - TZ=Asia/Jakarta
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://172.16.31.48:5001}
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - internal-chat-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal-chat-network:
+    driver: bridge
