@@ -219,4 +219,3 @@ export {
 };
 
 export default { selectRelevantImages };
-

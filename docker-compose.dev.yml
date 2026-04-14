@@ -4,7 +4,7 @@ services:
     container_name: mongo
     restart: unless-stopped
     ports:
-      - "${MONGO_PORT:-27017}:27017"
+      - "${MONGO_PORT:-27019}:27017"
     environment:
       - TZ=Asia/Jakarta
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
@@ -28,32 +28,30 @@ services:
       start_period: 40s
 
   server:
-    image: ${CI_REGISTRY_IMAGE:-internal-chat}/server:latest
+    image: ${CI_REGISTRY_IMAGE:-internal-chat}/server:dev
     build:
       context: ./server
       dockerfile: Dockerfile
     container_name: internal-chat-server
     restart: unless-stopped
     ports:
-      # KIRI: Port luar (dari .env: 5001 dev / 5000 prod)
-      # KANAN: Port dalam (Selalu 5000 agar sinkron dengan Nginx)
-      - "${SERVER_PORT:-5000}:5000"
+      - "${SERVER_PORT:-5001}:5000"
     env_file:
       - .env
     environment:
       - TZ=Asia/Jakarta
-      - NODE_ENV=${NODE_ENV:-production}
-      # ✅ PAKSA aplikasi mendengarkan port 5000 di dalam container
-      # Ini akan menimpa variabel SERVER_PORT=5001 yang ada di file .env lokal
+      - NODE_ENV=development
       - PORT=5000
-      - SERVER_PORT=5000 
+      - SERVER_PORT=5000
       - MONGODB_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-admin123}@mongo:27017/internal-chat?authSource=admin&retryWrites=true&w=majority
-      - SESSION_SECRET=${SESSION_SECRET:-change-this-in-production}
+      - SESSION_SECRET=${SESSION_SECRET}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - SMARTSHEET_API_KEY=${SMARTSHEET_API_KEY}
       - SMARTSHEET_PRIMARY_SHEET_ID=${SMARTSHEET_PRIMARY_SHEET_ID:-7472905240661892}
-      - LDAP_ENABLED=${LDAP_ENABLED:-false}
+      - LDAP_ENABLED=${LDAP_ENABLED:-true}
       - LDAP_URL=${LDAP_URL}
+      - LDAP_TLS_REJECT_UNAUTHORIZED=${LDAP_TLS_REJECT_UNAUTHORIZED:-false}
       - LDAP_BIND_DN=${LDAP_BIND_DN}
       - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD}
       - LDAP_SEARCH_BASE=${LDAP_SEARCH_BASE}
@@ -65,6 +63,8 @@ services:
       - LDAP_LASTNAME_ATTRIBUTE=${LDAP_LASTNAME_ATTRIBUTE:-sn}
       - LDAP_ADMIN_GROUPS=${LDAP_ADMIN_GROUPS}
       - ALLOW_LOCAL_AUTH=${ALLOW_LOCAL_AUTH:-true}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - FRONTEND_URL=${FRONTEND_URL}
     volumes:
       - /home/admingys/internal-chat-picture/server/data:/usr/src/app/data
       - /home/admingys/internal-chat-picture/server/uploads:/usr/src/app/uploads
@@ -86,7 +86,6 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      # ✅ Mengecek port internal 5000
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:5000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
       interval: 30s
       timeout: 10s
@@ -94,12 +93,12 @@ services:
       start_period: 40s
 
   client:
-    image: ${CI_REGISTRY_IMAGE:-internal-chat}/client:latest
+    image: ${CI_REGISTRY_IMAGE:-internal-chat}/client:dev
     build:
       context: ./client
       dockerfile: Dockerfile
       args:
-        - REACT_APP_API_URL=${REACT_APP_API_URL:-}
+        - REACT_APP_API_URL=${REACT_APP_API_URL:-http://172.16.31.48:5001}
     container_name: internal-chat-client
     restart: unless-stopped
     ports:
@@ -112,10 +111,9 @@ services:
       start_period: 5s
     environment:
       - TZ=Asia/Jakarta
-      - REACT_APP_API_URL=${REACT_APP_API_URL:-}
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://172.16.31.48:5001}
     depends_on:
       server:
-        # ✅ Menunggu server berstatus Healthy sebelum Nginx menyala
         condition: service_healthy
     networks:
       - internal-chat-network

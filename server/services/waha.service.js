@@ -144,4 +144,3 @@ class WahaService {
 }
 
 export default WahaService;
-
