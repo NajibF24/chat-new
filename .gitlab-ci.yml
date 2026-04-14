@@ -31,7 +31,7 @@ stages:
 build_server:
   stage: build
   tags:
-    - portal-ai        # Runner di server PROD
+    - portal-ai
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
@@ -40,14 +40,15 @@ build_server:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🏗️ [PROD] Building Server Image..."
-    - docker build -t $SERVER_IMAGE -t $SERVER_IMAGE_LATEST ./server
+    - docker pull $SERVER_IMAGE_LATEST || true
+    - docker build --cache-from $SERVER_IMAGE_LATEST -t $SERVER_IMAGE -t $SERVER_IMAGE_LATEST ./server
     - docker push $SERVER_IMAGE
     - docker push $SERVER_IMAGE_LATEST
 
 build_client:
   stage: build
   tags:
-    - portal-ai        # Runner di server PROD
+    - portal-ai
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
@@ -56,7 +57,8 @@ build_client:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🏗️ [PROD] Building Client Image..."
-    - docker build --no-cache --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE -t $CLIENT_IMAGE_LATEST ./client
+    - docker pull $CLIENT_IMAGE_LATEST || true
+    - docker build --cache-from $CLIENT_IMAGE_LATEST --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE -t $CLIENT_IMAGE_LATEST ./client
     - docker push $CLIENT_IMAGE
     - docker push $CLIENT_IMAGE_LATEST
 
@@ -67,7 +69,7 @@ build_client:
 deploy_server:
   stage: deploy
   tags:
-    - portal-ai        # Runner di server PROD
+    - portal-ai
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
@@ -85,7 +87,7 @@ deploy_server:
 deploy_client:
   stage: deploy
   tags:
-    - portal-ai        # Runner di server PROD
+    - portal-ai
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
@@ -107,7 +109,7 @@ deploy_client:
 build_server_dev:
   stage: build
   tags:
-    - portal-ai-dev    # Runner di server DEV (172.16.31.48)
+    - portal-ai-dev
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
       changes:
@@ -116,14 +118,15 @@ build_server_dev:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🏗️ [DEV] Building Server Image..."
-    - docker build -t $SERVER_IMAGE_DEV -t $SERVER_IMAGE_DEV_LATEST ./server
+    - docker pull $SERVER_IMAGE_DEV_LATEST || true
+    - docker build --cache-from $SERVER_IMAGE_DEV_LATEST -t $SERVER_IMAGE_DEV -t $SERVER_IMAGE_DEV_LATEST ./server
     - docker push $SERVER_IMAGE_DEV
     - docker push $SERVER_IMAGE_DEV_LATEST
 
 build_client_dev:
   stage: build
   tags:
-    - portal-ai-dev    # Runner di server DEV (172.16.31.48)
+    - portal-ai-dev
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
       changes:
@@ -132,8 +135,8 @@ build_client_dev:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🏗️ [DEV] Building Client Image..."
-    # REACT_APP_API_URL_DEV di-set di GitLab CI/CD Variables khusus env dev
-    - docker build --no-cache --build-arg REACT_APP_API_URL=${REACT_APP_API_URL_DEV} -t $CLIENT_IMAGE_DEV -t $CLIENT_IMAGE_DEV_LATEST ./client
+    - docker pull $CLIENT_IMAGE_DEV_LATEST || true
+    - docker build --cache-from $CLIENT_IMAGE_DEV_LATEST --build-arg REACT_APP_API_URL=${REACT_APP_API_URL_DEV} -t $CLIENT_IMAGE_DEV -t $CLIENT_IMAGE_DEV_LATEST ./client
     - docker push $CLIENT_IMAGE_DEV
     - docker push $CLIENT_IMAGE_DEV_LATEST
 
@@ -144,7 +147,7 @@ build_client_dev:
 deploy_server_dev:
   stage: deploy
   tags:
-    - portal-ai-dev    # Runner di server DEV (172.16.31.48)
+    - portal-ai-dev
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
       changes:
@@ -154,19 +157,16 @@ deploy_server_dev:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
     - echo "🚀 [DEV] Updating Server Service..."
-    # DOT_ENV_FILE_DEV adalah CI/CD Variable yang berisi isi .env dev
     - echo "$DOT_ENV_FILE_DEV" > .env
     - docker pull $SERVER_IMAGE_DEV_LATEST
-    # Gunakan docker compose dengan override file khusus dev
     - docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate server
-    # Pastikan mongo terhubung ke network yang benar
     - docker network connect project-portal-ai_internal-chat-network mongo || true
     - docker image prune -f
 
 deploy_client_dev:
   stage: deploy
   tags:
-    - portal-ai-dev    # Runner di server DEV (172.16.31.48)
+    - portal-ai-dev
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
       changes:
