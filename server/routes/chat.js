@@ -10,7 +10,7 @@ import Bot from '../models/Bot.js';
 import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import AuditService from '../services/audit.service.js';
-import AIProviderService from '../services/ai-provider.service.js';
+import AIProviderService, { normalizeUsage } from '../services/ai-provider.service.js';
 
 const router = express.Router();
 
@@ -26,19 +26,6 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 // ── Helper: detect reasoning/GPT-5 model ─────────────────────
 const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(model);
-
-// ── Helper: normalize usage across providers ──────────────────
-function normalizeUsage(usage, model = '') {
-  if (!usage) return null;
-  const promptTokens     = usage.prompt_tokens       ?? usage.input_tokens      ?? usage.promptTokenCount     ?? 0;
-  const completionTokens = usage.completion_tokens   ?? usage.output_tokens     ?? usage.candidatesTokenCount ?? 0;
-  const totalTokens      = usage.total_tokens        ?? usage.totalTokenCount   ?? (promptTokens + completionTokens);
-  const reasoningTokens  = usage.completion_tokens_details?.reasoning_tokens    ?? null;
-  const warningMaxTokens = isReasoningModel(model) && reasoningTokens
-    ? reasoningTokens >= (completionTokens * 0.9)
-    : false;
-  return { promptTokens, completionTokens, totalTokens, reasoningTokens, warningMaxTokens };
-}
 
 // ── Helper: kirim ke WAHA WhatsApp ───────────────────────────
 async function sendToWaha(bot, username, userMessage, aiResponse) {
@@ -184,15 +171,16 @@ router.post('/message', requireAuth, async (req, res) => {
     const auditDetail = {
       bot: botName, model, provider, durationMs, maxTokensConfig: maxTokens,
       tokens: usage ? {
-        prompt:     usage.promptTokens,
-        completion: usage.completionTokens,
-        total:      usage.totalTokens,
-        ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
+        prompt:     usage.prompt_tokens,
+        completion: usage.completion_tokens,
+        total:      usage.total_tokens,
+        ...(usage.reasoning_tokens != null && { reasoning: usage.reasoning_tokens }),
+        provider:   usage.provider,
       } : null,
       ...(usage?.warningMaxTokens && {
-        warning: `⚠️ Reasoning tokens (${usage.reasoningTokens}) used up most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
+        warning: `⚠️ Reasoning tokens (${usage.reasoning_tokens}) used most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
       }),
-      ...((!result?.response || result.response.trim() === '') && {
+      ...(!result?.response?.trim() && {
         emptyResponse: true,
         emptyReason: usage?.warningMaxTokens ? 'max_tokens_exhausted_by_reasoning' : 'unknown',
       }),
@@ -268,7 +256,7 @@ router.post('/external', async (req, res) => {
       knowledgeMode:  bot.knowledgeMode  || 'relevant',
     });
 
-    const durationMs  = Date.now() - startTime;
+    const durationMs   = Date.now() - startTime;
     const responseText = aiResponse?.text || aiResponse?.response || '';
 
     // 5. WAHA Forward (fire & forget) — sama persis seperti chat internal
@@ -292,11 +280,19 @@ router.post('/external', async (req, res) => {
         maxTokensConfig: maxTokens,
         source:          'external_api',
         tokens: usage ? {
-          prompt:     usage.promptTokens,
-          completion: usage.completionTokens,
-          total:      usage.totalTokens,
-          ...(usage.reasoningTokens !== null && { reasoning: usage.reasoningTokens }),
+          prompt:     usage.prompt_tokens,
+          completion: usage.completion_tokens,
+          total:      usage.total_tokens,
+          ...(usage.reasoning_tokens !== null && { reasoning: usage.reasoning_tokens }),
+          provider:   usage.provider,
         } : null,
+        ...(usage?.warningMaxTokens && {
+          warning: `⚠️ Reasoning tokens (${usage.reasoning_tokens}) used most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
+        }),
+        ...(!responseText?.trim() && {
+          emptyResponse: true,
+          emptyReason: usage?.warningMaxTokens ? 'max_tokens_exhausted_by_reasoning' : 'unknown',
+        }),
       },
     }).catch(() => {});
 

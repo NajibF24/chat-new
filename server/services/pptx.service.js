@@ -1,13 +1,14 @@
 // server/services/pptx.service.js
 // ============================================================
 // GYS Portal AI — Native PPTX Service
-// ✅ UPDATED:
-//   1. Template PPTX matching — reads colors/fonts from uploaded template
-//   2. Image extraction integration — places extracted images from Word/PPTX
-//      into slides intelligently based on context
-//
-// Layouts: TITLE, SECTION, GRID, CONTENT, TWO_COLUMN,
-//          STATS, TIMELINE, CHART, TABLE, QUOTE, IMAGE_SLIDE, CLOSING
+// ✅ PATCH:
+//   1. Text overflow prevention — auto-scale font size based on content length
+//   2. Table cell text truncation — prevents overflow in narrow columns
+//   3. Bullet list auto-sizing — more bullets = smaller font
+//   4. Grid card text auto-sizing — more cards = smaller text
+//   5. Timeline card text auto-sizing
+//   6. Template theme extraction (existing)
+//   7. Image injection from knowledge base (existing)
 // ============================================================
 
 import PptxGenJS from "pptxgenjs";
@@ -18,7 +19,7 @@ import JSZip from "jszip";
 export const HTML_SLIDE_SYSTEM_PROMPT = "";
 
 // ────────────────────────────────────────────────────────────
-// GYS BRAND TOKENS (defaults — overridden if template provided)
+// GYS BRAND TOKENS (defaults)
 // ────────────────────────────────────────────────────────────
 const GYS_DEFAULTS = {
   teal:         "006A4E",
@@ -42,7 +43,65 @@ const GYS_DEFAULTS = {
 };
 
 // ────────────────────────────────────────────────────────────
-// TEMPLATE PARSER — Extract brand colors & fonts from uploaded PPTX
+// ✅ NEW: Smart font size helpers — prevent overflow
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Calculate font size for a text block that must fit in a given area.
+ * @param {string} text - The text content
+ * @param {number} maxChars - Max chars before reducing font
+ * @param {number} baseFontSize - Starting font size
+ * @param {number} minFontSize - Never go below this
+ * @returns {number} font size in pt
+ */
+function calcFontSize(text, maxChars, baseFontSize, minFontSize = 8) {
+  if (!text) return baseFontSize;
+  const len = String(text).length;
+  if (len <= maxChars) return baseFontSize;
+  // Linear reduction: every extra 20% of maxChars → reduce 1pt
+  const excess = (len - maxChars) / maxChars;
+  const reduced = baseFontSize - Math.floor(excess * baseFontSize * 0.4);
+  return Math.max(minFontSize, reduced);
+}
+
+/**
+ * Truncate text to fit, adding ellipsis if needed.
+ * Used for table cells and small card titles.
+ */
+function truncateText(text, maxLen) {
+  if (!text) return '';
+  const s = String(text);
+  return s.length > maxLen ? s.substring(0, maxLen - 1) + '…' : s;
+}
+
+/**
+ * Calculate font size for bullet lists based on item count and avg length.
+ */
+function bulletFontSize(bullets = [], containerH = 4.2, baseSize = 16, minSize = 9) {
+  const count  = bullets.length;
+  const avgLen = bullets.reduce((a, b) => a + String(b).length, 0) / Math.max(count, 1);
+
+  // Estimate lines needed (rough: 1 line per ~60 chars at base size, 2 lines if longer)
+  let estLines = 0;
+  for (const b of bullets) {
+    const chars = String(b).length;
+    estLines += chars > 80 ? 2 : 1;
+  }
+
+  // Height per line estimate in inches (at 16pt ≈ 0.25in per line with spacing)
+  const lineH = (baseSize / 72) * 1.35;
+  const maxLines = Math.floor(containerH / lineH);
+
+  if (estLines <= maxLines) return baseSize;
+
+  // Need to shrink — calculate scale factor
+  const scale = maxLines / estLines;
+  const scaled = Math.floor(baseSize * scale);
+  return Math.max(minSize, scaled);
+}
+
+// ────────────────────────────────────────────────────────────
+// TEMPLATE PARSER
 // ────────────────────────────────────────────────────────────
 async function extractTemplateTheme(pptxFilePath) {
   const theme = { ...GYS_DEFAULTS };
@@ -53,7 +112,6 @@ async function extractTemplateTheme(pptxFilePath) {
     const data   = fs.readFileSync(pptxFilePath);
     const zip    = await JSZip.loadAsync(data);
 
-    // ── 1. Read theme XML for colors ──────────────────────────
     const themeFiles = Object.keys(zip.files).filter(f =>
       f.match(/ppt\/theme\/theme\d*\.xml$/)
     );
@@ -61,27 +119,24 @@ async function extractTemplateTheme(pptxFilePath) {
     if (themeFiles.length > 0) {
       const themeXml = await zip.files[themeFiles[0]].async('string');
 
-      // Extract accent colors from <a:accent1> through <a:accent6>
       const accentMatches = themeXml.matchAll(/<a:accent\d[^>]*>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/g);
       const accents = [];
       for (const m of accentMatches) accents.push(m[1].toUpperCase());
 
       if (accents.length > 0) {
-        theme.teal       = accents[0];  // primary accent
+        theme.teal       = accents[0];
         theme.tealAccent = accents[1] || accents[0];
         theme.chartColors = accents.slice(0, 6).length >= 2
           ? accents.slice(0, 6)
           : [accents[0], accents[0] + '88', accents[0] + '55', 'CCCCCC', 'AAAAAA', '888888'];
       }
 
-      // Dark/light background colors
-      const dk1Match  = themeXml.match(/<a:dk1>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
-      const lt1Match  = themeXml.match(/<a:lt1>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
+      const dk1Match = themeXml.match(/<a:dk1>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
+      const lt1Match = themeXml.match(/<a:lt1>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
       if (dk1Match) theme.darkText = dk1Match[1].toUpperCase();
       if (lt1Match) theme.white    = lt1Match[1].toUpperCase();
     }
 
-    // ── 2. Read font from theme ───────────────────────────────
     const themeXml2 = themeFiles.length > 0
       ? await zip.files[themeFiles[0]].async('string')
       : '';
@@ -91,7 +146,6 @@ async function extractTemplateTheme(pptxFilePath) {
       theme.fontBody  = fontMatch[1];
     }
 
-    // ── 3. Read slide background from first slide layout ──────
     const layoutFiles = Object.keys(zip.files).filter(f =>
       f.match(/ppt\/slideLayouts\/slideLayout\d+\.xml$/)
     );
@@ -107,7 +161,6 @@ async function extractTemplateTheme(pptxFilePath) {
     console.warn('[PPT Template] Theme extraction failed, using defaults:', err.message);
   }
 
-  // Derive secondary colors from primary
   theme.tealDark  = theme.teal;
   theme.tealMid   = theme.tealAccent || theme.teal;
   theme.tealLight = theme.offWhite || 'F0F9F6';
@@ -116,7 +169,7 @@ async function extractTemplateTheme(pptxFilePath) {
 }
 
 // ────────────────────────────────────────────────────────────
-// SHARED HELPERS (use GYS tokens, passed as param)
+// SHARED HELPERS
 // ────────────────────────────────────────────────────────────
 function addFooter(slide, pptx, GYS, pageLabel = "") {
   slide.addShape(pptx.ShapeType.rect, {
@@ -182,16 +235,18 @@ function addLeftAccent(slide, pptx, GYS, y = 0.85, h = 4.3) {
 }
 
 function addSlideTitle(slide, GYS, title) {
-  slide.addText(title || "", {
+  // ✅ Auto-shrink slide title if very long
+  const titleStr = String(title || '');
+  const titleSize = calcFontSize(titleStr, 50, 24, 14);
+  slide.addText(titleStr, {
     x: 0.95, y: 0.1, w: 8.8, h: 0.6,
-    fontSize: 24, bold: true, color: GYS.darkText, valign: "middle",
+    fontSize: titleSize, bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle,
   });
 }
 
 // ────────────────────────────────────────────────────────────
-// NEW: IMAGE_SLIDE layout — for slides that prominently feature
-// an extracted image with summary text
+// IMAGE_SLIDE layout
 // ────────────────────────────────────────────────────────────
 function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
   slide.addShape(pptx.ShapeType.rect, {
@@ -204,32 +259,29 @@ function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
 
   const imagePath = data.imagePath;
   const caption   = data.caption || '';
-  const bodyText  = data.body || data.bullets?.join('\n') || '';
+  const bodyText  = data.body || (data.bullets || []).join('\n') || '';
 
   if (imagePath && fs.existsSync(imagePath)) {
     if (bodyText) {
-      // Two-column: image left, text right
       slide.addImage({
         path: imagePath,
         x: 0.22, y: 0.95, w: 5.0, h: 4.2,
         sizing: { type: 'contain', w: 5.0, h: 4.2 },
       });
-
+      // ✅ Auto-size body text
+      const bodyFs = calcFontSize(bodyText, 200, 14, 9);
       slide.addText(bodyText, {
         x: 5.4, y: 1.0, w: 4.3, h: 3.8,
-        fontSize: 14, color: GYS.bodyText, wrap: true, valign: "top",
+        fontSize: bodyFs, color: GYS.bodyText, wrap: true, valign: "top",
         fontFace: GYS.fontBody, lineSpacingMultiple: 1.35,
       });
-
       if (caption) {
         slide.addText(caption, {
           x: 0.22, y: 5.15, w: 5.0, h: 0.18,
-          fontSize: 9, color: GYS.mutedText, italic: true,
-          fontFace: GYS.fontBody,
+          fontSize: 9, color: GYS.mutedText, italic: true, fontFace: GYS.fontBody,
         });
       }
     } else {
-      // Full-width image
       slide.addImage({
         path: imagePath,
         x: 0.3, y: 0.95, w: 9.4, h: 4.1,
@@ -244,7 +296,6 @@ function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
       }
     }
   } else {
-    // Fallback: show placeholder box
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 0.3, y: 0.95, w: 9.4, h: 4.1,
       fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
@@ -260,7 +311,7 @@ function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
 }
 
 // ────────────────────────────────────────────────────────────
-// SLIDE RENDERERS (all updated to accept GYS token object)
+// SLIDE RENDERERS
 // ────────────────────────────────────────────────────────────
 
 function renderTitle(pptx, slide, data, GYS, pageLabel) {
@@ -290,15 +341,19 @@ function renderTitle(pptx, slide, data, GYS, pageLabel) {
     x: 0.5, y: 1.65, w: 3.5, h: 0.04,
     fill: { color: GYS.tealAccent }, line: { type: "none" },
   });
-  slide.addText(data.title || "Presentation Title", {
+  // ✅ Auto-size main title
+  const mainTitle = String(data.title || "Presentation Title");
+  const titleFs   = calcFontSize(mainTitle, 40, 44, 24);
+  slide.addText(mainTitle, {
     x: 0.5, y: 1.75, w: 8.5, h: 1.8,
-    fontSize: 44, bold: true, color: GYS.white, wrap: true,
+    fontSize: titleFs, bold: true, color: GYS.white, wrap: true,
     fontFace: GYS.fontTitle, lineSpacingMultiple: 1.1,
   });
   if (data.subtitle) {
+    const subFs = calcFontSize(String(data.subtitle), 80, 18, 12);
     slide.addText(data.subtitle, {
       x: 0.5, y: 3.6, w: 7.5, h: 0.65,
-      fontSize: 18, color: "A8D5C2", fontFace: GYS.fontBody, lineSpacingMultiple: 1.2,
+      fontSize: subFs, color: "A8D5C2", fontFace: GYS.fontBody, lineSpacingMultiple: 1.2,
     });
   }
   const metaLine = [data.presenter, data.date].filter(Boolean).join("   •   ");
@@ -331,15 +386,18 @@ function renderSection(pptx, slide, data, GYS, pageLabel) {
       fontSize: 80, bold: true, color: "004D38", align: "center", fontFace: GYS.fontTitle,
     });
   }
-  slide.addText(data.title || "Section", {
+  const sectionTitle = String(data.title || "Section");
+  const stFs = calcFontSize(sectionTitle, 30, 36, 20);
+  slide.addText(sectionTitle, {
     x: 3.3, y: 1.6, w: 6.3, h: 1.4,
-    fontSize: 36, bold: true, color: GYS.darkText, valign: "middle",
+    fontSize: stFs, bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle, wrap: true,
   });
   if (data.subtitle) {
+    const ssFs = calcFontSize(String(data.subtitle), 100, 16, 10);
     slide.addText(data.subtitle, {
       x: 3.3, y: 3.1, w: 6.3, h: 0.9,
-      fontSize: 16, color: GYS.bodyText, valign: "top",
+      fontSize: ssFs, color: GYS.bodyText, valign: "top",
       fontFace: GYS.fontBody, wrap: true, lineSpacingMultiple: 1.3,
     });
   }
@@ -355,8 +413,8 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
   addLogoLight(slide, pptx, GYS);
   addSlideTitle(slide, GYS, data.title);
 
-  const items = (data.items || []).slice(0, 4);
-  const count = Math.max(items.length, 1);
+  const items   = (data.items || []).slice(0, 4);
+  const count   = Math.max(items.length, 1);
   const totalGap = 0.22;
   const startX   = 0.25;
   const availW   = GYS.slideW - startX * 2;
@@ -379,7 +437,7 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
       fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.06,
     });
     const iconBgSize = 0.55;
-    const iconBgX = cx + (cardW - iconBgSize) / 2;
+    const iconBgX    = cx + (cardW - iconBgSize) / 2;
     slide.addShape(pptx.ShapeType.ellipse, {
       x: iconBgX, y: cardY + 0.22, w: iconBgSize, h: iconBgSize,
       fill: { color: GYS.tealLight }, line: { type: "none" },
@@ -388,15 +446,30 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
       x: iconBgX, y: cardY + 0.22, w: iconBgSize, h: iconBgSize,
       fontSize: count <= 2 ? 22 : 18, align: "center", valign: "middle",
     });
-    slide.addText(item.title || "Item", {
-      x: cx + 0.12, y: cardY + 0.88, w: cardW - 0.24, h: 0.55,
-      fontSize: count <= 2 ? 16 : 14, bold: true, color: GYS.darkText,
+
+    // ✅ Auto-size card title
+    const cardTitle   = truncateText(item.title || "Item", count <= 2 ? 40 : 25);
+    const cardTitleFs = count <= 2 ? 16 : 13;
+    slide.addText(cardTitle, {
+      x: cx + 0.1, y: cardY + 0.88, w: cardW - 0.2, h: 0.55,
+      fontSize: cardTitleFs, bold: true, color: GYS.darkText,
       align: "center", wrap: true, fontFace: GYS.fontTitle,
     });
-    slide.addText(item.text || "", {
-      x: cx + 0.14, y: cardY + 1.48, w: cardW - 0.28, h: 2.15,
-      fontSize: count <= 2 ? 13 : 12, color: GYS.bodyText,
-      valign: "top", wrap: true, fontFace: GYS.fontBody, lineSpacingMultiple: 1.3,
+
+    // ✅ Auto-size card body text based on available area and content length
+    const cardText      = String(item.text || "");
+    const textAreaH     = 2.15;
+    // Estimate max chars per line given card width
+    const charsPerLine  = Math.floor((cardW - 0.28) / (0.09 * (count <= 2 ? 13 : 11)));
+    const maxCharsForH  = charsPerLine * Math.floor(textAreaH / 0.18);
+    const cardBodyFs    = calcFontSize(cardText, maxCharsForH, count <= 2 ? 13 : 11, 8);
+
+    slide.addText(cardText, {
+      x: cx + 0.14, y: cardY + 1.48, w: cardW - 0.28, h: textAreaH,
+      fontSize: cardBodyFs, color: GYS.bodyText,
+      valign: "top", wrap: true, fontFace: GYS.fontBody, lineSpacingMultiple: 1.25,
+      // ✅ autoFit tells PptxGenJS to shrink text to fit the box
+      autoFit: true,
     });
   });
 
@@ -413,12 +486,12 @@ function renderContent(pptx, slide, data, GYS, pageLabel) {
   addLeftAccent(slide, pptx, GYS, 0.85, 4.3);
   addSlideTitle(slide, GYS, data.title);
 
-  // ✅ NEW: If slide has an associated image, show it alongside text
   const imagePath = data.imagePath;
   const hasImage  = imagePath && fs.existsSync(imagePath);
   const bullets   = (data.bullets || []).filter(Boolean);
   const textW     = hasImage ? 5.0 : 9.3;
   const textX     = 0.32;
+  const textH     = 4.2;
 
   if (hasImage) {
     slide.addImage({
@@ -436,8 +509,12 @@ function renderContent(pptx, slide, data, GYS, pageLabel) {
   }
 
   if (bullets.length > 0) {
+    // ✅ Auto-size bullets based on count and length
+    const baseFontSize = hasImage ? 14 : 16;
+    const fs_size = bulletFontSize(bullets, textH, baseFontSize, 9);
+
     const bulletItems = bullets.map(b => {
-      const raw = typeof b === "string" ? b : String(b);
+      const raw  = typeof b === "string" ? b : String(b);
       const isSub = raw.startsWith("  ") || raw.startsWith("\t") || raw.startsWith("- ");
       const text  = raw.replace(/^[\s\t-]+/, "");
       return {
@@ -445,22 +522,27 @@ function renderContent(pptx, slide, data, GYS, pageLabel) {
         options: {
           bullet:      isSub ? { indent: 20 } : { type: "bullet" },
           color:       isSub ? GYS.mutedText : GYS.bodyText,
-          fontSize:    isSub ? 13 : 16,
+          fontSize:    isSub ? Math.max(8, fs_size - 2) : fs_size,
           breakLine:   true,
           indentLevel: isSub ? 1 : 0,
         },
       };
     });
     slide.addText(bulletItems, {
-      x: textX, y: 1.0, w: textW, h: 4.2,
+      x: textX, y: 1.0, w: textW, h: textH,
       fontFace: GYS.fontBody, valign: "top",
-      paraSpaceAfter: 9, lineSpacingMultiple: 1.25,
+      paraSpaceAfter: bullets.length > 8 ? 4 : 9,
+      lineSpacingMultiple: bullets.length > 8 ? 1.1 : 1.25,
+      // ✅ autoFit shrinks if still doesn't fit
+      autoFit: true,
     });
   } else if (data.body) {
+    const bodyFs = calcFontSize(String(data.body), 300, 16, 10);
     slide.addText(data.body, {
-      x: textX, y: 1.0, w: textW, h: 4.2,
-      fontSize: 16, color: GYS.bodyText, wrap: true, valign: "top",
+      x: textX, y: 1.0, w: textW, h: textH,
+      fontSize: bodyFs, color: GYS.bodyText, wrap: true, valign: "top",
       fontFace: GYS.fontBody, lineSpacingMultiple: 1.4,
+      autoFit: true,
     });
   }
   addFooter(slide, pptx, GYS, pageLabel);
@@ -491,31 +573,45 @@ function renderTwoColumn(pptx, slide, data, GYS, pageLabel) {
     fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.1,
   });
   if (data.leftTitle) {
-    slide.addText(data.leftTitle, {
+    slide.addText(truncateText(data.leftTitle, 35), {
       x: 0.38, y: 1.02, w: 4.3, h: 0.44,
-      fontSize: 14, bold: true, color: GYS.teal, valign: "middle", fontFace: GYS.fontTitle,
+      fontSize: calcFontSize(data.leftTitle, 30, 14, 10), bold: true, color: GYS.teal,
+      valign: "middle", fontFace: GYS.fontTitle,
     });
   }
   if (data.rightTitle) {
-    slide.addText(data.rightTitle, {
+    slide.addText(truncateText(data.rightTitle, 35), {
       x: 5.3, y: 1.02, w: 4.3, h: 0.44,
-      fontSize: 14, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+      fontSize: calcFontSize(data.rightTitle, 30, 14, 10), bold: true, color: GYS.white,
+      valign: "middle", fontFace: GYS.fontTitle,
     });
   }
   const leftBullets  = (data.leftBullets  || data.left  || []).filter(Boolean);
   const rightBullets = (data.rightBullets || data.right || []).filter(Boolean);
+  const colH = 3.4;
+
   if (leftBullets.length) {
+    const lfs = bulletFontSize(leftBullets, colH, 14, 9);
     slide.addText(
-      leftBullets.map(b => ({ text: b, options: { bullet: true, breakLine: true } })),
-      { x: 0.38, y: 1.6, w: 4.3, h: 3.4, fontSize: 14, color: GYS.bodyText,
-        fontFace: GYS.fontBody, valign: "top", paraSpaceAfter: 9, lineSpacingMultiple: 1.3 }
+      leftBullets.map(b => ({ text: String(b), options: { bullet: true, breakLine: true } })),
+      { x: 0.38, y: 1.6, w: 4.3, h: colH,
+        fontSize: lfs, color: GYS.bodyText, fontFace: GYS.fontBody, valign: "top",
+        paraSpaceAfter: leftBullets.length > 6 ? 4 : 9,
+        lineSpacingMultiple: leftBullets.length > 6 ? 1.1 : 1.3,
+        autoFit: true,
+      }
     );
   }
   if (rightBullets.length) {
+    const rfs = bulletFontSize(rightBullets, colH, 14, 9);
     slide.addText(
-      rightBullets.map(b => ({ text: b, options: { bullet: true, breakLine: true } })),
-      { x: 5.3, y: 1.6, w: 4.3, h: 3.4, fontSize: 14, color: GYS.bodyText,
-        fontFace: GYS.fontBody, valign: "top", paraSpaceAfter: 9, lineSpacingMultiple: 1.3 }
+      rightBullets.map(b => ({ text: String(b), options: { bullet: true, breakLine: true } })),
+      { x: 5.3, y: 1.6, w: 4.3, h: colH,
+        fontSize: rfs, color: GYS.bodyText, fontFace: GYS.fontBody, valign: "top",
+        paraSpaceAfter: rightBullets.length > 6 ? 4 : 9,
+        lineSpacingMultiple: rightBullets.length > 6 ? 1.1 : 1.3,
+        autoFit: true,
+      }
     );
   }
   addFooter(slide, pptx, GYS, pageLabel);
@@ -537,6 +633,7 @@ function renderStats(pptx, slide, data, GYS, pageLabel) {
   const cardW  = (availW - gap * (count - 1)) / count;
   const cardH  = 3.8;
   const cardY  = 1.0;
+
   stats.forEach((s, i) => {
     const cx     = startX + i * (cardW + gap);
     const isDark = i % 2 === 0;
@@ -550,9 +647,10 @@ function renderStats(pptx, slide, data, GYS, pageLabel) {
       line: { color: isDark ? GYS.teal : GYS.grayBorder, width: isDark ? 0 : 1.5 },
       rectRadius: 0.12,
     });
-    const textColor = isDark ? GYS.white : GYS.darkText;
-    const subColor  = isDark ? "A8D5C2" : GYS.mutedText;
-    const valColor  = isDark ? GYS.white : GYS.teal;
+    const textColor = isDark ? GYS.white   : GYS.darkText;
+    const subColor  = isDark ? "A8D5C2"   : GYS.mutedText;
+    const valColor  = isDark ? GYS.white   : GYS.teal;
+
     if (s.icon) {
       slide.addShape(pptx.ShapeType.ellipse, {
         x: cx + (cardW - 0.55) / 2, y: cardY + 0.28, w: 0.55, h: 0.55,
@@ -563,22 +661,27 @@ function renderStats(pptx, slide, data, GYS, pageLabel) {
         fontSize: 20, align: "center", valign: "middle",
       });
     }
-    const valueY = s.icon ? cardY + 0.95 : cardY + 0.6;
-    slide.addText(s.value || "—", {
+    const valueY   = s.icon ? cardY + 0.95 : cardY + 0.6;
+    // ✅ Auto-size value (big numbers / long text)
+    const valStr   = String(s.value || "—");
+    const valueFsBase = count <= 2 ? 52 : count === 3 ? 44 : 36;
+    const valueFs  = calcFontSize(valStr, 8, valueFsBase, 20);
+
+    slide.addText(valStr, {
       x: cx + 0.08, y: valueY, w: cardW - 0.16, h: 1.1,
-      fontSize: count <= 2 ? 52 : count === 3 ? 44 : 36,
-      bold: true, color: valColor, align: "center", fontFace: GYS.fontTitle,
+      fontSize: valueFs, bold: true, color: valColor, align: "center",
+      fontFace: GYS.fontTitle, autoFit: true,
     });
-    slide.addText(s.label || "", {
+    slide.addText(truncateText(s.label || "", 40), {
       x: cx + 0.08, y: valueY + 1.1, w: cardW - 0.16, h: 0.6,
-      fontSize: 14, bold: true, color: textColor, align: "center",
-      wrap: true, fontFace: GYS.fontBody,
+      fontSize: calcFontSize(s.label || '', 25, 14, 9), bold: true,
+      color: textColor, align: "center", wrap: true, fontFace: GYS.fontBody,
     });
     if (s.sub) {
-      slide.addText(s.sub, {
+      slide.addText(truncateText(String(s.sub), 60), {
         x: cx + 0.08, y: valueY + 1.72, w: cardW - 0.16, h: 0.8,
-        fontSize: 11, color: subColor, align: "center",
-        wrap: true, fontFace: GYS.fontBody,
+        fontSize: calcFontSize(s.sub, 50, 11, 8), color: subColor, align: "center",
+        wrap: true, fontFace: GYS.fontBody, autoFit: true,
       });
     }
   });
@@ -593,21 +696,26 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
   addHeaderBar(slide, pptx, GYS);
   addLogoLight(slide, pptx, GYS);
   addSlideTitle(slide, GYS, data.title);
+
   const steps = (data.steps || []).slice(0, 6);
   const count = Math.max(steps.length, 1);
   const lineY = 2.2;
   const padX  = 0.5;
-  const lineLen = GYS.slideW - padX * 2;
+  const lineLen  = GYS.slideW - padX * 2;
+  const nodeSize = 0.36;
+
   slide.addShape(pptx.ShapeType.rect, {
     x: padX, y: lineY - 0.025, w: lineLen, h: 0.05,
     fill: { color: GYS.tealLight }, line: { type: "none" },
   });
-  const stepW    = lineLen / count;
-  const nodeSize = 0.36;
+
+  const stepW = lineLen / count;
+
   steps.forEach((step, i) => {
-    const cx   = padX + i * stepW + stepW / 2;
+    const cx    = padX + i * stepW + stepW / 2;
     const nodeX = cx - nodeSize / 2;
     const nodeY = lineY - nodeSize / 2;
+
     slide.addShape(pptx.ShapeType.ellipse, {
       x: nodeX - 0.06, y: nodeY - 0.06, w: nodeSize + 0.12, h: nodeSize + 0.12,
       fill: { color: GYS.tealLight }, line: { type: "none" },
@@ -621,15 +729,21 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
       fontSize: 12, bold: true, color: GYS.white, align: "center", valign: "middle",
       fontFace: GYS.fontTitle,
     });
-    slide.addText(step.time || `Step ${i + 1}`, {
+
+    // ✅ Auto-size time label
+    const timeStr = String(step.time || `Step ${i + 1}`);
+    const timeFs  = calcFontSize(timeStr, 12, 10, 7);
+    slide.addText(timeStr, {
       x: cx - stepW * 0.44, y: lineY - 0.9, w: stepW * 0.88, h: 0.38,
-      fontSize: 10, bold: true, color: GYS.tealAccent,
+      fontSize: timeFs, bold: true, color: GYS.tealAccent,
       align: "center", fontFace: GYS.fontTitle, wrap: true,
     });
+
     const cardX = cx - stepW * 0.44;
     const cardY = lineY + 0.42;
     const cardW = stepW * 0.88;
     const cardH = 2.45;
+
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cardX, y: cardY, w: cardW, h: cardH,
       fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
@@ -638,15 +752,25 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
       x: cardX, y: cardY, w: cardW, h: 0.1,
       fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.05,
     });
-    slide.addText(step.title || "Phase", {
+
+    // ✅ Auto-size step title
+    const stepTitle = String(step.title || "Phase");
+    const stTitleFs = calcFontSize(stepTitle, count <= 3 ? 20 : 15, count <= 3 ? 13 : 11, 8);
+    slide.addText(stepTitle, {
       x: cardX + 0.1, y: cardY + 0.12, w: cardW - 0.2, h: 0.55,
-      fontSize: count <= 3 ? 13 : 11, bold: true, color: GYS.darkText,
+      fontSize: stTitleFs, bold: true, color: GYS.darkText,
       wrap: true, fontFace: GYS.fontTitle, valign: "top",
     });
-    slide.addText(step.text || "", {
+
+    // ✅ Auto-size step body text
+    const stepText   = String(step.text || "");
+    const stepBodyFs = calcFontSize(stepText, count <= 3 ? 80 : 60, count <= 3 ? 12 : 10, 7);
+    slide.addText(stepText, {
       x: cardX + 0.1, y: cardY + 0.68, w: cardW - 0.2, h: 1.65,
-      fontSize: count <= 3 ? 12 : 10, color: GYS.bodyText,
-      wrap: true, fontFace: GYS.fontBody, valign: "top", lineSpacingMultiple: 1.25,
+      fontSize: stepBodyFs, color: GYS.bodyText,
+      wrap: true, fontFace: GYS.fontBody, valign: "top",
+      lineSpacingMultiple: 1.2,
+      autoFit: true,
     });
   });
   addFooter(slide, pptx, GYS, pageLabel);
@@ -660,14 +784,17 @@ function renderChart(pptx, slide, data, GYS, pageLabel) {
   addHeaderBar(slide, pptx, GYS);
   addLogoLight(slide, pptx, GYS);
   addSlideTitle(slide, GYS, data.title);
-  const cfg      = data.chartConfig || {};
-  const rawType  = (cfg.type || "bar").toLowerCase();
-  let chartType  = pptx.ChartType.bar;
+
+  const cfg     = data.chartConfig || {};
+  const rawType = (cfg.type || "bar").toLowerCase();
+  let chartType = pptx.ChartType.bar;
   if (rawType === "line" || rawType === "area") chartType = pptx.ChartType.line;
   if (rawType === "pie")                        chartType = pptx.ChartType.pie;
   if (rawType === "doughnut" || rawType === "donut") chartType = pptx.ChartType.doughnut;
+
   const chartData  = cfg.data || [];
   const hasInsight = Boolean(data.insightText);
+
   if (hasInsight) {
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 0.18, y: 1.0, w: 3.0, h: 4.15,
@@ -681,14 +808,19 @@ function renderChart(pptx, slide, data, GYS, pageLabel) {
       x: 0.28, y: 1.02, w: 2.8, h: 0.38,
       fontSize: 12, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
     });
+    // ✅ Auto-size insight text
+    const insightFs = calcFontSize(String(data.insightText), 150, 13, 9);
     slide.addText(data.insightText, {
       x: 0.28, y: 1.5, w: 2.8, h: 3.5,
-      fontSize: 13, color: GYS.bodyText, wrap: true, valign: "top",
+      fontSize: insightFs, color: GYS.bodyText, wrap: true, valign: "top",
       fontFace: GYS.fontBody, lineSpacingMultiple: 1.35,
+      autoFit: true,
     });
   }
+
   const chartX = hasInsight ? 3.4 : 0.25;
   const chartW = hasInsight ? 6.3 : 9.5;
+
   if (chartData.length > 0) {
     slide.addChart(chartType, chartData, {
       x: chartX, y: 1.0, w: chartW, h: 4.15,
@@ -713,17 +845,31 @@ function renderTable(pptx, slide, data, GYS, pageLabel) {
   addHeaderBar(slide, pptx, GYS);
   addLogoLight(slide, pptx, GYS);
   addSlideTitle(slide, GYS, data.title);
+
   const headers = data.tableHeaders || [];
   const rows    = data.tableRows    || [];
   if (!headers.length && !rows.length) { addFooter(slide, pptx, GYS, pageLabel); return; }
+
+  const colCount = Math.max(headers.length, rows[0] ? (Array.isArray(rows[0]) ? rows[0].length : 1) : 1);
+
+  // ✅ Auto font size based on column count and row count
+  const totalRows = rows.length + (headers.length ? 1 : 0);
+  let headerFs = 12;
+  let cellFs   = 11;
+  if (colCount >= 5 || totalRows >= 8)  { headerFs = 10; cellFs = 9;  }
+  if (colCount >= 6 || totalRows >= 12) { headerFs = 9;  cellFs = 8;  }
+
+  // ✅ Max chars per cell based on column count
+  const maxCellChars = Math.floor(120 / colCount);
+
   const tableData = [];
   if (headers.length) {
     tableData.push(
       headers.map(h => ({
-        text: String(h),
+        text: truncateText(String(h), maxCellChars + 10), // headers can be a bit longer
         options: {
           bold: true, color: GYS.white, fill: GYS.teal,
-          align: "left", fontSize: 12, valign: "middle", fontFace: GYS.fontTitle,
+          align: "left", fontSize: headerFs, valign: "middle", fontFace: GYS.fontTitle,
         },
       }))
     );
@@ -731,17 +877,19 @@ function renderTable(pptx, slide, data, GYS, pageLabel) {
   rows.forEach((row, ri) => {
     tableData.push(
       (Array.isArray(row) ? row : [row]).map((cell, ci) => ({
-        text: String(cell ?? ""),
+        // ✅ Truncate cell text to prevent overflow
+        text: truncateText(String(cell ?? ""), maxCellChars),
         options: {
           color: GYS.bodyText, fill: ri % 2 === 0 ? GYS.cardWhite : GYS.offWhite,
-          fontSize: 11, valign: "middle", align: "left",
+          fontSize: cellFs, valign: "middle", align: "left",
           bold: ci === 0, fontFace: GYS.fontBody,
         },
       }))
     );
   });
-  const totalRows = tableData.length;
-  const rowH = Math.min(0.55, 4.15 / Math.max(totalRows, 1));
+
+  const totalTableRows = tableData.length;
+  const rowH = Math.min(0.55, 4.15 / Math.max(totalTableRows, 1));
   slide.addTable(tableData, {
     x: 0.25, y: 1.0, w: 9.5, h: 4.15,
     border: { type: "solid", color: GYS.grayBorder, pt: 0.75 },
@@ -768,14 +916,17 @@ function renderQuote(pptx, slide, data, GYS, pageLabel) {
     x: 0.5, y: 0.6, w: 1.8, h: 1.4,
     fontSize: 110, color: GYS.tealAccent, bold: true, fontFace: "Georgia",
   });
-  slide.addText(data.quote || data.title || "", {
+  const quoteText = String(data.quote || data.title || "");
+  const quoteFs   = calcFontSize(quoteText, 100, 24, 14);
+  slide.addText(quoteText, {
     x: 0.8, y: 1.5, w: 8.4, h: 2.5,
-    fontSize: 24, color: GYS.white, italic: true,
+    fontSize: quoteFs, color: GYS.white, italic: true,
     wrap: true, align: "center", valign: "middle",
     fontFace: "Georgia", lineSpacingMultiple: 1.3,
+    autoFit: true,
   });
   if (data.author) {
-    slide.addText("— " + data.author, {
+    slide.addText(truncateText("— " + data.author, 60), {
       x: 0.8, y: 4.25, w: 8.4, h: 0.42,
       fontSize: 14, color: "A8D5C2", align: "right", fontFace: GYS.fontBody,
     });
@@ -805,18 +956,21 @@ function renderClosing(pptx, slide, data, GYS, pageLabel) {
     x: 3.5, y: 2.0, w: 3.0, h: 0.04,
     fill: { color: GYS.tealAccent }, line: { type: "none" },
   });
-  slide.addText(data.title || "Thank You", {
+  const closingTitle = String(data.title || "Thank You");
+  const ctFs = calcFontSize(closingTitle, 20, 52, 28);
+  slide.addText(closingTitle, {
     x: 0.6, y: 1.8, w: 8.8, h: 1.4,
-    fontSize: 52, bold: true, color: GYS.white, align: "center", fontFace: GYS.fontTitle,
+    fontSize: ctFs, bold: true, color: GYS.white, align: "center", fontFace: GYS.fontTitle,
   });
   if (data.subtitle) {
-    slide.addText(data.subtitle, {
+    slide.addText(truncateText(data.subtitle, 80), {
       x: 0.6, y: 3.3, w: 8.8, h: 0.7,
-      fontSize: 18, color: "A8D5C2", align: "center", fontFace: GYS.fontBody,
+      fontSize: calcFontSize(data.subtitle, 60, 18, 12), color: "A8D5C2",
+      align: "center", fontFace: GYS.fontBody,
     });
   }
   if (data.contact) {
-    slide.addText(data.contact, {
+    slide.addText(truncateText(data.contact, 80), {
       x: 0.6, y: 4.05, w: 8.8, h: 0.35,
       fontSize: 13, color: "7BC8AD", align: "center", fontFace: GYS.fontBody,
     });
@@ -826,7 +980,6 @@ function renderClosing(pptx, slide, data, GYS, pageLabel) {
 
 // ────────────────────────────────────────────────────────────
 // IMAGE PLACEMENT ALGORITHM
-// Decides which slides get which images from knowledge base
 // ────────────────────────────────────────────────────────────
 function assignImagesToSlides(slides, extractedImages) {
   if (!extractedImages || extractedImages.length === 0) return slides;
@@ -848,7 +1001,6 @@ function assignImagesToSlides(slides, extractedImages) {
   // Pass 2: Remaining images get their own IMAGE_SLIDE
   while (imgIdx < images.length) {
     const img = images[imgIdx];
-    // Insert IMAGE_SLIDE before the CLOSING slide if possible
     const closingIdx = assigned.findIndex(s => ['CLOSING', 'THANKYOU'].includes((s.layout || '').toUpperCase()));
     const insertAt   = closingIdx > 0 ? closingIdx : assigned.length;
 
@@ -857,7 +1009,7 @@ function assignImagesToSlides(slides, extractedImages) {
       title:     `Visual: ${img.sourceFile || 'Document'}`,
       imagePath: img.path,
       caption:   img.caption,
-      body:      '', // summary text can be added if AI provides it
+      body:      '',
     });
     imgIdx++;
   }
@@ -870,22 +1022,11 @@ function assignImagesToSlides(slides, extractedImages) {
 // ────────────────────────────────────────────────────────────
 const PptxService = {
 
-  /**
-   * Generate PPTX from structured slide data.
-   * @param {object} pptData      - { slides: [...] }
-   * @param {string} slideContent - raw markdown (fallback)
-   * @param {string} title        - presentation title
-   * @param {string} outputDir    - where to save the file
-   * @param {string} styleDesc    - style description
-   * @param {string} templatePath - optional: path to template .pptx file
-   * @param {Array}  extractedImages - optional: images from knowledge base
-   */
   async generate({ pptData, slideContent, title, outputDir, styleDesc, templatePath = null, extractedImages = [] }) {
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    // ── 1. Extract theme from template if provided ────────────
     const GYS = templatePath
       ? await extractTemplateTheme(templatePath)
       : { ...GYS_DEFAULTS };
@@ -903,7 +1044,6 @@ const PptxService = {
     try {
       if (!pptData?.slides?.length) throw new Error("No slides in pptData");
 
-      // ── 2. Assign extracted images to slides ────────────────
       const slidesWithImages = assignImagesToSlides(pptData.slides, extractedImages);
       const total = slidesWithImages.length;
 
@@ -942,7 +1082,7 @@ const PptxService = {
       slideCount = 1;
       const slide = pptx.addSlide();
       renderTitle(pptx, slide, {
-        title: title || "GYS Presentation",
+        title:    title || "GYS Presentation",
         subtitle: "Generated by GYS Portal AI",
       }, GYS, "1 / 1");
     }
@@ -951,16 +1091,16 @@ const PptxService = {
       .replace(/[^a-zA-Z0-9\s-]/g, "")
       .replace(/\s+/g, "-")
       .substring(0, 40);
-    const filename = `GYS-${safeTitle}-${Date.now()}.pptx`;
+    const filename  = `GYS-${safeTitle}-${Date.now()}.pptx`;
     const filepath  = path.join(outputDir, filename);
 
     await pptx.writeFile({ fileName: filepath });
     console.log(`✅ [PPT] Generated: ${filename} (${slideCount} slides, template: ${templatePath ? 'yes' : 'no'})`);
 
     return {
-      pptxFile:    filepath,
-      pptxUrl:     `/api/files/${filename}`,
-      pptxName:    filename,
+      pptxFile:     filepath,
+      pptxUrl:      `/api/files/${filename}`,
+      pptxName:     filename,
       slideCount,
       usedFallback,
       styleDesc,
@@ -968,11 +1108,10 @@ const PptxService = {
     };
   },
 
-  // Keep this for backward compat with routes/pptx.js
+  // Backward compat with routes/pptx.js
   async generateFromAICode({ aiCode, fallbackContent, title, outputDir, styleDesc }) {
-    // This method is used by routes/pptx.js — keep existing behavior
-    const pptx   = new PptxGenJS();
-    const GYS    = { ...GYS_DEFAULTS };
+    const pptx  = new PptxGenJS();
+    const GYS   = { ...GYS_DEFAULTS };
     pptx.layout  = "LAYOUT_16x9";
     pptx.author  = "GYS Portal AI";
     pptx.company = "PT Garuda Yamato Steel";

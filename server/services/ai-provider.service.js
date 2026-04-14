@@ -55,12 +55,14 @@ export const AI_PROVIDERS = {
     capabilities: [],
     envKey: 'GOOGLE_API_KEY',
   },
+  // ── UPDATED: Custom now supports Azure OpenAI + any OpenAI-compatible ──
   custom: {
-    label:        'Custom / OpenAI-Compatible',
+    label:        'Custom / Azure / AWS (OpenAI-Compatible)',
     icon:         '⚙️',
     models:       [],
     capabilities: [],
     envKey:       null,
+    description:  'Works with Azure OpenAI, AWS Bedrock (OpenAI-compatible), Ollama, LM Studio, etc.',
   },
 };
 
@@ -94,7 +96,6 @@ export const BOT_CAPABILITIES = {
 
 // ─────────────────────────────────────────────────────────────
 // Helper: Detect non-chat models (instruct / completions only)
-// These are NOT supported by v1/chat/completions endpoint
 // ─────────────────────────────────────────────────────────────
 const NON_CHAT_PATTERNS = [
   /instruct/i,
@@ -115,40 +116,88 @@ function isChatModel(model) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Helper: Detect which parameter convention a model uses
+// ✅ NEW: Detect if endpoint is Azure OpenAI
+// Azure endpoints look like: https://{resource}.openai.azure.com/
 // ─────────────────────────────────────────────────────────────
+function isAzureEndpoint(endpoint = '') {
+  return endpoint.includes('.openai.azure.com');
+}
 
-/**
- * Models that use `max_completion_tokens` instead of `max_tokens`:
- *   - All GPT-5.x variants (gpt-5, gpt-5.1, gpt-5.2, gpt-5-pro, gpt-5-mini, etc.)
- *   - All o-series reasoning models (o1, o3, o4, o4-mini, o3-mini, etc.)
- *
- * Models that do NOT support `temperature`:
- *   - o-series reasoning models only
- */
+// ─────────────────────────────────────────────────────────────
+// ✅ NEW: Detect if endpoint is AWS Bedrock OpenAI-compatible
+// e.g.: https://{gateway-id}.lambda-url.{region}.on.aws/
+// or any non-Azure custom endpoint
+// ─────────────────────────────────────────────────────────────
+function isAwsEndpoint(endpoint = '') {
+  return endpoint.includes('.amazonaws.com') ||
+         endpoint.includes('.lambda-url.') ||
+         endpoint.includes('.on.aws');
+}
+
+// ─────────────────────────────────────────────────────────────
+// Normalize usage object to a consistent shape
+// ─────────────────────────────────────────────────────────────
+export function normalizeUsage(rawUsage, provider = 'openai', model = '') {
+  if (!rawUsage) return null;
+
+  let prompt     = 0;
+  let completion = 0;
+  let total      = 0;
+  let reasoning  = null;
+
+  if (provider === 'anthropic') {
+    prompt     = rawUsage.input_tokens  ?? 0;
+    completion = rawUsage.output_tokens ?? 0;
+    total      = prompt + completion;
+
+  } else if (provider === 'google') {
+    prompt     = rawUsage.promptTokenCount     ?? 0;
+    completion = rawUsage.candidatesTokenCount ?? 0;
+    total      = rawUsage.totalTokenCount       ?? (prompt + completion);
+
+  } else {
+    // OpenAI / Custom / Azure — all follow same schema
+    prompt     = rawUsage.prompt_tokens     ?? 0;
+    completion = rawUsage.completion_tokens ?? 0;
+    total      = rawUsage.total_tokens       ?? (prompt + completion);
+
+    const rt = rawUsage.completion_tokens_details?.reasoning_tokens;
+    if (rt != null) reasoning = rt;
+  }
+
+  const isReasoningModel = /^o\d/.test(model);
+  const warningMaxTokens = isReasoningModel && reasoning != null
+    ? reasoning >= (completion * 0.9)
+    : false;
+
+  return {
+    prompt_tokens:     prompt,
+    completion_tokens: completion,
+    total_tokens:      total,
+    ...(reasoning !== null && { reasoning_tokens: reasoning }),
+    warningMaxTokens,
+    provider,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Helper: model parameter convention
+// ─────────────────────────────────────────────────────────────
 function getModelParams(model, temp, maxTok) {
-  const isReasoningModel = /^o\d/.test(model);   // o1, o3, o4, o3-mini, o4-mini
-  const isGpt5Plus       = /^gpt-5/.test(model);  // gpt-5, gpt-5.1, gpt-5.2, gpt-5-mini, gpt-5-nano
-
-  // GPT-5+ and o-series both use max_completion_tokens
+  const isReasoningModel = /^o\d/.test(model);
+  const isGpt5Plus       = /^gpt-5/.test(model);
   const useCompletionTokens = isReasoningModel || isGpt5Plus;
-
-  // GPT-5+ only supports temperature = 1 (default), so we omit it entirely.
-  // o-series reasoning models also do not support temperature.
-  const omitTemperature = isReasoningModel || isGpt5Plus;
+  const omitTemperature     = isReasoningModel || isGpt5Plus;
 
   const params = {};
-
   if (useCompletionTokens) {
     params.max_completion_tokens = maxTok;
   } else {
     params.max_tokens = maxTok;
   }
-
   if (!omitTemperature) {
     params.temperature = temp;
   }
-
   return params;
 }
 
@@ -164,29 +213,7 @@ class AIProviderService {
     return '';
   }
 
-  /**
-   * Build OpenAI tools array based on bot capabilities config
-   */
-  //buildTools(providerConfig, capabilities = {}) {
- //   if (providerConfig?.provider !== 'openai') return undefined;
-
- //   const tools = [];
- //   const model = providerConfig?.model || '';
-
-    // Web Search — supported on gpt-4o, gpt-4.1+, gpt-5+, o-series
-//    const supportsWebSearch = capabilities.webSearch &&
-  //    (model.includes('4.1') || model.startsWith('gpt-5') || /^o\d/.test(model) || model.includes('4o'));
-   // if (supportsWebSearch) {
-    //  tools.push({ type: 'web_search_preview' });
-   // }
-
-    // Code Interpreter
- //   if (capabilities.codeInterpreter) {
- //     tools.push({ type: 'code_interpreter', container: { type: 'auto' } });
- //   }
   buildTools(providerConfig, capabilities = {}) {
-    // Kita kembalikan undefined (kosong) karena provider Anda
-    // hanya mendukung type 'function', bukan native tools OpenAI.
     return undefined;
   }
 
@@ -208,6 +235,15 @@ class AIProviderService {
       );
     }
 
+    // ✅ Custom provider: auto-detect Azure vs generic
+    if (provider === 'custom') {
+      if (isAzureEndpoint(endpoint)) {
+        return this._callAzureOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, providerConfig });
+      } else {
+        return this._callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint });
+      }
+    }
+
     switch (provider) {
       case 'openai':
         return this._callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities });
@@ -215,8 +251,6 @@ class AIProviderService {
         return this._callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent });
       case 'google':
         return this._callGemini({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent });
-      case 'custom':
-        return this._callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint });
       default:
         throw new Error(`Provider tidak dikenal: ${provider}`);
     }
@@ -224,7 +258,6 @@ class AIProviderService {
 
   // ── OpenAI ─────────────────────────────────────────────────
   async _callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities = {} }) {
-    // Guard: reject non-chat models early with a clear message
     if (!isChatModel(model)) {
       throw new Error(
         `Model "${model}" tidak didukung untuk chat (bukan chat model). ` +
@@ -236,7 +269,7 @@ class AIProviderService {
     if (endpoint) clientConfig.baseURL = endpoint;
     const openai = new OpenAI(clientConfig);
 
-    const tools      = this.buildTools({ provider: 'openai', model }, capabilities);
+    const tools       = this.buildTools({ provider: 'openai', model }, capabilities);
     const tokenParams = getModelParams(model, temp, maxTok);
 
     const body = {
@@ -252,22 +285,16 @@ class AIProviderService {
     if (tools) body.tools = tools;
 
     const completion = await openai.chat.completions.create(body);
+    const choice     = completion.choices[0];
 
-    // Handle tool call responses (web search returns tool_calls first)
-    const choice = completion.choices[0];
-
-    // Debug: log raw response shape when content is empty
     if (!choice?.message?.content) {
-      console.warn(`[AI DEBUG] model=${model} finish_reason=${choice?.finish_reason} message_keys=${Object.keys(choice?.message || {}).join(',')}`);
+      console.warn(`[AI DEBUG] model=${model} finish_reason=${choice?.finish_reason}`);
       if (choice?.message?.refusal) console.warn(`[AI DEBUG] refusal: ${choice.message.refusal}`);
-      // Log full completion for deep inspection (truncated)
-      console.warn('[AI DEBUG] raw completion:', JSON.stringify(completion).substring(0, 800));
     }
 
-    // Primary: chat completions content
     let text = choice?.message?.content || '';
 
-    // Fallback 1: Responses API style — completion.output array (GPT-5 variants)
+    // Fallback: Responses API style (GPT-5 variants)
     if (!text && completion.output) {
       text = (completion.output || [])
         .filter(o => o.type === 'message')
@@ -277,7 +304,7 @@ class AIProviderService {
         .join('') || '';
     }
 
-    // Fallback 2: tool_calls follow-up (web search etc.)
+    // Fallback: tool_calls follow-up
     if (!text && choice?.finish_reason === 'tool_calls' && choice?.message?.tool_calls) {
       const followUp = await openai.chat.completions.create({
         model,
@@ -297,7 +324,72 @@ class AIProviderService {
       text = followUp.choices[0]?.message?.content || '';
     }
 
-    return { text, usage: completion.usage };
+    const usage = normalizeUsage(completion.usage, 'openai', model);
+    return { text, usage };
+  }
+
+  // ── ✅ NEW: Azure OpenAI ────────────────────────────────────
+  // Azure uses deployment names instead of model IDs.
+  // URL format: {endpoint}/openai/deployments/{deployment}/chat/completions?api-version={version}
+  async _callAzureOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, providerConfig }) {
+    if (!apiKey) {
+      throw new Error('Azure OpenAI membutuhkan API Key. Masukkan di kolom "API Key" pada konfigurasi bot.');
+    }
+    if (!endpoint) {
+      throw new Error('Azure OpenAI membutuhkan Endpoint URL. Contoh: https://resource-name.openai.azure.com/');
+    }
+
+    // model field = deployment name in Azure
+    const deploymentName = model;
+    // API version — use from config or default to a stable version
+    const apiVersion = providerConfig?.apiVersion || '2024-12-01-preview';
+
+    // Normalize endpoint (remove trailing slash)
+    const baseEndpoint = endpoint.replace(/\/$/, '');
+
+    // Azure OpenAI chat completions URL
+    const azureUrl = `${baseEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+
+    const userText = Array.isArray(userContent)
+      ? userContent.map(b => b.text || '').join('\n')
+      : String(userContent);
+
+    const body = {
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: userText },
+      ],
+      temperature: temp,
+      max_tokens:  maxTok,
+    };
+
+    console.log(`[Azure OpenAI] Calling deployment="${deploymentName}" api-version="${apiVersion}"`);
+
+    let response;
+    try {
+      response = await axios.post(azureUrl, body, {
+        headers: {
+          'Content-Type':  'application/json',
+          'api-key':       apiKey,  // Azure uses 'api-key' header, not 'Authorization: Bearer'
+        },
+        timeout: 120000,
+      });
+    } catch (err) {
+      const status  = err.response?.status;
+      const errData = err.response?.data;
+      const errMsg  = errData?.error?.message || errData?.message || err.message;
+
+      if (status === 401) throw new Error(`Azure OpenAI: API Key tidak valid. (${errMsg})`);
+      if (status === 404) throw new Error(`Azure OpenAI: Deployment "${deploymentName}" tidak ditemukan. Pastikan nama model/deployment sudah benar. (${errMsg})`);
+      if (status === 429) throw new Error(`Azure OpenAI: Rate limit atau quota habis. (${errMsg})`);
+      throw new Error(`Azure OpenAI error ${status || ''}: ${errMsg}`);
+    }
+
+    const text  = response.data.choices?.[0]?.message?.content || '';
+    const usage = normalizeUsage(response.data.usage, 'custom', model);
+
+    return { text, usage };
   }
 
   // ── Anthropic Claude ───────────────────────────────────────
@@ -328,7 +420,8 @@ class AIProviderService {
     );
 
     const text = response.data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
-    return { text, usage: response.data.usage };
+    const usage = normalizeUsage(response.data.usage, 'anthropic', model);
+    return { text, usage };
   }
 
   // ── Google Gemini ──────────────────────────────────────────
@@ -355,29 +448,54 @@ class AIProviderService {
     );
 
     const text = response.data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-    return { text, usage: response.data.usageMetadata };
+    const usage = normalizeUsage(response.data.usageMetadata, 'google', model);
+    return { text, usage };
   }
 
-  // ── Custom / OpenAI-compatible ─────────────────────────────
+  // ── ✅ IMPROVED: Custom / OpenAI-compatible (non-Azure) ────
+  // Supports: Ollama, LM Studio, AWS Bedrock (OpenAI-compatible mode),
+  //           Groq, Together AI, Mistral, etc.
   async _callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint }) {
-    if (!endpoint) throw new Error('Custom provider membutuhkan endpoint URL');
+    if (!endpoint) throw new Error(
+      'Custom provider membutuhkan Endpoint URL. ' +
+      'Contoh Ollama: http://localhost:11434/v1 | ' +
+      'Contoh AWS Bedrock: https://bedrock.{region}.amazonaws.com/...'
+    );
+
     const userText = Array.isArray(userContent)
       ? userContent.map(b => b.text || '').join('\n')
       : String(userContent);
 
-    const openai = new OpenAI({ apiKey: apiKey || 'none', baseURL: endpoint });
-    const completion = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
-        { role: 'user', content: userText },
-      ],
-      temperature: temp,
-      max_tokens: maxTok,
+    // Use OpenAI SDK with custom baseURL — works for any OpenAI-compatible endpoint
+    const openai = new OpenAI({
+      apiKey:  apiKey || 'none', // some local servers don't require a key
+      baseURL: endpoint,
     });
 
-    return { text: completion.choices[0].message.content, usage: completion.usage };
+    let completion;
+    try {
+      completion = await openai.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          { role: 'user', content: userText },
+        ],
+        temperature: temp,
+        max_tokens:  maxTok,
+      });
+    } catch (err) {
+      const status = err.status || err.response?.status;
+      const msg    = err.message || 'Unknown error';
+
+      if (status === 401) throw new Error(`Custom endpoint: Unauthorized — cek API Key. (${msg})`);
+      if (status === 404) throw new Error(`Custom endpoint: URL tidak ditemukan — cek Endpoint URL dan Model ID. (${msg})`);
+      throw new Error(`Custom endpoint error: ${msg}`);
+    }
+
+    const text  = completion.choices?.[0]?.message?.content || '';
+    const usage = normalizeUsage(completion.usage, 'custom', model);
+    return { text, usage };
   }
 
   async testConnection(providerConfig) {
@@ -385,8 +503,8 @@ class AIProviderService {
       const result = await this.generateCompletion({
         providerConfig,
         systemPrompt: 'You are a test assistant.',
-        messages: [],
-        userContent: 'Reply with exactly: "Connection OK"',
+        messages:     [],
+        userContent:  'Reply with exactly: "Connection OK"',
       });
       return { ok: true, message: result.text?.substring(0, 100), model: providerConfig.model };
     } catch (err) {
