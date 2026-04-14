@@ -159,6 +159,8 @@ deploy_server_dev:
     - docker pull $SERVER_IMAGE_DEV_LATEST
     # Gunakan docker compose dengan override file khusus dev
     - docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate server
+    # Pastikan mongo terhubung ke network yang benar
+    - docker network connect project-portal-ai_internal-chat-network mongo || true
     - docker image prune -f
 
 deploy_client_dev:
