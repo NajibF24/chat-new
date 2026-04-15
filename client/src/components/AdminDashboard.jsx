@@ -1286,7 +1286,7 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">System Prompt / Bot Instructions</label>
-                    <textarea className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm h-36 font-mono focus:border-primary/40 outline-none resize-none transition-all" placeholder="Example: You are an HR assistant..." value={botForm.prompt} onChange={e => setBotForm({...botForm, prompt: e.target.value})} />
+                    <textarea className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm h-36 font-mono focus:border-primary/40 outline-none resize-none transition-all" placeholder="e.g. You are an HR assistant..." value={botForm.prompt} onChange={e => setBotForm({...botForm, prompt: e.target.value})} />
                     <p className="text-[10px] text-gray-400 mt-1">💡 This prompt defines the bot's personality, tasks, and boundaries</p>
                   </div>
                   <div>
@@ -1307,9 +1307,7 @@ function AdminDashboard({ user, handleLogout }) {
                 </div>
               )}
 
-              {/* ════════════════════════════════════════════════════
-                  AI & MODEL TAB  — PATCH SECTIONS 1, 2, 3 applied
-                  ════════════════════════════════════════════════════ */}
+              {/* AI & MODEL TAB */}
               {botModalTab === 'ai' && (
                 <div className="space-y-5">
                   <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
@@ -1362,7 +1360,7 @@ function AdminDashboard({ user, handleLogout }) {
                     </div>
                   )}
 
-                  {/* ── PATCH SECTION 1: Model ID / Deployment Name (custom provider) ── */}
+                  {/* Model ID / Deployment Name (custom provider) */}
                   {currentProvider === 'custom' && (
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">
@@ -1381,11 +1379,11 @@ function AdminDashboard({ user, handleLogout }) {
                       />
                       {isAzureEndpointDetected ? (
                         <p className="text-[10px] text-blue-600 mt-1">
-                          🔵 Azure detected — masukkan <strong>Deployment Name</strong> yang sudah kamu buat di Azure OpenAI Studio
+                          🔵 Azure detected — enter the <strong>Deployment Name</strong> you created in Azure OpenAI Studio
                         </p>
                       ) : (
                         <p className="text-[10px] text-gray-400 mt-1">
-                          Sesuaikan dengan model yang tersedia di endpoint kamu
+                          Match the model available on your endpoint
                         </p>
                       )}
                     </div>
@@ -1411,7 +1409,7 @@ function AdminDashboard({ user, handleLogout }) {
                     </p>
                   </div>
 
-                  {/* ── PATCH SECTION 2: Endpoint URL with Azure detection banner ── */}
+                  {/* Endpoint URL with Azure detection */}
                   {(currentProvider === 'custom' || currentProvider === 'openai') && (
                     <div className="space-y-3">
                       <div>
@@ -1423,7 +1421,7 @@ function AdminDashboard({ user, handleLogout }) {
                           className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none"
                           placeholder={
                             currentProvider === 'custom'
-                              ? "https://your-resource.openai.azure.com/ atau https://localhost:11434/v1"
+                              ? "https://your-resource.openai.azure.com/ or https://localhost:11434/v1"
                               : "https://..."
                           }
                           value={botForm.aiProvider?.endpoint || ''}
@@ -1433,17 +1431,17 @@ function AdminDashboard({ user, handleLogout }) {
                         {/* Azure Detection Banner */}
                         {isAzureEndpointDetected && (
                           <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-[10px] text-blue-700 space-y-1">
-                            <p className="font-bold">🔵 Azure OpenAI Terdeteksi</p>
-                            <p>✅ Endpoint akan diarahkan ke: <code className="bg-blue-100 px-1 rounded">/openai/deployments/{'{deployment}'}/chat/completions</code></p>
-                            <p>✅ Header <code className="bg-blue-100 px-1 rounded">api-key</code> akan digunakan (bukan Bearer token)</p>
-                            <p>📝 Isi <strong>Model ID</strong> dengan <strong>Deployment Name</strong> kamu di Azure OpenAI Studio</p>
+                            <p className="font-bold">🔵 Azure OpenAI Detected</p>
+                            <p>✅ Endpoint will be routed to: <code className="bg-blue-100 px-1 rounded">/openai/deployments/{'{deployment}'}/chat/completions</code></p>
+                            <p>✅ <code className="bg-blue-100 px-1 rounded">api-key</code> header will be used (instead of Bearer token)</p>
+                            <p>📝 Enter your <strong>Deployment Name</strong> from Azure OpenAI Studio as the Model ID</p>
                           </div>
                         )}
 
                         {/* Generic custom endpoint hints */}
                         {currentProvider === 'custom' && !isAzureEndpointDetected && botForm.aiProvider?.endpoint && (
                           <div className="mt-2 p-3 bg-gray-50 border border-gray-100 rounded-xl text-[10px] text-gray-500 space-y-0.5">
-                            <p className="font-bold text-gray-600">💡 Format endpoint:</p>
+                            <p className="font-bold text-gray-600">💡 Endpoint format:</p>
                             <p>• <strong>Azure:</strong> <code>https://resource.openai.azure.com/</code></p>
                             <p>• <strong>Ollama:</strong> <code>http://localhost:11434/v1</code></p>
                             <p>• <strong>LM Studio:</strong> <code>http://localhost:1234/v1</code></p>
@@ -1466,7 +1464,7 @@ function AdminDashboard({ user, handleLogout }) {
                             onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiVersion: e.target.value } }))}
                           />
                           <p className="text-[10px] text-gray-400 mt-1">
-                            Kosongkan untuk pakai default (<code>2024-12-01-preview</code>). Cek Azure OpenAI docs untuk versi terbaru.
+                            Leave blank to use default (<code>2024-12-01-preview</code>). Check Azure OpenAI docs for the latest version.
                           </p>
                         </div>
                       )}
@@ -1583,7 +1581,7 @@ function AdminDashboard({ user, handleLogout }) {
                   {editingBot && knowledgeFiles.some(f => f.originalName?.toLowerCase().endsWith('.pptx')) && (
                     <div className="border border-indigo-100 bg-indigo-50 rounded-xl p-3">
                       <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-2">
-                        🎨 Template PPT (dari Knowledge Base)
+                        🎨 PPT Template (from Knowledge Base)
                       </label>
                       <select
                         className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-400"
@@ -1595,7 +1593,7 @@ function AdminDashboard({ user, handleLogout }) {
                           })
                         }
                       >
-                        <option value="">— Gunakan tema GYS default —</option>
+                        <option value="">— Use GYS default theme —</option>
                         {knowledgeFiles
                           .filter(f => f.originalName?.toLowerCase().endsWith('.pptx'))
                           .map(f => (
@@ -1605,7 +1603,7 @@ function AdminDashboard({ user, handleLogout }) {
                           ))}
                       </select>
                       <p className="text-[9px] text-indigo-600 mt-1">
-                        Bot akan mengadopsi warna & font dari template PPTX yang dipilih saat membuat presentasi
+                        The bot will adopt colors &amp; fonts from the selected PPTX template when creating presentations
                       </p>
                     </div>
                   )}
@@ -1627,7 +1625,7 @@ function AdminDashboard({ user, handleLogout }) {
                         ) : (
                           <>
                             <div className="text-4xl mb-2">📁</div>
-                            <p className="text-sm font-semibold text-gray-600">Click or drag & drop files</p>
+                            <p className="text-sm font-semibold text-gray-600">Click or drag &amp; drop files</p>
                             <p className="text-xs text-gray-400 mt-1">
                               PDF • Word • Excel • PowerPoint • TXT • CSV • MD
                             </p>
@@ -1747,13 +1745,13 @@ function AdminDashboard({ user, handleLogout }) {
                         {waha.enabled && (
                           <div className="space-y-4 mt-4 pt-4 border-t border-[#25D366]/20">
 
-                            {/* ── Basic Config ── */}
+                            {/* Basic Config */}
                             <div className="grid grid-cols-2 gap-3">
                               <div className="col-span-2">
                                 <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">WAHA Server URL</label>
                                 <input type="text" value={waha.endpoint || ''} onChange={e => setWaha({ endpoint: e.target.value })}
                                   placeholder="http://your-waha-server:3000" className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
-                                <p className="text-[9px] text-gray-400 mt-0.5">Base URL saja, tanpa /api/sendText</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5">Base URL only, without /api/sendText</p>
                               </div>
                               <div>
                                 <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Session Name</label>
@@ -1767,12 +1765,12 @@ function AdminDashboard({ user, handleLogout }) {
                               </div>
                             </div>
 
-                            {/* ── Webhook Config ── */}
+                            {/* Webhook Config */}
                             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
                               <div className="flex justify-between items-center">
                                 <div>
-                                  <span className="text-xs font-semibold text-blue-800">🔗 Webhook (Terima Pesan Masuk)</span>
-                                  <p className="text-[9px] text-blue-600 mt-0.5">Bot merespons pesan dari WhatsApp secara real-time</p>
+                                  <span className="text-xs font-semibold text-blue-800">🔗 Webhook (Receive Incoming Messages)</span>
+                                  <p className="text-[9px] text-blue-600 mt-0.5">Bot responds to incoming WhatsApp messages in real-time</p>
                                 </div>
                                 <button type="button" onClick={() => setWaha({ webhookEnabled: !waha.webhookEnabled })}
                                   className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${waha.webhookEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}>
@@ -1782,18 +1780,18 @@ function AdminDashboard({ user, handleLogout }) {
                               {waha.webhookEnabled && (
                                 <div className="space-y-2 pt-2 border-t border-blue-100">
                                   <div className="bg-blue-100 border border-blue-200 rounded-lg px-2.5 py-2 text-[10px] text-blue-700">
-                                    <p className="font-bold mb-1">⚙️ Konfigurasi WAHA:</p>
-                                    <p>Set webhook URL ke: <code className="bg-blue-50 px-1 rounded font-mono">{window?.location?.origin || 'https://chat.gyssteel.com'}/api/waha/webhook/{editingBot?._id || 'BOT_ID'}</code></p>
+                                    <p className="font-bold mb-1">⚙️ WAHA Configuration:</p>
+                                    <p>Set webhook URL to: <code className="bg-blue-50 px-1 rounded font-mono">{window?.location?.origin || 'https://chat.gyssteel.com'}/api/waha/webhook/{editingBot?._id || 'BOT_ID'}</code></p>
                                   </div>
                                   <div className="grid grid-cols-2 gap-2">
                                     <div>
                                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Bot Phone Number</label>
                                       <input type="text" value={waha.botPhoneNumber || ''} onChange={e => setWaha({ botPhoneNumber: e.target.value })}
                                         placeholder="628123456789" className="w-full bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
-                                      <p className="text-[9px] text-gray-400 mt-0.5">Untuk deteksi @tag di grup</p>
+                                      <p className="text-[9px] text-gray-400 mt-0.5">For @tag detection in groups</p>
                                     </div>
                                     <div>
-                                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Webhook Secret (opsional)</label>
+                                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Webhook Secret (optional)</label>
                                       <input type="text" value={waha.webhookSecret || ''} onChange={e => setWaha({ webhookSecret: e.target.value })}
                                         placeholder="Optional secret" className="w-full bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
                                     </div>
@@ -1802,18 +1800,18 @@ function AdminDashboard({ user, handleLogout }) {
                               )}
                             </div>
 
-                            {/* ── Targets (Multiple) ── */}
+                            {/* Targets (Multiple) */}
                             <div>
                               <div className="flex items-center justify-between mb-2">
                                 <div>
                                   <span className="text-xs font-semibold text-gray-700">📱 Target Chats</span>
-                                  <p className="text-[9px] text-gray-400">Chat pribadi atau grup yang akan menerima/mengirim pesan</p>
+                                  <p className="text-[9px] text-gray-400">Private chats or groups that will receive/send messages</p>
                                 </div>
-                                <button type="button" onClick={addTarget} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Tambah Target</button>
+                                <button type="button" onClick={addTarget} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Add Target</button>
                               </div>
                               <div className="space-y-2">
                                 {targets.length === 0 && (
-                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">Belum ada target. Klik &quot;+ Tambah Target&quot;</p>
+                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">No targets yet. Click &quot;+ Add Target&quot;</p>
                                 )}
                                 {targets.map(target => (
                                   <div key={target._id} className={`border rounded-xl p-3 space-y-2 ${target.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
@@ -1830,11 +1828,11 @@ function AdminDashboard({ user, handleLogout }) {
                                             placeholder="628xxx@c.us or @g.us" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none font-mono" />
                                         </div>
                                         <div>
-                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Tipe</label>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Type</label>
                                           <select value={target.type || 'private'} onChange={e => updateTarget(target._id, { type: e.target.value })}
                                             className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none">
-                                            <option value="private">💬 Pribadi</option>
-                                            <option value="group">👥 Grup</option>
+                                            <option value="private">💬 Private</option>
+                                            <option value="group">👥 Group</option>
                                           </select>
                                         </div>
                                       </div>
@@ -1847,14 +1845,14 @@ function AdminDashboard({ user, handleLogout }) {
                                         )}
                                         <label className="flex items-center gap-1 text-[10px] cursor-pointer">
                                           <input type="checkbox" checked={target.active !== false} onChange={e => updateTarget(target._id, { active: e.target.checked })} className="accent-[#25D366]" />
-                                          Aktif
+                                          Active
                                         </label>
-                                        <button type="button" onClick={() => removeTarget(target._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Hapus</button>
+                                        <button type="button" onClick={() => removeTarget(target._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Remove</button>
                                       </div>
                                     </div>
                                     {target.type === 'group' && target.tagOnly && (
                                       <p className="text-[9px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
-                                        ⚡ Mode @tag: Bot hanya merespons ketika di-tag (@mention) di grup ini
+                                        ⚡ @tag mode: Bot only responds when @mentioned in this group
                                       </p>
                                     )}
                                   </div>
@@ -1862,61 +1860,61 @@ function AdminDashboard({ user, handleLogout }) {
                               </div>
                             </div>
 
-                            {/* ── Schedules (Flexible) ── */}
+                            {/* Schedules (Flexible) */}
                             <div>
                               <div className="flex items-center justify-between mb-2">
                                 <div>
-                                  <span className="text-xs font-semibold text-gray-700">⏰ Jadwal Pengiriman</span>
-                                  <p className="text-[9px] text-gray-400">Kirim pesan otomatis ke target secara terjadwal</p>
+                                  <span className="text-xs font-semibold text-gray-700">⏰ Send Schedules</span>
+                                  <p className="text-[9px] text-gray-400">Automatically send messages to targets on a schedule</p>
                                 </div>
-                                <button type="button" onClick={addSchedule} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Tambah Jadwal</button>
+                                <button type="button" onClick={addSchedule} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Add Schedule</button>
                               </div>
                               <div className="space-y-3">
                                 {schedules.length === 0 && (
-                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">Belum ada jadwal. Klik &quot;+ Tambah Jadwal&quot;</p>
+                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">No schedules yet. Click &quot;+ Add Schedule&quot;</p>
                                 )}
                                 {schedules.map(sched => (
                                   <div key={sched._id} className={`border rounded-xl p-3 space-y-3 ${sched.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
                                     <div className="flex items-start gap-2">
                                       <div className="flex-1 grid grid-cols-2 gap-2">
                                         <div>
-                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Label Jadwal</label>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Schedule Label</label>
                                           <input type="text" value={sched.label || ''} onChange={e => updateSchedule(sched._id, { label: e.target.value })}
                                             placeholder="e.g. Morning Report" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                         <div>
-                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Tipe Jadwal</label>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Schedule Type</label>
                                           <select value={sched.scheduleType || 'daily'} onChange={e => updateSchedule(sched._id, { scheduleType: e.target.value })}
                                             className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none">
-                                            <option value="daily">📅 Daily (sekali/hari)</option>
-                                            <option value="multiple">🔢 Multiple times/hari</option>
-                                            <option value="interval">🔄 Interval (tiap N menit)</option>
+                                            <option value="daily">📅 Daily (once/day)</option>
+                                            <option value="multiple">🔢 Multiple times/day</option>
+                                            <option value="interval">🔄 Interval (every N minutes)</option>
                                           </select>
                                         </div>
                                       </div>
                                       <div className="flex flex-col gap-1 flex-shrink-0 pt-4">
                                         <label className="flex items-center gap-1 text-[10px] cursor-pointer">
                                           <input type="checkbox" checked={sched.active !== false} onChange={e => updateSchedule(sched._id, { active: e.target.checked })} className="accent-[#25D366]" />
-                                          Aktif
+                                          Active
                                         </label>
-                                        <button type="button" onClick={() => removeSchedule(sched._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Hapus</button>
+                                        <button type="button" onClick={() => removeSchedule(sched._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Remove</button>
                                       </div>
                                     </div>
 
                                     {sched.scheduleType === 'daily' && (
                                       <div className="flex items-center gap-2">
-                                        <label className="text-[10px] font-semibold text-gray-500 whitespace-nowrap">Waktu:</label>
+                                        <label className="text-[10px] font-semibold text-gray-500 whitespace-nowrap">Time:</label>
                                         <input type="time" value={sched.time || '08:00'} onChange={e => updateSchedule(sched._id, { time: e.target.value })}
                                           className="bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
-                                        <span className="text-[10px] text-gray-400">Kirim sekali per hari pada waktu ini</span>
+                                        <span className="text-[10px] text-gray-400">Send once per day at this time</span>
                                       </div>
                                     )}
                                     {sched.scheduleType === 'multiple' && (
                                       <div className="space-y-1.5">
                                         <div className="flex items-center justify-between">
-                                          <label className="text-[10px] font-semibold text-gray-500">Waktu pengiriman:</label>
+                                          <label className="text-[10px] font-semibold text-gray-500">Send times:</label>
                                           <button type="button" onClick={() => updateSchedule(sched._id, { times: [...(sched.times || []), '08:00'] })}
-                                            className="text-[10px] text-[#25D366] font-semibold">+ Tambah Waktu</button>
+                                            className="text-[10px] text-[#25D366] font-semibold">+ Add Time</button>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                           {(sched.times || []).map((t, ti) => (
@@ -1936,18 +1934,18 @@ function AdminDashboard({ user, handleLogout }) {
                                     {sched.scheduleType === 'interval' && (
                                       <div className="grid grid-cols-3 gap-2">
                                         <div>
-                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Setiap (menit)</label>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Every (minutes)</label>
                                           <input type="number" min="5" max="1440" value={sched.intervalMinutes || 60}
                                             onChange={e => updateSchedule(sched._id, { intervalMinutes: parseInt(e.target.value) || 60 })}
                                             className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                         <div>
-                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Mulai Jam</label>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Start Time</label>
                                           <input type="time" value={sched.intervalStart || '08:00'} onChange={e => updateSchedule(sched._id, { intervalStart: e.target.value })}
                                             className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                         <div>
-                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Selesai Jam</label>
+                                          <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">End Time</label>
                                           <input type="time" value={sched.intervalEnd || '17:00'} onChange={e => updateSchedule(sched._id, { intervalEnd: e.target.value })}
                                             className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
@@ -1955,15 +1953,15 @@ function AdminDashboard({ user, handleLogout }) {
                                     )}
 
                                     <div>
-                                      <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Prompt untuk AI</label>
+                                      <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Prompt for AI</label>
                                       <input type="text" value={sched.prompt || ''} onChange={e => updateSchedule(sched._id, { prompt: e.target.value })}
-                                        placeholder="e.g. Buat laporan ringkasan hari ini" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        placeholder="e.g. Generate a summary report for today" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
                                     </div>
 
                                     {targets.length > 0 && (
                                       <div>
                                         <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-1">
-                                          Kirim ke: {(!sched.targetIds || sched.targetIds.length === 0) ? '(Semua target aktif)' : ''}
+                                          Send to: {(!sched.targetIds || sched.targetIds.length === 0) ? '(All active targets)' : ''}
                                         </label>
                                         <div className="flex flex-wrap gap-1.5">
                                           {targets.filter(t => t.active).map(t => (
@@ -1983,7 +1981,7 @@ function AdminDashboard({ user, handleLogout }) {
                                             </label>
                                           ))}
                                         </div>
-                                        <p className="text-[9px] text-gray-400 mt-1">Kosongkan = kirim ke semua target aktif</p>
+                                        <p className="text-[9px] text-gray-400 mt-1">Leave empty to send to all active targets</p>
                                       </div>
                                     )}
                                   </div>
@@ -1993,10 +1991,10 @@ function AdminDashboard({ user, handleLogout }) {
 
                             {/* Info box */}
                             <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-xl px-3 py-2 text-[10px] text-green-800 space-y-0.5">
-                              <p className="font-bold">💡 Cara Kerja:</p>
-                              <p>• <strong>Webhook ON</strong>: Bot merespons pesan masuk secara real-time (set URL ke WAHA)</p>
-                              <p>• <strong>@tag Only</strong>: Bot di grup hanya merespons saat di-mention (@tag)</p>
-                              <p>• <strong>Jadwal</strong>: Bot mengirim pesan AI secara otomatis sesuai jadwal ke semua target</p>
+                              <p className="font-bold">💡 How It Works:</p>
+                              <p>• <strong>Webhook ON</strong>: Bot responds to incoming messages in real-time (set URL in WAHA)</p>
+                              <p>• <strong>@tag Only</strong>: Bot in groups only responds when @mentioned</p>
+                              <p>• <strong>Schedule</strong>: Bot automatically sends AI messages on schedule to all targets</p>
                             </div>
                           </div>
                         )}

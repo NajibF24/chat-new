@@ -149,7 +149,7 @@ router.get('/stats', requireAdminOrBotCreator, async (req, res) => {
         { $sort: { count: -1 } }, { $limit: 5 }, { $project: { _id: 0, name: 1, count: 1 } },
       ]),
       Chat.aggregate([
-        { $match: { role: 'user' } },
+        { $match: { role: 'user', createdAt: { $gte: last7Days } } },
         { $group: { _id: '$userId', msgCount: { $sum: 1 } } },
         { $sort: { msgCount: -1 } }, { $limit: 5 },
         { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'userInfo' } },
