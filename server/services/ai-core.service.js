@@ -1,8 +1,13 @@
 // server/services/ai-core.service.js
-// ✅ PATCH: 
+// ✅ PATCH v1.1.0:
 //   1. PPT command now reads uploaded chat files (PDF/DOCX/XLSX) deeply
 //   2. Extracts images from uploaded documents for PPT embedding
 //   3. Token usage now consistent via normalizeUsage() from ai-provider.service.js
+//   4. FIX: Bot now remembers conversation history when generating PPT
+//      - History filter no longer too aggressive (only strips download links)
+//      - Conversation context always included (no longer keyword-gated)
+//      - Auto-detects draft/outline structures from prior messages
+//      - Clear content source priority: uploaded doc > draft > conversation > KB > user msg
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -255,19 +260,6 @@ Output format:
 // PPT HELPER FUNCTIONS
 // ─────────────────────────────────────────────────────────────
 
-const PPT_RESPONSE_MARKERS = [
-  '✅ **Presentasi berhasil',
-  '✅ **GYS Presentation successfully',
-  '⬇️ Download',
-  '/api/files/',
-  '.pptx',
-  '📑 **Jumlah Slide',
-  '📑 **Total Slides',
-  'GYS Corporate',
-  'GYS Gamma',
-  'fallback mode',
-];
-
 function isPptCommand(message = '') {
   const t = (message || '').trim().toLowerCase();
   return (
@@ -281,7 +273,7 @@ function isPptCommand(message = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ✅ NEW: Extract images from an uploaded file (for chat PPT)
+// Extract images from an uploaded file (for chat PPT)
 // Returns array of { path, url, caption, mimeType }
 // ─────────────────────────────────────────────────────────────
 async function extractImagesFromUploadedFile(filePath, originalName) {
@@ -353,7 +345,7 @@ async function extractImagesFromUploadedFile(filePath, originalName) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ✅ NEW: Deep read of uploaded document for PPT context
+// Deep read of uploaded document for PPT context
 // Returns structured text with section markers
 // ─────────────────────────────────────────────────────────────
 async function deepReadDocument(filePath, originalName, mimetype) {
@@ -367,7 +359,6 @@ async function deepReadDocument(filePath, originalName, mimetype) {
       content = data.text || '';
 
     } else if (ext === '.docx' || ext === '.doc' || (mimetype || '').includes('wordprocessingml')) {
-      // Extract with full structure — paragraphs as sections
       const result = await mammoth.extractRawText({ path: filePath });
       content = result.value || '';
 
@@ -381,7 +372,6 @@ async function deepReadDocument(filePath, originalName, mimetype) {
       content = parts.join('\n\n');
 
     } else if (ext === '.pptx' || ext === '.ppt' || (mimetype || '').includes('presentationml')) {
-      // Extract text from each slide
       try {
         const JSZip   = (await import('jszip')).default;
         const data    = fs.readFileSync(filePath);
@@ -597,25 +587,50 @@ class AICoreService {
 
   // ─────────────────────────────────────────────────────────
   // PPT COMMAND HANDLER
-  // ✅ UPDATED: reads uploaded chat files deeply, extracts images
+  // ✅ PATCHED v1.1.0: Full conversation memory support
+  //    - History filter fixed (no longer drops valid messages)
+  //    - Context always included (no longer keyword-gated)
+  //    - Auto draft detection from prior messages
   // ─────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
-      // ── STEP 0: Load DB history ──────────────────────────────
+      // ── STEP 0: Load DB history — AMBIL SEMUA, filter minimal ──────────────
+      // FIX: Sebelumnya filter PPT_RESPONSE_MARKERS terlalu agresif dan membuang
+      //      pesan-pesan valid berisi draft/struktur dari user.
       let dbHistory = [];
       try {
         if (threadId) {
-          dbHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(30).lean();
-          dbHistory = dbHistory.filter(h =>
-            h.content && !PPT_RESPONSE_MARKERS.some(m => h.content.includes(m))
-          );
+          const rawHistory = await Chat.find({ threadId }).sort({ createdAt: 1 }).limit(50).lean();
+          dbHistory = rawHistory.filter(h => {
+            if (!h.content || h.content.trim().length < 10) return false;
+            // Hanya buang pesan yang berisi link download PPTX (output bot sebelumnya)
+            const isDownloadMsg = h.content.includes('/api/files/') && h.content.includes('.pptx');
+            return !isDownloadMsg;
+          });
         }
-      } catch (e) { console.warn('[PPT] DB history error:', e.message); }
- 
-      // ── STEP 0.5: Knowledge base template + images ───────────
-      const freshBot     = await Bot.findById(botId).lean();
+      } catch (e) {
+        console.warn('[PPT] DB history error:', e.message);
+      }
+
+      // ── STEP 0.5: Gabungkan DB history + in-memory history ─────────────────
+      // in-memory history (dari frontend) mungkin lebih fresh, merge keduanya
+      const inMemoryHistory = (history || []).filter(h => {
+        if (!h.content || h.content.trim().length < 10) return false;
+        const isDownloadMsg = h.content.includes('/api/files/') && h.content.includes('.pptx');
+        return !isDownloadMsg;
+      });
+
+      // Pakai DB history sebagai base (lebih lengkap), tambahkan in-memory kalau ada yg baru
+      const dbIds = new Set(dbHistory.map(h => String(h._id)));
+      const mergedHistory = [
+        ...dbHistory,
+        ...inMemoryHistory.filter(h => !h._id || !dbIds.has(String(h._id))),
+      ];
+
+      // ── STEP 0.6: Load knowledge base + template ────────────────────────────
+      const freshBot       = await Bot.findById(botId).lean();
       const knowledgeFiles = freshBot?.knowledgeFiles || [];
- 
+
       let templatePath = null;
       if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
         const templateFile = knowledgeFiles.find(f =>
@@ -626,7 +641,7 @@ class AICoreService {
           templatePath = templateFile.path;
         }
       }
- 
+
       if (!templatePath) {
         const pptxFile = knowledgeFiles.find(f =>
           f.originalName?.toLowerCase().endsWith('.pptx') &&
@@ -634,177 +649,217 @@ class AICoreService {
         );
         if (pptxFile) templatePath = pptxFile.path;
       }
- 
-      // Images from knowledge base files
+
       const kbExtractedImages = KnowledgeBaseService.getExtractedImages(
         knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
       );
- 
+
       let knowledgeCtx = '';
       if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
         knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
           knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
         );
       }
- 
-      // ── STEP 1: Read uploaded chat document ─────────────────
+
+      // ── STEP 1: Read uploaded chat document ─────────────────────────────────
       let uploadedDocContent = '';
       let uploadedDocImages  = [];
       let uploadedDocName    = '';
- 
+
       if (attachedFile) {
         const physicalPath = attachedFile.serverPath || attachedFile.path;
         const originalName = attachedFile.originalname || attachedFile.filename || '';
         uploadedDocName    = originalName;
- 
+
         if (physicalPath && fs.existsSync(physicalPath)) {
           console.log(`[PPT] Reading uploaded document: "${originalName}"`);
- 
           uploadedDocContent = await deepReadDocument(physicalPath, originalName, attachedFile.mimetype);
- 
+
           const ext = path.extname(originalName).toLowerCase();
           if (['.docx', '.pptx', '.xlsx'].includes(ext)) {
             uploadedDocImages = await extractImagesFromUploadedFile(physicalPath, originalName);
-            console.log(`[PPT] Extracted ${uploadedDocImages.length} raw images from "${originalName}"`);
           }
- 
           console.log(`[PPT] Document content: ${uploadedDocContent.length} chars`);
         }
       }
 
-      // ── Combine ALL raw images (before smart selection) ──────
-      // ✅ Smart selection happens AFTER slide content is generated
-      //    so AI can score images against actual slide titles & content
-      const rawExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
-      console.log(`[PPT] Raw images pool: ${rawExtractedImages.length} total (uploaded: ${uploadedDocImages.length}, KB: ${kbExtractedImages.length})`);
+      // ── STEP 1.5: Extract conversation context — SELALU, bukan hanya kalau "refersToHistory" ──
+      // FIX UTAMA: Bot harus selalu melihat conversation sebelumnya sebagai draft/konteks.
+      // Sebelumnya hanya dipakai kalau ada keyword "berdasarkan" / "based on" dll.
+      let conversationContext = '';
+      let draftContent        = '';  // Konten yang terdeteksi sebagai "draft/struktur"
 
-       // ── STEP 2: Build content user message ───────────────────
-      const userRequest = message || '';
-      const refersToHistory = /\b(based on|from|use|history|chat|conversation|above|previous|berdasarkan|dari|gunakan|pakai|tadi|di atas|sebelumnya)\b/i.test(userRequest);
- 
-      let historicalContent = '';
-      if (refersToHistory && dbHistory.length > 0) {
-        historicalContent = dbHistory
-          .filter(h => h.content && h.content.length > 100)
-          .map(h => `[${h.role === 'assistant' ? 'ASSISTANT' : 'USER'}]:\n${h.content}`)
-          .join('\n\n---\n\n')
-          .substring(0, 8000);
+      if (mergedHistory.length > 0) {
+        // Ambil pesan-pesan meaningful (>50 chars) dari conversation
+        const meaningfulMessages = mergedHistory
+          .filter(h => h.content && h.content.trim().length > 50)
+          .slice(-30); // Max 30 pesan terakhir
+
+        if (meaningfulMessages.length > 0) {
+          // ── Deteksi "draft" dari conversation ──────────────────────────────
+          // Cari pesan user yang kemungkinan berisi struktur / outline slide
+          const draftKeywords = [
+            'slide 1', 'slide 2', 'slide 3', 'slide ke',
+            'bab 1', 'bab 2', 'section 1',
+            'outline', 'struktur', 'structure', 'draf', 'draft',
+            'poin 1', 'poin 2', 'point 1',
+            '1.', '2.', '3.',  // numbered list
+            '- ', '* ',        // bullet list
+            'agenda', 'konten', 'isi slide', 'slide content',
+            'judul slide', 'slide title',
+          ];
+
+          const draftMessages = meaningfulMessages.filter(h => {
+            if (h.role !== 'user') return false;
+            const lower = h.content.toLowerCase();
+            return draftKeywords.some(kw => lower.includes(kw));
+          });
+
+          if (draftMessages.length > 0) {
+            // Ambil draft message terpanjang/terbaru sebagai primary draft
+            const primaryDraft = draftMessages
+              .sort((a, b) => b.content.length - a.content.length)[0];
+            draftContent = primaryDraft.content;
+            console.log(`[PPT] Draft detected in conversation (${draftContent.length} chars)`);
+          }
+
+          // ── Build conversation string untuk AI ─────────────────────────────
+          // Selalu include — ini adalah "context memory" bot
+          const historyForContext = meaningfulMessages.slice(-20); // last 20 meaningful
+          conversationContext = historyForContext
+            .map(h => `[${h.role === 'assistant' ? 'BOT' : 'USER'}]: ${h.content.substring(0, 500)}`)
+            .join('\n\n---\n\n');
+
+          console.log(`[PPT] Conversation context: ${historyForContext.length} messages, ${conversationContext.length} chars`);
+        }
       }
- 
-      // ── STEP 3: CONTENT GENERATION ──────────────────────────
-      console.log('[PPT] Step 1 — generating content...');
- 
+
+      const rawExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
+
+      // ── STEP 2: Build content generation prompt ──────────────────────────────
+      // FIX: Prioritas sumber konten yang jelas:
+      //   1. Uploaded document (jika ada)
+      //   2. Draft dari conversation (jika terdeteksi)
+      //   3. Conversation context secara umum
+      //   4. User message saat ini
+      //   5. Knowledge base
+      const userRequest = message || '';
       let contentUserMsg = '';
- 
+
+      // --- Sumber 1: Dokumen yang di-upload ---
       if (uploadedDocContent) {
         contentUserMsg += `=== DOKUMEN YANG DI-UPLOAD: "${uploadedDocName}" ===\n`;
         contentUserMsg += uploadedDocContent + '\n\n';
-        contentUserMsg += `=== INSTRUKSI ===\n`;
-        contentUserMsg += `Buat presentasi berdasarkan dokumen di atas. `;
-        contentUserMsg += `Gunakan konten dokumen sebagai sumber utama — jangan mengarang data.\n`;
-        contentUserMsg += `Struktur slide harus mencerminkan struktur dokumen aslinya.\n`;
+        contentUserMsg += `INSTRUKSI: Buat presentasi berdasarkan dokumen di atas sebagai sumber utama.\n`;
         if (rawExtractedImages.length > 0) {
-          contentUserMsg += `Dokumen memiliki ${rawExtractedImages.length} gambar tersedia — tandai slide yang relevan dengan [HAS_IMAGE] jika gambar akan berguna di slide tersebut.\n`;
+          contentUserMsg += `Dokumen memiliki ${rawExtractedImages.length} gambar tersedia.\n`;
         }
-        contentUserMsg += `\n`;
+        contentUserMsg += '\n';
       }
- 
+
+      // --- Sumber 2: Draft yang terdeteksi dari conversation ---
+      if (draftContent && !uploadedDocContent) {
+        contentUserMsg += `=== DRAFT / STRUKTUR DARI CONVERSATION ===\n`;
+        contentUserMsg += `User sebelumnya telah memberikan draft/struktur berikut:\n\n`;
+        contentUserMsg += draftContent + '\n\n';
+        contentUserMsg += `INSTRUKSI: Gunakan draft di atas sebagai kerangka utama presentasi. `;
+        contentUserMsg += `Kembangkan setiap poin menjadi slide yang kaya konten.\n\n`;
+      }
+
+      // --- Sumber 3: Conversation context (SELALU include kalau ada) ---
+      if (conversationContext) {
+        contentUserMsg += `=== RIWAYAT PERCAKAPAN (KONTEKS) ===\n`;
+        contentUserMsg += `Berikut adalah diskusi sebelumnya yang relevan dengan presentasi ini:\n\n`;
+        contentUserMsg += conversationContext.substring(0, 6000) + '\n\n';  // Max 6000 chars
+      }
+
+      // --- Sumber 4: Knowledge base ---
       if (knowledgeCtx) {
-        contentUserMsg += `KNOWLEDGE BASE CONTEXT:\n${knowledgeCtx.substring(0, 4000)}\n\n`;
+        contentUserMsg += `=== KNOWLEDGE BASE ===\n`;
+        contentUserMsg += knowledgeCtx.substring(0, 3000) + '\n\n';
       }
- 
-      if (historicalContent) {
-        contentUserMsg += `RIWAYAT PERCAKAPAN:\n${historicalContent}\n\n`;
-      }
- 
-      contentUserMsg += `PERMINTAAN USER: ${userRequest}\n\n`;
-      contentUserMsg += `PENTING: Match bahasa user (Indonesia → Bahasa Indonesia). Auto-detect best layout per slide.`;
- 
+
+      // --- Sumber 5: User message saat ini ---
+      contentUserMsg += `=== PERMINTAAN USER SAAT INI ===\n`;
+      contentUserMsg += userRequest + '\n\n';
+
+      // --- Instruksi final ---
+      contentUserMsg += `PENTING:\n`;
+      contentUserMsg += `- Match bahasa user (Indonesia → Bahasa Indonesia, English → English)\n`;
+      contentUserMsg += `- Jika ada draft/struktur di atas, IKUTI struktur tersebut dengan setia\n`;
+      contentUserMsg += `- Jika ada riwayat percakapan, gunakan informasi yang dibahas sebagai konten slide\n`;
+      contentUserMsg += `- Auto-detect best layout per slide (GRID, STATS, TIMELINE, TABLE, dll)\n`;
+      contentUserMsg += `- Expand setiap poin menjadi konten yang kaya dan informatif\n`;
+
+      // ── STEP 3: Content Generation ──────────────────────────────────────────
+      console.log('[PPT] Step 1 — generating content with conversation context...');
+
       const contentResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
         messages:       [],
         userContent:    contentUserMsg,
       });
- 
+
       const slideContent = contentResult.text;
       if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
- 
+
       const titleMatch = slideContent.match(/^#\s+(.+)/m);
       const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
- 
+
       const contentUsage = normalizeUsage(contentResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
       if (contentUsage) {
         console.log(`[PPT] Content tokens — prompt: ${contentUsage.prompt_tokens}, completion: ${contentUsage.completion_tokens}, total: ${contentUsage.total_tokens}`);
       }
- 
+
       console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
- 
-      // ── STEP 4: JSON CONVERSION ──────────────────────────────
+
+      // ── STEP 4: JSON Conversion ──────────────────────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
- 
+
       const jsonResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
         messages:       [],
         userContent:    `Convert this presentation to JSON:\n\n${slideContent}`,
       });
- 
+
       let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
       const jsonStart = rawJson.indexOf('{');
       const jsonEnd   = rawJson.lastIndexOf('}');
       if (jsonStart !== -1 && jsonEnd !== -1) rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
- 
+
       let pptData;
       try {
         pptData = JSON.parse(rawJson);
       } catch (parseErr) {
         throw new Error('AI gagal membuat format data presentasi. Silakan coba lagi.');
       }
- 
+
       if (!pptData?.slides?.length) throw new Error('JSON tidak memiliki slides.');
- 
+
       const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
- 
-      // ── STEP 4.5: ✅ SMART IMAGE SELECTION ──────────────────
-      // Now that we have slide content & titles, AI can intelligently
-      // pick which images are actually relevant for this presentation.
+
+      // ── STEP 4.5: Smart Image Selection ─────────────────────────────────────
       let finalExtractedImages = [];
- 
+
       if (rawExtractedImages.length > 0) {
         console.log(`[PPT] Step 2.5 — smart image selection (${rawExtractedImages.length} candidates)...`);
         try {
-          // Lazy import to avoid circular dependency
           const { selectRelevantImages } = await import('./smart-image-selector.service.js');
- 
           finalExtractedImages = await selectRelevantImages(
-            rawExtractedImages,
-            userRequest,
-            slideContent,     // AI uses actual slide titles to judge relevance
-            bot.aiProvider,   // Use same AI provider as the bot
-            6                 // max 6 images in a PPT
+            rawExtractedImages, userRequest, slideContent, bot.aiProvider, 6
           );
- 
           console.log(`[PPT] ✅ Smart selection: ${rawExtractedImages.length} raw → ${finalExtractedImages.length} selected`);
- 
-          if (finalExtractedImages.length > 0) {
-            finalExtractedImages.forEach((img, i) =>
-              console.log(`[PPT]   [${i+1}] ${img.filename || img.caption || 'unnamed'} (${img.fileSize ? Math.round(img.fileSize/1024)+'KB' : '?'})`)
-            );
-          } else {
-            console.log(`[PPT]   → No images selected as relevant. Presentation will be text-only.`);
-          }
- 
         } catch (selErr) {
-          // Non-fatal: if smart selection fails, use simple size filter only
-          console.warn('[PPT] Smart image selection failed, using size-filtered fallback:', selErr.message);
+          console.warn('[PPT] Smart image selection failed:', selErr.message);
           const { filterValidImages } = await import('./smart-image-selector.service.js').catch(() => ({ filterValidImages: imgs => imgs }));
           finalExtractedImages = filterValidImages ? filterValidImages(rawExtractedImages) : rawExtractedImages;
         }
       }
- 
-      // ── STEP 5: RENDER PPTX ──────────────────────────────────
+
+      // ── STEP 5: Render PPTX ─────────────────────────────────────────────────
       const outputDir = path.join(process.cwd(), 'data', 'files');
       const result = await PptxService.generate({
         pptData,
@@ -813,86 +868,83 @@ class AICoreService {
         outputDir,
         styleDesc:       templatePath ? 'Custom Template' : 'GYS Gamma Style',
         templatePath,
-        extractedImages: finalExtractedImages,  // ✅ Only relevant images
+        extractedImages: finalExtractedImages,
       });
- 
-      // ── STEP 6: BUILD RESPONSE ───────────────────────────────
-      const reqLower = userRequest.toLowerCase();
-      const engWords = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
-      const indWords = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
-      const isEnglish = engWords.length > indWords.length;
- 
+
+      // ── STEP 6: Build Response ───────────────────────────────────────────────
+      const reqLower   = userRequest.toLowerCase();
+      const engWords   = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
+      const indWords   = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
+      const isEnglish  = engWords.length > indWords.length;
+
       const layoutIcons = {
         TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
         TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
         TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯', IMAGE_SLIDE: '🖼️',
       };
- 
+
       const layoutSummary = pptData.slides
         .map((s, i) => {
           const ic = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
           return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_`;
         })
         .join('\n');
- 
-      const templateNote = result.usedTemplate
-        ? '\n🎨 **Template:** Custom template applied'
-        : '';
- 
-      // ✅ Updated image note — shows selection stats
+
+      const templateNote = result.usedTemplate ? '\n🎨 **Template:** Custom template applied' : '';
+
       let imageNote = '';
       if (finalExtractedImages.length > 0) {
         imageNote = rawExtractedImages.length > finalExtractedImages.length
           ? `\n🖼️ **Gambar:** ${finalExtractedImages.length} gambar dipilih (dari ${rawExtractedImages.length} gambar di dokumen)`
           : `\n🖼️ **Gambar:** ${finalExtractedImages.length} gambar diintegrasikan ke dalam slide`;
       } else if (rawExtractedImages.length > 0) {
-        imageNote = `\n🖼️ **Gambar:** Tidak ada gambar yang relevan dipilih (${rawExtractedImages.length} gambar di dokumen tidak relevan dengan topik)`;
+        imageNote = `\n🖼️ **Gambar:** Tidak ada gambar yang relevan dipilih`;
       }
- 
+
       const docNote = uploadedDocName
         ? `\n📄 **Sumber:** Presentasi dibuat dari "${uploadedDocName}"`
-        : '';
- 
-      const jsonUsage = normalizeUsage(jsonResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
-      const totalTokens = (contentUsage?.total_tokens || 0) + (jsonUsage?.total_tokens || 0);
-      const tokenNote = totalTokens > 0
-        ? `\n📊 **Token digunakan:** ${totalTokens.toLocaleString()} total`
-        : '';
- 
+        : (conversationContext
+          ? `\n💬 **Sumber:** Dibuat berdasarkan diskusi dalam conversation ini`
+          : '');
+
+      const jsonUsage    = normalizeUsage(jsonResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
+      const totalTokens  = (contentUsage?.total_tokens || 0) + (jsonUsage?.total_tokens || 0);
+      const tokenNote    = totalTokens > 0 ? `\n📊 **Token digunakan:** ${totalTokens.toLocaleString()} total` : '';
+
       const responseMarkdown = isEnglish
         ? `✅ **GYS Presentation successfully generated!**
- 
+
 📊 **Title:** ${title}
 📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
- 
+
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
- 
+
 **Auto-detected slide layouts:**
 ${layoutSummary}`
         : `✅ **Presentasi GYS berhasil dibuat!**
- 
+
 📊 **Judul:** ${title}
 📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
- 
+
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
- 
+
 **Layout yang dipilih per slide:**
 ${layoutSummary}`;
- 
+
       await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
       }).save();
       await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
- 
+
       return {
         response: responseMarkdown, threadId,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
       };
- 
+
     } catch (error) {
       console.error('❌ [PPT Command]', error);
       throw new Error(`Gagal membuat presentasi: ${error.message}`);
