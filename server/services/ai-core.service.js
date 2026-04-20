@@ -78,6 +78,12 @@ You MUST select the most impactful layout for each slide. Apply this decision tr
   Is it the final/closing slide?
     → LAYOUT: CLOSING
 
+  Does it show PROJECT STATUS with: panels + milestone timeline + issue/blocker card?
+    → LAYOUT: STATUS_SLIDE  ← use when user describes a freeform status/project update slide
+      with combinations of: side-by-side panels, milestone steps with status icons,
+      issue cards, vendor pipelines, or status badge pills.
+      Never use CONTENT or TWO_COLUMN for this — STATUS_SLIDE renders all zones correctly.
+
   Is it general narrative content?
     → LAYOUT: CONTENT  (fallback — use only when nothing else fits)
 
@@ -185,6 +191,60 @@ chartData:
   labels: Q1, Q2, Q3, Q4
   values: 12000, 13000, 13500, 15000
 
+## [Project Status Update]
+LAYOUT: STATUS_SLIDE
+statusBadge:
+  text: "⚠️ DELAY"
+  color: amber
+leftPanel:
+  title: "Technical Assessment & PoC Results"
+  iconFlow:
+    - icon: 📷
+      label: PPE Detection
+    - icon: 🤖
+      label: AI Brain
+    - icon: 🔔
+      label: Alerts
+    - icon: ✅
+      label: Validated
+  bullets:
+    - PPE detection (Helmet & Vest) validated in real-time
+    - Smoke & Fire early-warning confirmed
+    - Omnichannel notifications (WhatsApp & Email) verified
+    - Vendor selected: PT Simbu Teknologi Indonesia
+rightPanel:
+  title: "Vendor Evaluation Pipeline"
+  vendors:
+    - name: PT Simbu Teknologi Indonesia
+      selected: true
+      status: SELECTED
+    - name: Beruang Alfa
+    - name: Rastek
+  pipelineStage: "Technical Alignment & PoC Testing"
+  note: "Superior detection accuracy and seamless integration."
+timelineTitle: "Current Project Status & Next Steps"
+milestones:
+  - label: Assessment & PoC
+    status: done
+  - label: Purchasing Negotiation
+    status: current
+    note: "Negotiation ongoing. Contract and PO pending."
+  - label: Contract Progress
+    status: pending
+  - label: PO Release
+    status: blocked
+  - label: Kick-Off Meeting
+    status: pending
+issueCard:
+  tag: "⚠️ CURRENT ISSUES & BLOCKERS"
+  title: "Project Delayed — Purchasing Negotiation Ongoing"
+  color: amber
+  bullets:
+    - Negotiation not yet finalized — contract cannot begin
+    - PO Release blocked until contract is approved
+    - Kick-Off Meeting on hold
+    - Risk: timeline significantly delayed if negotiation not resolved soon
+
 ## [Before vs After]
 LAYOUT: TWO_COLUMN
 leftTitle: ❌ Current State
@@ -249,6 +309,44 @@ QUOTE (vision/mission/impact):
 
 CLOSING:
 { "layout": "CLOSING", "title": "Thank You", "subtitle": "...", "contact": "..." }
+
+STATUS_SLIDE (project status with panels + timeline + issue card):
+{
+  "layout": "STATUS_SLIDE",
+  "title": "...",
+  "statusBadge": { "text": "⚠️ DELAY", "color": "amber" },
+  "leftPanel": {
+    "title": "...",
+    "iconFlow": [{ "icon": "📷", "label": "PPE Detection" }],
+    "bullets": ["Bullet 1", "Bullet 2"]
+  },
+  "rightPanel": {
+    "title": "...",
+    "vendors": [{ "name": "Vendor Name", "selected": true, "status": "SELECTED" }],
+    "pipelineStage": "Technical Alignment & PoC Testing",
+    "note": "Short note text here."
+  },
+  "timelineTitle": "Current Project Status & Next Steps",
+  "milestones": [
+    { "label": "Assessment & PoC", "status": "done" },
+    { "label": "Negotiation", "status": "current", "note": "Ongoing negotiation." },
+    { "label": "Contract", "status": "pending" },
+    { "label": "PO Release", "status": "blocked" },
+    { "label": "Kick-Off", "status": "pending" }
+  ],
+  "issueCard": {
+    "tag": "⚠️ CURRENT ISSUES & BLOCKERS",
+    "title": "Project Delayed — Purchasing Negotiation Ongoing",
+    "color": "amber",
+    "bullets": ["Issue 1", "Issue 2", "Issue 3"]
+  }
+}
+Notes for STATUS_SLIDE:
+- statusBadge color: "amber" | "red" | "green" | "blue"
+- milestones status: "done" | "current" | "pending" | "blocked"
+- issueCard color: "amber" | "red"
+- leftPanel.iconFlow: array of {icon, label} — max 5 items
+- rightPanel.vendors: array of {name, selected?, status?}
 
 CRITICAL RULES:
 1. Preserve ALL slides in the exact same order — do NOT drop, merge, or reorder slides.
@@ -701,13 +799,10 @@ class AICoreService {
 
   // ─────────────────────────────────────────────────────────
   // PPT COMMAND HANDLER
-  // ✅ PATCHED v1.3.0:
+  // ✅ PATCHED v1.2.0:
   //   - Timeout fix: doc content capped, conversation ctx trimmed
   //   - Smart image-to-slide assignment based on needsImage field
   //   - Graceful fallback if smart-image-selector not available
-  //   - [v1.3.0] timeout=120000 & maxTokens passed to both AI calls
-  //   - [v1.3.0] contentUserMsg hard-capped at 12000 chars
-  //   - [v1.3.0] slideContent trimmed before JSON conversion step
   // ─────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
@@ -916,7 +1011,7 @@ class AICoreService {
       // ── STEP 4: JSON Conversion ──────────────────────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
 
-      // ✅ v1.3.0: Trim slideContent sebelum dikirim ke step 2 — JSON step tidak perlu teks >8000 chars
+      // ✅ v1.3.0: Trim slideContent sebelum dikirim ke step 2
       const slideContentForJson = slideContent.length > 8000
         ? slideContent.substring(0, 8000) + '\n\n[... dipotong ...]'
         : slideContent;
@@ -927,7 +1022,7 @@ class AICoreService {
         messages:       [],
         userContent:    `Convert this presentation to JSON:\n\n${slideContentForJson}`,
         timeout:        120000, // ✅ v1.3.0: 120 detik
-        maxTokens:      4000,   // ✅ v1.3.0: JSON output bisa panjang, beri ruang cukup
+        maxTokens:      4000,   // ✅ v1.3.0: JSON output bisa panjang
       });
 
       let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();

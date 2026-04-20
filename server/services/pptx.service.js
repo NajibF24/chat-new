@@ -1,7 +1,7 @@
 // server/services/pptx.service.js
 // ============================================================
 // GYS Portal AI — Native PPTX Service
-// ✅ PATCH v1.2.0:
+// ✅ PATCH v1.3.0:
 //   1. assignImagesToSlides — respects needsImage field from JSON
 //   2. Position-based image-to-slide matching (no extra API call)
 //   3. Large images (>100KB) auto-promoted to standalone IMAGE_SLIDE
@@ -934,6 +934,349 @@ function renderClosing(pptx, slide, data, GYS, pageLabel) {
   addFooter(slide, pptx, GYS, pageLabel);
 }
 
+
+// ────────────────────────────────────────────────────────────
+// STATUS_SLIDE layout — v1.3.0
+// Freeform project-status slide:
+//   TOP: two side-by-side panels (left=assessment, right=vendor pipeline)
+//   MIDDLE: horizontal milestone timeline with status icons
+//   BOTTOM: issue/blocker card with amber background
+//   TOP-RIGHT: status badge pill (DELAY / ON TRACK / etc)
+// ────────────────────────────────────────────────────────────
+function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
+  // ── Background ───────────────────────────────────────────
+  slide.addShape(pptx.ShapeType.rect, {
+    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
+    fill: { color: GYS.offWhite }, line: { type: "none" },
+  });
+  addHeaderBar(slide, pptx, GYS);
+  addLogoLight(slide, pptx, GYS);
+
+  // ── Slide Title ──────────────────────────────────────────
+  const slideTitle = String(data.title || "Project Status Update");
+  slide.addText(slideTitle, {
+    x: 0.95, y: 0.12, w: 7.5, h: 0.58,
+    fontSize: calcFontSize(slideTitle, 55, 22, 14), bold: true,
+    color: GYS.darkText, valign: "middle", fontFace: GYS.fontTitle,
+  });
+
+  // ── STATUS BADGE (top-right pill) ───────────────────────
+  const badge      = data.statusBadge || {};
+  const badgeText  = String(badge.text || "STATUS");
+  const badgeColor = badge.color === "red"   ? "DC2626"
+                   : badge.color === "green" ? "16A34A"
+                   : badge.color === "blue"  ? "2563EB"
+                   : "D97706"; // default amber/delay
+  const badgeBg   = badge.color === "red"   ? "FEF2F2"
+                  : badge.color === "green" ? "F0FDF4"
+                  : badge.color === "blue"  ? "EFF6FF"
+                  : "FFFBEB"; // amber light
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 8.1, y: 0.16, w: 1.7, h: 0.42,
+    fill: { color: badgeBg }, line: { color: badgeColor, width: 1.5 }, rectRadius: 0.21,
+  });
+  slide.addText(badgeText, {
+    x: 8.1, y: 0.16, w: 1.7, h: 0.42,
+    fontSize: 10, bold: true, color: badgeColor, align: "center", valign: "middle",
+    fontFace: GYS.fontTitle,
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // TOP SECTION — Two side-by-side panels
+  // ═══════════════════════════════════════════════════════
+  const panelY = 0.88;
+  const panelH = 2.1;
+
+  // ── LEFT PANEL ──────────────────────────────────────────
+  const leftPanel = data.leftPanel || {};
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 0.18, y: panelY, w: 4.82, h: panelH,
+    fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+  });
+  // Left panel header bar
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 0.18, y: panelY, w: 4.82, h: 0.38,
+    fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.1,
+  });
+  slide.addText(truncateText(leftPanel.title || "Assessment Results", 45), {
+    x: 0.32, y: panelY + 0.01, w: 4.55, h: 0.36,
+    fontSize: 11, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+  });
+
+  // Icon flow row
+  const leftIcons = leftPanel.iconFlow || [];
+  if (leftIcons.length > 0) {
+    const iconAreaW = 4.5;
+    const iconSpacing = iconAreaW / Math.max(leftIcons.length, 1);
+    leftIcons.forEach((ic, ii) => {
+      const icX = 0.28 + ii * iconSpacing + (iconSpacing - 0.4) / 2;
+      slide.addShape(pptx.ShapeType.ellipse, {
+        x: icX, y: panelY + 0.44, w: 0.38, h: 0.38,
+        fill: { color: GYS.tealLight }, line: { color: GYS.tealAccent, width: 1 },
+      });
+      slide.addText(ic.icon || "●", {
+        x: icX, y: panelY + 0.44, w: 0.38, h: 0.38,
+        fontSize: 14, align: "center", valign: "middle",
+      });
+      if (ii < leftIcons.length - 1) {
+        slide.addText("→", {
+          x: icX + 0.4, y: panelY + 0.44, w: iconSpacing - 0.42, h: 0.38,
+          fontSize: 10, color: GYS.mutedText, align: "center", valign: "middle",
+        });
+      }
+      if (ic.label) {
+        slide.addText(truncateText(ic.label, 14), {
+          x: icX - 0.05, y: panelY + 0.83, w: 0.5, h: 0.28,
+          fontSize: 7, color: GYS.mutedText, align: "center", wrap: true, fontFace: GYS.fontBody,
+        });
+      }
+    });
+  }
+
+  // Left panel bullets
+  const leftBullets = leftPanel.bullets || [];
+  if (leftBullets.length > 0) {
+    const bulletStartY = leftIcons.length > 0 ? panelY + 1.15 : panelY + 0.44;
+    const bulletH = panelH - (bulletStartY - panelY) - 0.08;
+    const lbFs = bulletFontSize(leftBullets, bulletH, 10, 7);
+    slide.addText(
+      leftBullets.map(b => ({ text: String(b), options: { bullet: true, breakLine: true } })),
+      {
+        x: 0.28, y: bulletStartY, w: 4.62, h: bulletH,
+        fontSize: lbFs, color: GYS.bodyText, fontFace: GYS.fontBody,
+        valign: "top", lineSpacingMultiple: 1.2, paraSpaceAfter: 3, autoFit: true,
+      }
+    );
+  }
+
+  // ── RIGHT PANEL ─────────────────────────────────────────
+  const rightPanel = data.rightPanel || {};
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 5.18, y: panelY, w: 4.64, h: panelH,
+    fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+  });
+  // Right panel header
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 5.18, y: panelY, w: 4.64, h: 0.38,
+    fill: { color: GYS.tealMid }, line: { type: "none" }, rectRadius: 0.1,
+  });
+  slide.addText(truncateText(rightPanel.title || "Vendor Pipeline", 45), {
+    x: 5.30, y: panelY + 0.01, w: 4.38, h: 0.36,
+    fontSize: 11, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+  });
+
+  // Vendor list
+  const vendors = rightPanel.vendors || [];
+  let rY = panelY + 0.44;
+  vendors.forEach((v, vi) => {
+    const isSelected = v.selected === true || String(v.status || "").toLowerCase() === "selected";
+    const vendorBg  = isSelected ? GYS.tealLight : GYS.offWhite;
+    const vendorBdr = isSelected ? GYS.tealAccent : GYS.grayBorder;
+    const textColor = isSelected ? GYS.teal : GYS.bodyText;
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 5.26, y: rY, w: 4.48, h: 0.3,
+      fill: { color: vendorBg }, line: { color: vendorBdr, width: 1 }, rectRadius: 0.06,
+    });
+    const vendorLabel = (isSelected ? "✅ " : "  ") + truncateText(v.name || "", 38);
+    slide.addText(vendorLabel, {
+      x: 5.30, y: rY + 0.01, w: 4.0, h: 0.28,
+      fontSize: 10, bold: isSelected, color: textColor, valign: "middle", fontFace: GYS.fontBody,
+    });
+    if (isSelected && v.status) {
+      slide.addText(truncateText(String(v.status), 16), {
+        x: 7.6, y: rY + 0.04, w: 1.1, h: 0.22,
+        fontSize: 7, color: GYS.tealAccent, bold: true, align: "right", fontFace: GYS.fontBody,
+      });
+    }
+    rY += 0.33;
+  });
+
+  // Pipeline flow label
+  if (rightPanel.pipelineStage) {
+    slide.addText("↓  " + truncateText(rightPanel.pipelineStage, 48), {
+      x: 5.26, y: rY + 0.02, w: 4.48, h: 0.22,
+      fontSize: 9, color: GYS.mutedText, italic: true, fontFace: GYS.fontBody,
+    });
+    rY += 0.26;
+  }
+  if (rightPanel.note) {
+    const noteFs = calcFontSize(rightPanel.note, 90, 9, 7);
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 5.26, y: rY + 0.04, w: 4.48, h: 0.42,
+      fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.06,
+    });
+    slide.addText("💬  " + truncateText(rightPanel.note, 110), {
+      x: 5.30, y: rY + 0.05, w: 4.4, h: 0.38,
+      fontSize: noteFs, color: GYS.bodyText, italic: true, wrap: true, valign: "middle",
+      fontFace: GYS.fontBody, lineSpacingMultiple: 1.15,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // MIDDLE SECTION — Horizontal milestone timeline
+  // ═══════════════════════════════════════════════════════
+  const tlTitle = data.timelineTitle || "Current Project Status & Next Steps";
+  const timelineY = panelY + panelH + 0.1;
+  const tlHeaderH = 0.28;
+
+  slide.addShape(pptx.ShapeType.rect, {
+    x: 0.18, y: timelineY, w: 9.64, h: tlHeaderH,
+    fill: { color: GYS.teal }, line: { type: "none" },
+  });
+  slide.addText(truncateText(tlTitle, 80), {
+    x: 0.28, y: timelineY + 0.01, w: 9.4, h: tlHeaderH - 0.02,
+    fontSize: 10, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+  });
+
+  const steps = (data.milestones || []).slice(0, 6);
+  const stepsCount = Math.max(steps.length, 1);
+  const tlAreaY = timelineY + tlHeaderH;
+  const tlAreaH = 1.1;
+  const lineY   = tlAreaY + tlAreaH * 0.35;
+  const padX    = 0.4;
+  const lineLen = GYS.slideW - padX * 2;
+  const stepW   = lineLen / stepsCount;
+
+  // ── Progress line (solid green up to current, dashed gray after) ──
+  let currentIdx = steps.findIndex(s => s.status === "current");
+  if (currentIdx < 0) currentIdx = steps.findIndex(s => s.status === "done");
+
+  // Solid segment (completed)
+  const solidLen = currentIdx >= 0
+    ? (padX + currentIdx * stepW + stepW / 2) - padX
+    : 0;
+  if (solidLen > 0) {
+    slide.addShape(pptx.ShapeType.rect, {
+      x: padX, y: lineY - 0.02, w: solidLen, h: 0.04,
+      fill: { color: "16A34A" }, line: { type: "none" },
+    });
+  }
+  // Dashed segment (remaining)
+  const dashStart = padX + solidLen;
+  const dashLen   = lineLen - solidLen;
+  if (dashLen > 0) {
+    slide.addShape(pptx.ShapeType.rect, {
+      x: dashStart, y: lineY - 0.015, w: dashLen, h: 0.03,
+      fill: { color: GYS.grayBorder }, line: { type: "none" },
+    });
+  }
+
+  // ── Step nodes ──
+  steps.forEach((step, i) => {
+    const cx     = padX + i * stepW + stepW / 2;
+    const nodeR  = 0.16;
+    const nodeX  = cx - nodeR;
+    const nodeY  = lineY - nodeR;
+    const status = String(step.status || "pending").toLowerCase();
+
+    let nodeFill  = GYS.grayBorder;  // pending = gray
+    let nodeText  = String(i + 1);
+    let nodeColor = GYS.mutedText;
+
+    if (status === "done" || status === "complete" || status === "completed") {
+      nodeFill  = "16A34A"; nodeText = "✓"; nodeColor = GYS.white;
+    } else if (status === "current" || status === "active" || status === "in_progress") {
+      nodeFill  = GYS.tealAccent; nodeText = "📍"; nodeColor = GYS.white;
+    } else if (status === "blocked" || status === "red") {
+      nodeFill  = "DC2626"; nodeText = "✗"; nodeColor = GYS.white;
+    }
+
+    slide.addShape(pptx.ShapeType.ellipse, {
+      x: nodeX, y: nodeY, w: nodeR * 2, h: nodeR * 2,
+      fill: { color: nodeFill }, line: { type: "none" },
+    });
+    slide.addText(nodeText, {
+      x: nodeX, y: nodeY, w: nodeR * 2, h: nodeR * 2,
+      fontSize: status === "current" ? 9 : 8, bold: true, color: nodeColor,
+      align: "center", valign: "middle",
+    });
+
+    // Step label below node
+    const labelY = lineY + nodeR + 0.04;
+    const labelW = stepW * 0.9;
+    const labelX = cx - labelW / 2;
+    slide.addText(truncateText(step.label || step.title || `Step ${i+1}`, 22), {
+      x: labelX, y: labelY, w: labelW, h: 0.28,
+      fontSize: calcFontSize(step.label || step.title || "", 20, 8, 6),
+      color: status === "done" ? "16A34A" : status === "current" ? GYS.tealAccent
+           : status === "blocked" ? "DC2626" : GYS.mutedText,
+      align: "center", wrap: true, fontFace: GYS.fontBody, bold: status === "current",
+    });
+
+    // Speech bubble tooltip for current step
+    if (status === "current" && step.note) {
+      const bY = nodeY - 0.5;
+      const bW = Math.min(stepW * 1.4, 2.4);
+      const bX = cx - bW / 2;
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: bX, y: bY, w: bW, h: 0.38,
+        fill: { color: "FFFBEB" }, line: { color: "D97706", width: 1 }, rectRadius: 0.08,
+      });
+      slide.addText(truncateText(step.note, 55), {
+        x: bX + 0.06, y: bY + 0.02, w: bW - 0.12, h: 0.34,
+        fontSize: 7, color: "92400E", wrap: true, valign: "middle",
+        fontFace: GYS.fontBody, italic: true,
+      });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // BOTTOM — Issue / Blocker card
+  // ═══════════════════════════════════════════════════════
+  const issueCard = data.issueCard || {};
+  if (issueCard.title || (issueCard.bullets || []).length > 0) {
+    const issueY = tlAreaY + tlAreaH + 0.06;
+    const issueH = GYS.slideH - issueY - 0.28;
+    const issueBg  = issueCard.color === "red" ? "FEF2F2" : "FFFBEB";
+    const issueBdr = issueCard.color === "red" ? "DC2626" : "D97706";
+    const issueHdr = issueCard.color === "red" ? "B91C1C" : "92400E";
+
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.18, y: issueY, w: 9.64, h: issueH,
+      fill: { color: issueBg }, line: { color: issueBdr, width: 1 }, rectRadius: 0.08,
+    });
+
+    // Tag pill
+    const tagText = issueCard.tag || "⚠️ ISSUES & BLOCKERS";
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.28, y: issueY + 0.04, w: 2.2, h: 0.24,
+      fill: { color: issueBdr }, line: { type: "none" }, rectRadius: 0.05,
+    });
+    slide.addText(truncateText(tagText, 30), {
+      x: 0.28, y: issueY + 0.04, w: 2.2, h: 0.24,
+      fontSize: 8, bold: true, color: GYS.white, align: "center", valign: "middle",
+      fontFace: GYS.fontTitle,
+    });
+
+    // Issue title
+    if (issueCard.title) {
+      slide.addText(truncateText(issueCard.title, 80), {
+        x: 2.58, y: issueY + 0.04, w: 7.16, h: 0.28,
+        fontSize: calcFontSize(issueCard.title, 70, 11, 8), bold: true,
+        color: issueHdr, valign: "middle", fontFace: GYS.fontTitle,
+      });
+    }
+
+    // Issue bullets
+    const issueBullets = issueCard.bullets || [];
+    if (issueBullets.length > 0) {
+      const ibH   = issueH - 0.35;
+      const ibFs  = bulletFontSize(issueBullets, ibH, 9, 7);
+      slide.addText(
+        issueBullets.map(b => ({ text: String(b), options: { bullet: true, breakLine: true } })),
+        {
+          x: 0.28, y: issueY + 0.34, w: 9.5, h: ibH,
+          fontSize: ibFs, color: issueHdr, fontFace: GYS.fontBody,
+          valign: "top", lineSpacingMultiple: 1.2, paraSpaceAfter: 2,
+          autoFit: true, columns: issueBullets.length > 3 ? 2 : 1,
+        }
+      );
+    }
+  }
+
+  addFooter(slide, pptx, GYS, pageLabel);
+}
+
 // ────────────────────────────────────────────────────────────
 // ✅ v1.2.0 — SMART IMAGE PLACEMENT ALGORITHM
 // Priority:
@@ -1088,6 +1431,8 @@ const PptxService = {
           case "TABLE":       renderTable(pptx, slide, sd, GYS, pageLabel);      break;
           case "QUOTE":       renderQuote(pptx, slide, sd, GYS, pageLabel);      break;
           case "IMAGE_SLIDE": renderImageSlide(pptx, slide, sd, GYS, pageLabel); break;
+          case "STATUS_SLIDE":
+          case "STATUS":      renderStatusSlide(pptx, slide, sd, GYS, pageLabel); break;
           case "CLOSING":
           case "THANKYOU":
           case "THANK_YOU":   renderClosing(pptx, slide, sd, GYS, pageLabel);    break;
