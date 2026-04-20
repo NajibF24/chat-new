@@ -1,14 +1,13 @@
 // server/services/pptx.service.js
 // ============================================================
 // GYS Portal AI — Native PPTX Service
-// ✅ PATCH:
-//   1. Text overflow prevention — auto-scale font size based on content length
-//   2. Table cell text truncation — prevents overflow in narrow columns
-//   3. Bullet list auto-sizing — more bullets = smaller font
-//   4. Grid card text auto-sizing — more cards = smaller text
-//   5. Timeline card text auto-sizing
-//   6. Template theme extraction (existing)
-//   7. Image injection from knowledge base (existing)
+// ✅ PATCH v1.2.0:
+//   1. assignImagesToSlides — respects needsImage field from JSON
+//   2. Position-based image-to-slide matching (no extra API call)
+//   3. Large images (>100KB) auto-promoted to standalone IMAGE_SLIDE
+//   4. Medium images assigned to CONTENT slides needing visuals
+//   5. Rich layout slides (GRID/STATS/TIMELINE etc.) never get images injected
+//   6. All v1.1.0 text overflow prevention patches preserved
 // ============================================================
 
 import PptxGenJS from "pptxgenjs";
@@ -43,58 +42,35 @@ const GYS_DEFAULTS = {
 };
 
 // ────────────────────────────────────────────────────────────
-// ✅ NEW: Smart font size helpers — prevent overflow
+// Smart font size helpers — prevent overflow
 // ────────────────────────────────────────────────────────────
 
-/**
- * Calculate font size for a text block that must fit in a given area.
- * @param {string} text - The text content
- * @param {number} maxChars - Max chars before reducing font
- * @param {number} baseFontSize - Starting font size
- * @param {number} minFontSize - Never go below this
- * @returns {number} font size in pt
- */
 function calcFontSize(text, maxChars, baseFontSize, minFontSize = 8) {
   if (!text) return baseFontSize;
   const len = String(text).length;
   if (len <= maxChars) return baseFontSize;
-  // Linear reduction: every extra 20% of maxChars → reduce 1pt
   const excess = (len - maxChars) / maxChars;
   const reduced = baseFontSize - Math.floor(excess * baseFontSize * 0.4);
   return Math.max(minFontSize, reduced);
 }
 
-/**
- * Truncate text to fit, adding ellipsis if needed.
- * Used for table cells and small card titles.
- */
 function truncateText(text, maxLen) {
   if (!text) return '';
   const s = String(text);
   return s.length > maxLen ? s.substring(0, maxLen - 1) + '…' : s;
 }
 
-/**
- * Calculate font size for bullet lists based on item count and avg length.
- */
 function bulletFontSize(bullets = [], containerH = 4.2, baseSize = 16, minSize = 9) {
   const count  = bullets.length;
   const avgLen = bullets.reduce((a, b) => a + String(b).length, 0) / Math.max(count, 1);
-
-  // Estimate lines needed (rough: 1 line per ~60 chars at base size, 2 lines if longer)
   let estLines = 0;
   for (const b of bullets) {
     const chars = String(b).length;
     estLines += chars > 80 ? 2 : 1;
   }
-
-  // Height per line estimate in inches (at 16pt ≈ 0.25in per line with spacing)
   const lineH = (baseSize / 72) * 1.35;
   const maxLines = Math.floor(containerH / lineH);
-
   if (estLines <= maxLines) return baseSize;
-
-  // Need to shrink — calculate scale factor
   const scale = maxLines / estLines;
   const scaled = Math.floor(baseSize * scale);
   return Math.max(minSize, scaled);
@@ -235,7 +211,6 @@ function addLeftAccent(slide, pptx, GYS, y = 0.85, h = 4.3) {
 }
 
 function addSlideTitle(slide, GYS, title) {
-  // ✅ Auto-shrink slide title if very long
   const titleStr = String(title || '');
   const titleSize = calcFontSize(titleStr, 50, 24, 14);
   slide.addText(titleStr, {
@@ -268,7 +243,6 @@ function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
         x: 0.22, y: 0.95, w: 5.0, h: 4.2,
         sizing: { type: 'contain', w: 5.0, h: 4.2 },
       });
-      // ✅ Auto-size body text
       const bodyFs = calcFontSize(bodyText, 200, 14, 9);
       slide.addText(bodyText, {
         x: 5.4, y: 1.0, w: 4.3, h: 3.8,
@@ -341,7 +315,6 @@ function renderTitle(pptx, slide, data, GYS, pageLabel) {
     x: 0.5, y: 1.65, w: 3.5, h: 0.04,
     fill: { color: GYS.tealAccent }, line: { type: "none" },
   });
-  // ✅ Auto-size main title
   const mainTitle = String(data.title || "Presentation Title");
   const titleFs   = calcFontSize(mainTitle, 40, 44, 24);
   slide.addText(mainTitle, {
@@ -446,8 +419,6 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
       x: iconBgX, y: cardY + 0.22, w: iconBgSize, h: iconBgSize,
       fontSize: count <= 2 ? 22 : 18, align: "center", valign: "middle",
     });
-
-    // ✅ Auto-size card title
     const cardTitle   = truncateText(item.title || "Item", count <= 2 ? 40 : 25);
     const cardTitleFs = count <= 2 ? 16 : 13;
     slide.addText(cardTitle, {
@@ -455,20 +426,15 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
       fontSize: cardTitleFs, bold: true, color: GYS.darkText,
       align: "center", wrap: true, fontFace: GYS.fontTitle,
     });
-
-    // ✅ Auto-size card body text based on available area and content length
     const cardText      = String(item.text || "");
     const textAreaH     = 2.15;
-    // Estimate max chars per line given card width
     const charsPerLine  = Math.floor((cardW - 0.28) / (0.09 * (count <= 2 ? 13 : 11)));
     const maxCharsForH  = charsPerLine * Math.floor(textAreaH / 0.18);
     const cardBodyFs    = calcFontSize(cardText, maxCharsForH, count <= 2 ? 13 : 11, 8);
-
     slide.addText(cardText, {
       x: cx + 0.14, y: cardY + 1.48, w: cardW - 0.28, h: textAreaH,
       fontSize: cardBodyFs, color: GYS.bodyText,
       valign: "top", wrap: true, fontFace: GYS.fontBody, lineSpacingMultiple: 1.25,
-      // ✅ autoFit tells PptxGenJS to shrink text to fit the box
       autoFit: true,
     });
   });
@@ -509,7 +475,6 @@ function renderContent(pptx, slide, data, GYS, pageLabel) {
   }
 
   if (bullets.length > 0) {
-    // ✅ Auto-size bullets based on count and length
     const baseFontSize = hasImage ? 14 : 16;
     const fs_size = bulletFontSize(bullets, textH, baseFontSize, 9);
 
@@ -533,7 +498,6 @@ function renderContent(pptx, slide, data, GYS, pageLabel) {
       fontFace: GYS.fontBody, valign: "top",
       paraSpaceAfter: bullets.length > 8 ? 4 : 9,
       lineSpacingMultiple: bullets.length > 8 ? 1.1 : 1.25,
-      // ✅ autoFit shrinks if still doesn't fit
       autoFit: true,
     });
   } else if (data.body) {
@@ -662,7 +626,6 @@ function renderStats(pptx, slide, data, GYS, pageLabel) {
       });
     }
     const valueY   = s.icon ? cardY + 0.95 : cardY + 0.6;
-    // ✅ Auto-size value (big numbers / long text)
     const valStr   = String(s.value || "—");
     const valueFsBase = count <= 2 ? 52 : count === 3 ? 44 : 36;
     const valueFs  = calcFontSize(valStr, 8, valueFsBase, 20);
@@ -730,7 +693,6 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
       fontFace: GYS.fontTitle,
     });
 
-    // ✅ Auto-size time label
     const timeStr = String(step.time || `Step ${i + 1}`);
     const timeFs  = calcFontSize(timeStr, 12, 10, 7);
     slide.addText(timeStr, {
@@ -753,7 +715,6 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
       fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.05,
     });
 
-    // ✅ Auto-size step title
     const stepTitle = String(step.title || "Phase");
     const stTitleFs = calcFontSize(stepTitle, count <= 3 ? 20 : 15, count <= 3 ? 13 : 11, 8);
     slide.addText(stepTitle, {
@@ -762,7 +723,6 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
       wrap: true, fontFace: GYS.fontTitle, valign: "top",
     });
 
-    // ✅ Auto-size step body text
     const stepText   = String(step.text || "");
     const stepBodyFs = calcFontSize(stepText, count <= 3 ? 80 : 60, count <= 3 ? 12 : 10, 7);
     slide.addText(stepText, {
@@ -808,7 +768,6 @@ function renderChart(pptx, slide, data, GYS, pageLabel) {
       x: 0.28, y: 1.02, w: 2.8, h: 0.38,
       fontSize: 12, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
     });
-    // ✅ Auto-size insight text
     const insightFs = calcFontSize(String(data.insightText), 150, 13, 9);
     slide.addText(data.insightText, {
       x: 0.28, y: 1.5, w: 2.8, h: 3.5,
@@ -852,21 +811,19 @@ function renderTable(pptx, slide, data, GYS, pageLabel) {
 
   const colCount = Math.max(headers.length, rows[0] ? (Array.isArray(rows[0]) ? rows[0].length : 1) : 1);
 
-  // ✅ Auto font size based on column count and row count
   const totalRows = rows.length + (headers.length ? 1 : 0);
   let headerFs = 12;
   let cellFs   = 11;
   if (colCount >= 5 || totalRows >= 8)  { headerFs = 10; cellFs = 9;  }
   if (colCount >= 6 || totalRows >= 12) { headerFs = 9;  cellFs = 8;  }
 
-  // ✅ Max chars per cell based on column count
   const maxCellChars = Math.floor(120 / colCount);
 
   const tableData = [];
   if (headers.length) {
     tableData.push(
       headers.map(h => ({
-        text: truncateText(String(h), maxCellChars + 10), // headers can be a bit longer
+        text: truncateText(String(h), maxCellChars + 10),
         options: {
           bold: true, color: GYS.white, fill: GYS.teal,
           align: "left", fontSize: headerFs, valign: "middle", fontFace: GYS.fontTitle,
@@ -877,7 +834,6 @@ function renderTable(pptx, slide, data, GYS, pageLabel) {
   rows.forEach((row, ri) => {
     tableData.push(
       (Array.isArray(row) ? row : [row]).map((cell, ci) => ({
-        // ✅ Truncate cell text to prevent overflow
         text: truncateText(String(cell ?? ""), maxCellChars),
         options: {
           color: GYS.bodyText, fill: ri % 2 === 0 ? GYS.cardWhite : GYS.offWhite,
@@ -979,40 +935,102 @@ function renderClosing(pptx, slide, data, GYS, pageLabel) {
 }
 
 // ────────────────────────────────────────────────────────────
-// IMAGE PLACEMENT ALGORITHM
+// ✅ v1.2.0 — SMART IMAGE PLACEMENT ALGORITHM
+// Priority:
+//   1. Honor pre-assigned imagePath from ai-core smartAssignImagesToSlides
+//   2. Assign remaining images by needsImage field + position proximity
+//   3. Promote unassigned LARGE images to standalone IMAGE_SLIDE
+//   4. Never inject images into GRID/STATS/TIMELINE/CHART/TABLE/QUOTE slides
 // ────────────────────────────────────────────────────────────
 function assignImagesToSlides(slides, extractedImages) {
   if (!extractedImages || extractedImages.length === 0) return slides;
 
-  const assigned = [...slides];
-  const images   = [...extractedImages];
-  let   imgIdx   = 0;
+  const assigned    = slides.map(s => ({ ...s }));
+  const images      = [...extractedImages];
+  const usedIdx     = new Set();
+  const totalSlides = assigned.length;
 
-  // Pass 1: Assign images to CONTENT slides that don't yet have images
-  for (let i = 0; i < assigned.length; i++) {
-    if (imgIdx >= images.length) break;
-    const s = assigned[i];
-    if (['CONTENT', 'GRID'].includes((s.layout || '').toUpperCase()) && !s.imagePath) {
-      assigned[i] = { ...s, imagePath: images[imgIdx].path, caption: images[imgIdx].caption };
-      imgIdx++;
+  // Track images already assigned by ai-core.service (pre-assignment)
+  assigned.forEach(slide => {
+    if (!slide.imagePath) return;
+    const matchIdx = images.findIndex(img => img.path === slide.imagePath);
+    if (matchIdx >= 0) usedIdx.add(matchIdx);
+  });
+
+  const preAssigned = usedIdx.size;
+  if (preAssigned > 0) {
+    console.log(`[PPT] ${preAssigned} images pre-assigned, checking for remaining...`);
+  }
+
+  // ── PASS 1: Assign remaining images to slides with needsImage set ───────────
+  for (let si = 0; si < assigned.length; si++) {
+    const availableCount = images.filter((_, ii) => !usedIdx.has(ii)).length;
+    if (availableCount === 0) break;
+
+    const slide  = assigned[si];
+    const layout = (slide.layout || 'CONTENT').toUpperCase();
+    const need   = (slide.needsImage || 'none').toLowerCase();
+
+    // Skip slides that already have images or don't need them
+    if (slide.imagePath && fs.existsSync(slide.imagePath)) continue;
+    if (need === 'none' || need === '') continue;
+
+    // Rich visual layouts don't benefit from injected images
+    if (['GRID', 'STATS', 'CHART', 'TIMELINE', 'TABLE', 'QUOTE', 'CLOSING', 'TITLE', 'SECTION'].includes(layout)) continue;
+
+    // Slide position ratio (0.0–1.0)
+    const slideRatio = si / Math.max(totalSlides - 1, 1);
+
+    // Find best matching unused image
+    let bestImgIdx = -1;
+    let bestScore  = Infinity;
+
+    images.forEach((img, ii) => {
+      if (usedIdx.has(ii)) return;
+      const posRatio  = img.positionRatio !== undefined ? img.positionRatio : (ii / Math.max(images.length - 1, 1));
+      const posDist   = Math.abs(posRatio - slideRatio);
+      // Prefer large images for architecture/diagram needs
+      const sizeBonus = (img.isLarge && ['architecture', 'diagram'].includes(need)) ? -0.15
+                      : (img.isMedium && need === 'screenshot') ? -0.08 : 0;
+      const score = posDist + sizeBonus;
+      if (score < bestScore) { bestScore = score; bestImgIdx = ii; }
+    });
+
+    // Assign only if positionally reasonable
+    if (bestImgIdx >= 0 && bestScore < 0.55) {
+      assigned[si].imagePath = images[bestImgIdx].path;
+      assigned[si].caption   = images[bestImgIdx].caption;
+      usedIdx.add(bestImgIdx);
+      console.log(`[PPT] Slide ${si + 1} (${slide.title}) ← image[${bestImgIdx}] (score: ${bestScore.toFixed(2)})`);
     }
   }
 
-  // Pass 2: Remaining images get their own IMAGE_SLIDE
-  while (imgIdx < images.length) {
-    const img = images[imgIdx];
-    const closingIdx = assigned.findIndex(s => ['CLOSING', 'THANKYOU'].includes((s.layout || '').toUpperCase()));
-    const insertAt   = closingIdx > 0 ? closingIdx : assigned.length;
+  // ── PASS 2: Unassigned LARGE images → standalone IMAGE_SLIDE ────────────────
+  // Only promote truly large images (architecture diagrams) to standalone slides
+  images.forEach((img, ii) => {
+    if (usedIdx.has(ii)) return;
+    if (!img.isLarge) return; // Skip small/medium — too many would clutter the deck
+
+    const closingIdx = assigned.findIndex(s =>
+      ['CLOSING', 'THANKYOU', 'THANK_YOU'].includes((s.layout || '').toUpperCase())
+    );
+    const insertAt = closingIdx > 0 ? closingIdx : assigned.length;
+
+    const diagramTitle = img.caption
+      ? img.caption.replace(/Image \d+ from /, 'Diagram from ')
+      : `Architecture Diagram`;
 
     assigned.splice(insertAt, 0, {
       layout:    'IMAGE_SLIDE',
-      title:     `Visual: ${img.sourceFile || 'Document'}`,
+      title:     diagramTitle,
       imagePath: img.path,
       caption:   img.caption,
       body:      '',
+      needsImage: 'none',
     });
-    imgIdx++;
-  }
+    usedIdx.add(ii);
+    console.log(`[PPT] Inserted IMAGE_SLIDE for large image[${ii}] before slide ${insertAt + 1}`);
+  });
 
   return assigned;
 }
@@ -1044,6 +1062,7 @@ const PptxService = {
     try {
       if (!pptData?.slides?.length) throw new Error("No slides in pptData");
 
+      // ✅ v1.2.0: assignImagesToSlides now respects pre-assigned + needsImage + position
       const slidesWithImages = assignImagesToSlides(pptData.slides, extractedImages);
       const total = slidesWithImages.length;
 
