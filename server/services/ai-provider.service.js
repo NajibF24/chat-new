@@ -219,14 +219,20 @@ class AIProviderService {
 
   /**
    * Route to correct provider and return { text, usage }
+   *
+   * ✅ PATCH v1.3.0: Added `timeout` and `maxTokens` params so callers
+   * (e.g. _handlePptCommand) can override the defaults for long-running tasks.
    */
-  async generateCompletion({ providerConfig = {}, systemPrompt, messages, userContent, capabilities = {} }) {
-    const provider = providerConfig?.provider || 'openai';
-    const model    = providerConfig?.model    || 'gpt-4o';
-    const temp     = providerConfig?.temperature ?? 0.1;
-    const maxTok   = providerConfig?.maxTokens   ?? 2000;
-    const apiKey   = this.getApiKey(providerConfig);
-    const endpoint = providerConfig?.endpoint?.trim() || '';
+  async generateCompletion({ providerConfig = {}, systemPrompt, messages, userContent, capabilities = {}, timeout, maxTokens }) {
+    const provider   = providerConfig?.provider || 'openai';
+    const model      = providerConfig?.model    || 'gpt-4o';
+    const temp       = providerConfig?.temperature ?? 0.1;
+    // ✅ caller's maxTokens takes priority over providerConfig, then falls back to 2000
+    const maxTok     = maxTokens ?? providerConfig?.maxTokens ?? 2000;
+    // ✅ caller's timeout takes priority, default 60s for normal calls
+    const reqTimeout = timeout ?? 60000;
+    const apiKey     = this.getApiKey(providerConfig);
+    const endpoint   = providerConfig?.endpoint?.trim() || '';
 
     if (!apiKey && provider !== 'custom') {
       throw new Error(
@@ -238,26 +244,26 @@ class AIProviderService {
     // ✅ Custom provider: auto-detect Azure vs generic
     if (provider === 'custom') {
       if (isAzureEndpoint(endpoint)) {
-        return this._callAzureOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, providerConfig });
+        return this._callAzureOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, providerConfig, timeout: reqTimeout });
       } else {
-        return this._callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint });
+        return this._callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, timeout: reqTimeout });
       }
     }
 
     switch (provider) {
       case 'openai':
-        return this._callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities });
+        return this._callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities, timeout: reqTimeout });
       case 'anthropic':
-        return this._callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent });
+        return this._callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout: reqTimeout });
       case 'google':
-        return this._callGemini({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent });
+        return this._callGemini({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout: reqTimeout });
       default:
         throw new Error(`Provider tidak dikenal: ${provider}`);
     }
   }
 
   // ── OpenAI ─────────────────────────────────────────────────
-  async _callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities = {} }) {
+  async _callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities = {}, timeout = 60000 }) {
     if (!isChatModel(model)) {
       throw new Error(
         `Model "${model}" tidak didukung untuk chat (bukan chat model). ` +
@@ -267,6 +273,8 @@ class AIProviderService {
 
     const clientConfig = { apiKey };
     if (endpoint) clientConfig.baseURL = endpoint;
+    // ✅ PATCH: pass timeout into OpenAI client
+    clientConfig.timeout = timeout;
     const openai = new OpenAI(clientConfig);
 
     const tools       = this.buildTools({ provider: 'openai', model }, capabilities);
@@ -331,7 +339,7 @@ class AIProviderService {
   // ── ✅ NEW: Azure OpenAI ────────────────────────────────────
   // Azure uses deployment names instead of model IDs.
   // URL format: {endpoint}/openai/deployments/{deployment}/chat/completions?api-version={version}
-  async _callAzureOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, providerConfig }) {
+  async _callAzureOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, providerConfig, timeout = 120000 }) {
     if (!apiKey) {
       throw new Error('Azure OpenAI membutuhkan API Key. Masukkan di kolom "API Key" pada konfigurasi bot.');
     }
@@ -373,7 +381,7 @@ class AIProviderService {
           'Content-Type':  'application/json',
           'api-key':       apiKey,  // Azure uses 'api-key' header, not 'Authorization: Bearer'
         },
-        timeout: 120000,
+        timeout, // ✅ PATCH: dynamic timeout
       });
     } catch (err) {
       const status  = err.response?.status;
@@ -393,7 +401,8 @@ class AIProviderService {
   }
 
   // ── Anthropic Claude ───────────────────────────────────────
-  async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent }) {
+  // ✅ PATCH v1.3.0: Added `timeout` param (was hardcoded 60000)
+  async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 60000 }) {
     const userText = Array.isArray(userContent)
       ? userContent.map(b => b.text || '').join('\n')
       : String(userContent);
@@ -415,7 +424,7 @@ class AIProviderService {
           'anthropic-version': '2023-06-01',
           'content-type':      'application/json',
         },
-        timeout: 60000,
+        timeout, // ✅ PATCH: was hardcoded 60000, now dynamic
       }
     );
 
@@ -425,7 +434,8 @@ class AIProviderService {
   }
 
   // ── Google Gemini ──────────────────────────────────────────
-  async _callGemini({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent }) {
+  // ✅ PATCH v1.3.0: Added `timeout` param (was hardcoded 60000)
+  async _callGemini({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 60000 }) {
     const userText = Array.isArray(userContent)
       ? userContent.map(b => b.text || '').join('\n')
       : String(userContent);
@@ -444,7 +454,7 @@ class AIProviderService {
         contents,
         generationConfig: { temperature: temp, maxOutputTokens: maxTok },
       },
-      { timeout: 60000 }
+      { timeout } // ✅ PATCH: was hardcoded 60000, now dynamic
     );
 
     const text = response.data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
@@ -455,7 +465,8 @@ class AIProviderService {
   // ── ✅ IMPROVED: Custom / OpenAI-compatible (non-Azure) ────
   // Supports: Ollama, LM Studio, AWS Bedrock (OpenAI-compatible mode),
   //           Groq, Together AI, Mistral, etc.
-  async _callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint }) {
+  // ✅ PATCH v1.3.0: Added `timeout` param
+  async _callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, timeout = 60000 }) {
     if (!endpoint) throw new Error(
       'Custom provider membutuhkan Endpoint URL. ' +
       'Contoh Ollama: http://localhost:11434/v1 | ' +
@@ -470,6 +481,7 @@ class AIProviderService {
     const openai = new OpenAI({
       apiKey:  apiKey || 'none', // some local servers don't require a key
       baseURL: endpoint,
+      timeout, // ✅ PATCH: pass timeout to SDK
     });
 
     let completion;

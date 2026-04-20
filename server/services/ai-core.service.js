@@ -701,10 +701,13 @@ class AICoreService {
 
   // ─────────────────────────────────────────────────────────
   // PPT COMMAND HANDLER
-  // ✅ PATCHED v1.2.0:
+  // ✅ PATCHED v1.3.0:
   //   - Timeout fix: doc content capped, conversation ctx trimmed
   //   - Smart image-to-slide assignment based on needsImage field
   //   - Graceful fallback if smart-image-selector not available
+  //   - [v1.3.0] timeout=120000 & maxTokens passed to both AI calls
+  //   - [v1.3.0] contentUserMsg hard-capped at 12000 chars
+  //   - [v1.3.0] slideContent trimmed before JSON conversion step
   // ─────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
@@ -882,6 +885,13 @@ class AICoreService {
       contentUserMsg += `Gunakan layout yang tepat per slide. Untuk slide yang butuh gambar (arsitektur, diagram, screenshot), `;
       contentUserMsg += `tambahkan [NEEDS_IMAGE: architecture/diagram/screenshot] di akhir konten slide tersebut.\n`;
 
+      // ✅ v1.3.0: Hard cap total prompt — mencegah timeout pada dokumen besar
+      const MAX_PROMPT_CHARS = 12000;
+      if (contentUserMsg.length > MAX_PROMPT_CHARS) {
+        console.warn(`[PPT] contentUserMsg terlalu besar (${contentUserMsg.length} chars), dipotong ke ${MAX_PROMPT_CHARS}`);
+        contentUserMsg = contentUserMsg.substring(0, MAX_PROMPT_CHARS) + '\n\n[... konten dipotong untuk efisiensi ...]\n';
+      }
+
       // ── STEP 3: Content Generation ──────────────────────────────────────────
       console.log('[PPT] Step 1 — generating content...');
 
@@ -890,6 +900,8 @@ class AICoreService {
         systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
         messages:       [],
         userContent:    contentUserMsg,
+        timeout:        120000, // ✅ v1.3.0: 120 detik (was 60s default)
+        maxTokens:      3500,   // ✅ v1.3.0: batasi output agar step 2 tidak kehabisan token
       });
 
       const slideContent = contentResult.text;
@@ -904,11 +916,18 @@ class AICoreService {
       // ── STEP 4: JSON Conversion ──────────────────────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
 
+      // ✅ v1.3.0: Trim slideContent sebelum dikirim ke step 2 — JSON step tidak perlu teks >8000 chars
+      const slideContentForJson = slideContent.length > 8000
+        ? slideContent.substring(0, 8000) + '\n\n[... dipotong ...]'
+        : slideContent;
+
       const jsonResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
         messages:       [],
-        userContent:    `Convert this presentation to JSON:\n\n${slideContent}`,
+        userContent:    `Convert this presentation to JSON:\n\n${slideContentForJson}`,
+        timeout:        120000, // ✅ v1.3.0: 120 detik
+        maxTokens:      4000,   // ✅ v1.3.0: JSON output bisa panjang, beri ruang cukup
       });
 
       let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
