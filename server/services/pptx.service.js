@@ -936,12 +936,17 @@ function renderClosing(pptx, slide, data, GYS, pageLabel) {
 
 
 // ────────────────────────────────────────────────────────────
-// STATUS_SLIDE layout — v1.3.0
-// Freeform project-status slide:
-//   TOP: two side-by-side panels (left=assessment, right=vendor pipeline)
-//   MIDDLE: horizontal milestone timeline with status icons
-//   BOTTOM: issue/blocker card with amber background
-//   TOP-RIGHT: status badge pill (DELAY / ON TRACK / etc)
+// STATUS_SLIDE layout — v1.4.0
+// Fixed: text overflow, speech-bubble overlap, icon label truncation,
+//        bullet clip-into-timeline, issue-card bullets cut off.
+//
+// Zone budget (inches, top→bottom):
+//   Header bar   : 0.00 → 0.82  (addHeaderBar)
+//   Panels       : 0.86 → 2.96  panelH = 2.10
+//   Timeline hdr : 3.00 → 3.28  tlHeaderH = 0.28
+//   Timeline body: 3.28 → 4.36  tlAreaH = 1.08  (bubble + node + label)
+//   Issue card   : 4.40 → 5.33  issueH = 0.93
+//   Footer       : 5.35 → 5.625 (addFooter)
 // ────────────────────────────────────────────────────────────
 function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   // ── Background ───────────────────────────────────────────
@@ -955,8 +960,8 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   // ── Slide Title ──────────────────────────────────────────
   const slideTitle = String(data.title || "Project Status Update");
   slide.addText(slideTitle, {
-    x: 0.95, y: 0.12, w: 7.5, h: 0.58,
-    fontSize: calcFontSize(slideTitle, 55, 22, 14), bold: true,
+    x: 0.95, y: 0.12, w: 7.0, h: 0.58,
+    fontSize: calcFontSize(slideTitle, 55, 20, 13), bold: true,
     color: GYS.darkText, valign: "middle", fontFace: GYS.fontTitle,
   });
 
@@ -966,26 +971,28 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   const badgeColor = badge.color === "red"   ? "DC2626"
                    : badge.color === "green" ? "16A34A"
                    : badge.color === "blue"  ? "2563EB"
-                   : "D97706"; // default amber/delay
-  const badgeBg   = badge.color === "red"   ? "FEF2F2"
-                  : badge.color === "green" ? "F0FDF4"
-                  : badge.color === "blue"  ? "EFF6FF"
-                  : "FFFBEB"; // amber light
+                   : "D97706";
+  const badgeBg    = badge.color === "red"   ? "FEF2F2"
+                   : badge.color === "green" ? "F0FDF4"
+                   : badge.color === "blue"  ? "EFF6FF"
+                   : "FFFBEB";
   slide.addShape(pptx.ShapeType.roundRect, {
-    x: 8.1, y: 0.16, w: 1.7, h: 0.42,
+    x: 8.08, y: 0.16, w: 1.74, h: 0.42,
     fill: { color: badgeBg }, line: { color: badgeColor, width: 1.5 }, rectRadius: 0.21,
   });
   slide.addText(badgeText, {
-    x: 8.1, y: 0.16, w: 1.7, h: 0.42,
-    fontSize: 10, bold: true, color: badgeColor, align: "center", valign: "middle",
-    fontFace: GYS.fontTitle,
+    x: 8.08, y: 0.16, w: 1.74, h: 0.42,
+    fontSize: calcFontSize(badgeText, 14, 10, 7), bold: true, color: badgeColor,
+    align: "center", valign: "middle", fontFace: GYS.fontTitle,
   });
 
   // ═══════════════════════════════════════════════════════
   // TOP SECTION — Two side-by-side panels
+  // Zone: 0.86 → 2.96  (panelH = 2.10)
   // ═══════════════════════════════════════════════════════
-  const panelY = 0.88;
-  const panelH = 2.1;
+  const panelY    = 0.86;
+  const panelH    = 2.10;
+  const panelHdrH = 0.36;
 
   // ── LEFT PANEL ──────────────────────────────────────────
   const leftPanel = data.leftPanel || {};
@@ -993,58 +1000,72 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
     x: 0.18, y: panelY, w: 4.82, h: panelH,
     fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
   });
-  // Left panel header bar
   slide.addShape(pptx.ShapeType.roundRect, {
-    x: 0.18, y: panelY, w: 4.82, h: 0.38,
+    x: 0.18, y: panelY, w: 4.82, h: panelHdrH,
     fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.1,
   });
-  slide.addText(truncateText(leftPanel.title || "Assessment Results", 45), {
-    x: 0.32, y: panelY + 0.01, w: 4.55, h: 0.36,
-    fontSize: 11, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+  slide.addText(truncateText(leftPanel.title || "Assessment Results", 50), {
+    x: 0.32, y: panelY + 0.01, w: 4.55, h: panelHdrH - 0.02,
+    fontSize: calcFontSize(leftPanel.title || "", 42, 11, 8),
+    bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
   });
 
-  // Icon flow row
+  // Icon flow row — label width scales with icon count so text never overflows
   const leftIcons = leftPanel.iconFlow || [];
+  const iconRowY  = panelY + panelHdrH + 0.06;
+  const iconSize  = 0.34;
+  const labelH    = 0.30;
   if (leftIcons.length > 0) {
-    const iconAreaW = 4.5;
-    const iconSpacing = iconAreaW / Math.max(leftIcons.length, 1);
+    const iconAreaW   = 4.60;
+    const iconStartX  = 0.20;
+    const iconSlotW   = iconAreaW / leftIcons.length;
+    const labelW      = Math.min(iconSlotW * 0.95, 1.1); // never wider than slot
     leftIcons.forEach((ic, ii) => {
-      const icX = 0.28 + ii * iconSpacing + (iconSpacing - 0.4) / 2;
+      const slotCX = iconStartX + ii * iconSlotW + iconSlotW / 2;
+      const icX    = slotCX - iconSize / 2;
       slide.addShape(pptx.ShapeType.ellipse, {
-        x: icX, y: panelY + 0.44, w: 0.38, h: 0.38,
+        x: icX, y: iconRowY, w: iconSize, h: iconSize,
         fill: { color: GYS.tealLight }, line: { color: GYS.tealAccent, width: 1 },
       });
       slide.addText(ic.icon || "●", {
-        x: icX, y: panelY + 0.44, w: 0.38, h: 0.38,
-        fontSize: 14, align: "center", valign: "middle",
+        x: icX, y: iconRowY, w: iconSize, h: iconSize,
+        fontSize: 13, align: "center", valign: "middle",
       });
+      // Arrow between icons — fits exactly in the gap between circles
       if (ii < leftIcons.length - 1) {
+        const arrowX = icX + iconSize + 0.01;
+        const arrowW = iconSlotW - iconSize - 0.04;
         slide.addText("→", {
-          x: icX + 0.4, y: panelY + 0.44, w: iconSpacing - 0.42, h: 0.38,
-          fontSize: 10, color: GYS.mutedText, align: "center", valign: "middle",
+          x: arrowX, y: iconRowY, w: arrowW, h: iconSize,
+          fontSize: 9, color: GYS.mutedText, align: "center", valign: "middle",
         });
       }
+      // Label — centred under icon, wraps to 2 lines if needed
       if (ic.label) {
-        slide.addText(truncateText(ic.label, 14), {
-          x: icX - 0.05, y: panelY + 0.83, w: 0.5, h: 0.28,
-          fontSize: 7, color: GYS.mutedText, align: "center", wrap: true, fontFace: GYS.fontBody,
+        slide.addText(String(ic.label), {
+          x: slotCX - labelW / 2, y: iconRowY + iconSize + 0.02,
+          w: labelW, h: labelH,
+          fontSize: 6.5, color: GYS.mutedText, align: "center",
+          wrap: true, fontFace: GYS.fontBody,
         });
       }
     });
   }
 
-  // Left panel bullets
-  const leftBullets = leftPanel.bullets || [];
+  // Left panel bullets — strictly capped at bottom of panel
+  const leftBullets  = leftPanel.bullets || [];
+  const bulletStartY = leftIcons.length > 0
+    ? iconRowY + iconSize + labelH + 0.06
+    : panelY + panelHdrH + 0.06;
+  const bulletH      = (panelY + panelH) - bulletStartY - 0.06; // stays inside panel
   if (leftBullets.length > 0) {
-    const bulletStartY = leftIcons.length > 0 ? panelY + 1.15 : panelY + 0.44;
-    const bulletH = panelH - (bulletStartY - panelY) - 0.08;
-    const lbFs = bulletFontSize(leftBullets, bulletH, 10, 7);
+    const lbFs = bulletFontSize(leftBullets, bulletH, 9, 7);
     slide.addText(
       leftBullets.map(b => ({ text: String(b), options: { bullet: true, breakLine: true } })),
       {
         x: 0.28, y: bulletStartY, w: 4.62, h: bulletH,
         fontSize: lbFs, color: GYS.bodyText, fontFace: GYS.fontBody,
-        valign: "top", lineSpacingMultiple: 1.2, paraSpaceAfter: 3, autoFit: true,
+        valign: "top", lineSpacingMultiple: 1.15, paraSpaceAfter: 2, autoFit: true,
       }
     );
   }
@@ -1055,93 +1076,117 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
     x: 5.18, y: panelY, w: 4.64, h: panelH,
     fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
   });
-  // Right panel header
   slide.addShape(pptx.ShapeType.roundRect, {
-    x: 5.18, y: panelY, w: 4.64, h: 0.38,
+    x: 5.18, y: panelY, w: 4.64, h: panelHdrH,
     fill: { color: GYS.tealMid }, line: { type: "none" }, rectRadius: 0.1,
   });
-  slide.addText(truncateText(rightPanel.title || "Vendor Pipeline", 45), {
-    x: 5.30, y: panelY + 0.01, w: 4.38, h: 0.36,
-    fontSize: 11, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+  slide.addText(truncateText(rightPanel.title || "Vendor Pipeline", 50), {
+    x: 5.30, y: panelY + 0.01, w: 4.38, h: panelHdrH - 0.02,
+    fontSize: calcFontSize(rightPanel.title || "", 42, 11, 8),
+    bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
   });
 
-  // Vendor list
-  const vendors = rightPanel.vendors || [];
-  let rY = panelY + 0.44;
-  vendors.forEach((v, vi) => {
+  // Vendor rows — clamp rY so they never exit the panel
+  const vendors      = rightPanel.vendors || [];
+  const rpContentBot = panelY + panelH - 0.06; // bottom boundary of right panel
+  let   rY           = panelY + panelHdrH + 0.06;
+  vendors.forEach((v) => {
+    if (rY + 0.28 > rpContentBot) return; // skip if no room
     const isSelected = v.selected === true || String(v.status || "").toLowerCase() === "selected";
-    const vendorBg  = isSelected ? GYS.tealLight : GYS.offWhite;
-    const vendorBdr = isSelected ? GYS.tealAccent : GYS.grayBorder;
-    const textColor = isSelected ? GYS.teal : GYS.bodyText;
+    const vendorBg   = isSelected ? GYS.tealLight : GYS.offWhite;
+    const vendorBdr  = isSelected ? GYS.tealAccent : GYS.grayBorder;
+    const textColor  = isSelected ? GYS.teal : GYS.bodyText;
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 5.26, y: rY, w: 4.48, h: 0.3,
+      x: 5.26, y: rY, w: 4.48, h: 0.28,
       fill: { color: vendorBg }, line: { color: vendorBdr, width: 1 }, rectRadius: 0.06,
     });
-    const vendorLabel = (isSelected ? "✅ " : "  ") + truncateText(v.name || "", 38);
+    const vendorLabel = (isSelected ? "✅ " : "    ") + truncateText(v.name || "", 36);
     slide.addText(vendorLabel, {
-      x: 5.30, y: rY + 0.01, w: 4.0, h: 0.28,
-      fontSize: 10, bold: isSelected, color: textColor, valign: "middle", fontFace: GYS.fontBody,
+      x: 5.30, y: rY + 0.01, w: 3.6, h: 0.26,
+      fontSize: 9.5, bold: isSelected, color: textColor, valign: "middle", fontFace: GYS.fontBody,
     });
+    // "SELECTED" pill badge
     if (isSelected && v.status) {
-      slide.addText(truncateText(String(v.status), 16), {
-        x: 7.6, y: rY + 0.04, w: 1.1, h: 0.22,
-        fontSize: 7, color: GYS.tealAccent, bold: true, align: "right", fontFace: GYS.fontBody,
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 8.66, y: rY + 0.04, w: 1.0, h: 0.20,
+        fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.04,
+      });
+      slide.addText(truncateText(String(v.status), 14).toUpperCase(), {
+        x: 8.66, y: rY + 0.04, w: 1.0, h: 0.20,
+        fontSize: 7, bold: true, color: GYS.white, align: "center", valign: "middle",
+        fontFace: GYS.fontTitle,
       });
     }
-    rY += 0.33;
+    rY += 0.32;
   });
 
-  // Pipeline flow label
-  if (rightPanel.pipelineStage) {
-    slide.addText("↓  " + truncateText(rightPanel.pipelineStage, 48), {
+  // Pipeline stage
+  if (rightPanel.pipelineStage && rY + 0.22 <= rpContentBot) {
+    slide.addText("↓  " + truncateText(rightPanel.pipelineStage, 52), {
       x: 5.26, y: rY + 0.02, w: 4.48, h: 0.22,
-      fontSize: 9, color: GYS.mutedText, italic: true, fontFace: GYS.fontBody,
+      fontSize: 8.5, color: GYS.mutedText, italic: true, fontFace: GYS.fontBody,
     });
-    rY += 0.26;
+    rY += 0.28;
   }
-  if (rightPanel.note) {
-    const noteFs = calcFontSize(rightPanel.note, 90, 9, 7);
+
+  // Note bubble — height fills remaining panel space
+  if (rightPanel.note && rY + 0.20 <= rpContentBot) {
+    const noteH  = Math.max(0.32, rpContentBot - rY - 0.04);
+    const noteFs = calcFontSize(rightPanel.note, 100, 9, 7);
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 5.26, y: rY + 0.04, w: 4.48, h: 0.42,
+      x: 5.26, y: rY + 0.02, w: 4.48, h: noteH,
       fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.06,
     });
-    slide.addText("💬  " + truncateText(rightPanel.note, 110), {
-      x: 5.30, y: rY + 0.05, w: 4.4, h: 0.38,
-      fontSize: noteFs, color: GYS.bodyText, italic: true, wrap: true, valign: "middle",
-      fontFace: GYS.fontBody, lineSpacingMultiple: 1.15,
+    slide.addText("💬  " + String(rightPanel.note), {
+      x: 5.30, y: rY + 0.04, w: 4.40, h: noteH - 0.06,
+      fontSize: noteFs, color: GYS.bodyText, italic: true,
+      wrap: true, valign: "middle", fontFace: GYS.fontBody, lineSpacingMultiple: 1.15,
     });
   }
 
   // ═══════════════════════════════════════════════════════
   // MIDDLE SECTION — Horizontal milestone timeline
+  // Zone: panelY+panelH+0.04 → +1.36  (header 0.28 + body 1.08)
+  // lineY sits at 58% of body so bubble fits above without touching header
   // ═══════════════════════════════════════════════════════
-  const tlTitle = data.timelineTitle || "Current Project Status & Next Steps";
-  const timelineY = panelY + panelH + 0.1;
+  const tlTitle   = data.timelineTitle || "Current Project Status & Next Steps";
+  const timelineY = panelY + panelH + 0.04;
   const tlHeaderH = 0.28;
+  const tlAreaH   = 1.08;
+  const tlAreaY   = timelineY + tlHeaderH;
 
   slide.addShape(pptx.ShapeType.rect, {
     x: 0.18, y: timelineY, w: 9.64, h: tlHeaderH,
     fill: { color: GYS.teal }, line: { type: "none" },
   });
-  slide.addText(truncateText(tlTitle, 80), {
-    x: 0.28, y: timelineY + 0.01, w: 9.4, h: tlHeaderH - 0.02,
-    fontSize: 10, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+  // Title — full width, no truncation
+  slide.addText(String(tlTitle), {
+    x: 0.28, y: timelineY + 0.01, w: 9.30, h: tlHeaderH - 0.02,
+    fontSize: 9.5, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
   });
 
-  const steps = (data.milestones || []).slice(0, 6);
+  // White background for timeline body
+  slide.addShape(pptx.ShapeType.rect, {
+    x: 0.18, y: tlAreaY, w: 9.64, h: tlAreaH,
+    fill: { color: GYS.white }, line: { type: "none" },
+  });
+
+  const steps      = (data.milestones || []).slice(0, 6);
   const stepsCount = Math.max(steps.length, 1);
-  const tlAreaY = timelineY + tlHeaderH;
-  const tlAreaH = 1.1;
-  const lineY   = tlAreaY + tlAreaH * 0.35;
-  const padX    = 0.4;
-  const lineLen = GYS.slideW - padX * 2;
-  const stepW   = lineLen / stepsCount;
+  const padX       = 0.42;
+  const lineLen    = GYS.slideW - padX * 2;
+  const stepW      = lineLen / stepsCount;
+  // lineY at 60% of body gives ~0.65" above for speech bubble and ~0.43" below for label
+  const lineY      = tlAreaY + tlAreaH * 0.60;
 
-  // ── Progress line (solid green up to current, dashed gray after) ──
-  let currentIdx = steps.findIndex(s => s.status === "current");
-  if (currentIdx < 0) currentIdx = steps.findIndex(s => s.status === "done");
+  // Progress line
+  let currentIdx = steps.findIndex(s =>
+    ["current", "active", "in_progress"].includes(String(s.status || "").toLowerCase())
+  );
+  if (currentIdx < 0) currentIdx = steps.findLastIndex(s =>
+    ["done", "complete", "completed"].includes(String(s.status || "").toLowerCase())
+  );
 
-  // Solid segment (completed)
   const solidLen = currentIdx >= 0
     ? (padX + currentIdx * stepW + stepW / 2) - padX
     : 0;
@@ -1151,7 +1196,6 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
       fill: { color: "16A34A" }, line: { type: "none" },
     });
   }
-  // Dashed segment (remaining)
   const dashStart = padX + solidLen;
   const dashLen   = lineLen - solidLen;
   if (dashLen > 0) {
@@ -1161,7 +1205,7 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
     });
   }
 
-  // ── Step nodes ──
+  // Step nodes + labels + speech bubble
   steps.forEach((step, i) => {
     const cx     = padX + i * stepW + stepW / 2;
     const nodeR  = 0.16;
@@ -1169,16 +1213,16 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
     const nodeY  = lineY - nodeR;
     const status = String(step.status || "pending").toLowerCase();
 
-    let nodeFill  = GYS.grayBorder;  // pending = gray
+    let nodeFill  = GYS.grayBorder;
     let nodeText  = String(i + 1);
     let nodeColor = GYS.mutedText;
 
-    if (status === "done" || status === "complete" || status === "completed") {
-      nodeFill  = "16A34A"; nodeText = "✓"; nodeColor = GYS.white;
-    } else if (status === "current" || status === "active" || status === "in_progress") {
-      nodeFill  = GYS.tealAccent; nodeText = "📍"; nodeColor = GYS.white;
-    } else if (status === "blocked" || status === "red") {
-      nodeFill  = "DC2626"; nodeText = "✗"; nodeColor = GYS.white;
+    if (["done", "complete", "completed"].includes(status)) {
+      nodeFill = "16A34A"; nodeText = "✓"; nodeColor = GYS.white;
+    } else if (["current", "active", "in_progress"].includes(status)) {
+      nodeFill = GYS.tealAccent; nodeText = "📍"; nodeColor = GYS.white;
+    } else if (["blocked", "red"].includes(status)) {
+      nodeFill = "DC2626"; nodeText = "✗"; nodeColor = GYS.white;
     }
 
     slide.addShape(pptx.ShapeType.ellipse, {
@@ -1191,29 +1235,35 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
       align: "center", valign: "middle",
     });
 
-    // Step label below node
-    const labelY = lineY + nodeR + 0.04;
-    const labelW = stepW * 0.9;
-    const labelX = cx - labelW / 2;
-    slide.addText(truncateText(step.label || step.title || `Step ${i+1}`, 22), {
-      x: labelX, y: labelY, w: labelW, h: 0.28,
-      fontSize: calcFontSize(step.label || step.title || "", 20, 8, 6),
-      color: status === "done" ? "16A34A" : status === "current" ? GYS.tealAccent
-           : status === "blocked" ? "DC2626" : GYS.mutedText,
-      align: "center", wrap: true, fontFace: GYS.fontBody, bold: status === "current",
+    // Step label below node — height = remaining space to bottom of tlArea
+    const labelY  = lineY + nodeR + 0.04;
+    const labelW  = stepW * 0.90;
+    const labelX  = cx - labelW / 2;
+    const labelH2 = (tlAreaY + tlAreaH) - labelY - 0.02;
+    const labelColor = status === "done"    ? "16A34A"
+                     : status === "current" ? GYS.tealAccent
+                     : status === "blocked" ? "DC2626"
+                     : GYS.mutedText;
+    slide.addText(step.label || step.title || `Step ${i + 1}`, {
+      x: labelX, y: labelY, w: labelW, h: Math.max(0.22, labelH2),
+      fontSize: calcFontSize(step.label || step.title || "", 18, 8, 6),
+      color: labelColor, align: "center", wrap: true,
+      fontFace: GYS.fontBody, bold: status === "current",
     });
 
-    // Speech bubble tooltip for current step
-    if (status === "current" && step.note) {
-      const bY = nodeY - 0.5;
-      const bW = Math.min(stepW * 1.4, 2.4);
-      const bX = cx - bW / 2;
+    // Speech bubble — anchored at top of tlArea so it never overlaps the header
+    if (["current", "active", "in_progress"].includes(status) && step.note) {
+      const bH  = 0.40;
+      const bW  = Math.min(stepW * 1.55, 2.55);
+      // Keep bubble horizontally inside slide
+      const bX  = Math.max(padX, Math.min(cx - bW / 2, GYS.slideW - padX - bW));
+      const bY  = tlAreaY + 0.04; // always starts just below the header, never above it
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: bX, y: bY, w: bW, h: 0.38,
+        x: bX, y: bY, w: bW, h: bH,
         fill: { color: "FFFBEB" }, line: { color: "D97706", width: 1 }, rectRadius: 0.08,
       });
-      slide.addText(truncateText(step.note, 55), {
-        x: bX + 0.06, y: bY + 0.02, w: bW - 0.12, h: 0.34,
+      slide.addText(String(step.note), {
+        x: bX + 0.07, y: bY + 0.02, w: bW - 0.14, h: bH - 0.04,
         fontSize: 7, color: "92400E", wrap: true, valign: "middle",
         fontFace: GYS.fontBody, italic: true,
       });
@@ -1222,11 +1272,12 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
 
   // ═══════════════════════════════════════════════════════
   // BOTTOM — Issue / Blocker card
+  // Zone: tlAreaY + tlAreaH + 0.04  →  5.33
   // ═══════════════════════════════════════════════════════
   const issueCard = data.issueCard || {};
   if (issueCard.title || (issueCard.bullets || []).length > 0) {
-    const issueY = tlAreaY + tlAreaH + 0.06;
-    const issueH = GYS.slideH - issueY - 0.28;
+    const issueY   = tlAreaY + tlAreaH + 0.04;
+    const issueH   = 5.33 - issueY;  // fixed bottom edge keeps footer clear
     const issueBg  = issueCard.color === "red" ? "FEF2F2" : "FFFBEB";
     const issueBdr = issueCard.color === "red" ? "DC2626" : "D97706";
     const issueHdr = issueCard.color === "red" ? "B91C1C" : "92400E";
@@ -1237,37 +1288,42 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
     });
 
     // Tag pill
-    const tagText = issueCard.tag || "⚠️ ISSUES & BLOCKERS";
+    const tagText  = issueCard.tag || "⚠️ ISSUES & BLOCKERS";
+    const tagW     = 2.35;
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.28, y: issueY + 0.04, w: 2.2, h: 0.24,
+      x: 0.28, y: issueY + 0.05, w: tagW, h: 0.23,
       fill: { color: issueBdr }, line: { type: "none" }, rectRadius: 0.05,
     });
-    slide.addText(truncateText(tagText, 30), {
-      x: 0.28, y: issueY + 0.04, w: 2.2, h: 0.24,
-      fontSize: 8, bold: true, color: GYS.white, align: "center", valign: "middle",
+    slide.addText(String(tagText), {
+      x: 0.28, y: issueY + 0.05, w: tagW, h: 0.23,
+      fontSize: 7.5, bold: true, color: GYS.white, align: "center", valign: "middle",
       fontFace: GYS.fontTitle,
     });
 
-    // Issue title
+    // Issue title — from right of tag to end of card
     if (issueCard.title) {
-      slide.addText(truncateText(issueCard.title, 80), {
-        x: 2.58, y: issueY + 0.04, w: 7.16, h: 0.28,
-        fontSize: calcFontSize(issueCard.title, 70, 11, 8), bold: true,
+      slide.addText(String(issueCard.title), {
+        x: tagW + 0.38, y: issueY + 0.04, w: 9.64 - tagW - 0.48, h: 0.28,
+        fontSize: calcFontSize(issueCard.title, 75, 10.5, 8), bold: true,
         color: issueHdr, valign: "middle", fontFace: GYS.fontTitle,
       });
     }
 
-    // Issue bullets
+    // Issue bullets — height fills remainder of card
     const issueBullets = issueCard.bullets || [];
     if (issueBullets.length > 0) {
-      const ibH   = issueH - 0.35;
-      const ibFs  = bulletFontSize(issueBullets, ibH, 9, 7);
+      const ibStartY = issueY + 0.33;
+      const ibH      = issueH - 0.37;
+      const ibFs     = bulletFontSize(issueBullets, ibH, 9, 7);
       slide.addText(
-        issueBullets.map(b => ({ text: String(b), options: { bullet: true, breakLine: true } })),
+        issueBullets.map((b, idx) => ({
+          text: String(b),
+          options: { bullet: true, breakLine: idx < issueBullets.length - 1 },
+        })),
         {
-          x: 0.28, y: issueY + 0.34, w: 9.5, h: ibH,
+          x: 0.28, y: ibStartY, w: 9.50, h: ibH,
           fontSize: ibFs, color: issueHdr, fontFace: GYS.fontBody,
-          valign: "top", lineSpacingMultiple: 1.2, paraSpaceAfter: 2,
+          valign: "top", lineSpacingMultiple: 1.15, paraSpaceAfter: 2,
           autoFit: true, columns: issueBullets.length > 3 ? 2 : 1,
         }
       );
