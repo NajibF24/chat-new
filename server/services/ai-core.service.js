@@ -1,17 +1,18 @@
 // server/services/ai-core.service.js
-// ✅ PATCH v1.4.0 — Fixes:
-//   1. FLEXIBLE PPT PROMPT: Detects freeform layout requests (no /ppt prefix needed)
-//      and passes them directly without forcing GYS corporate template constraints
-//   2. CHUNKED LARGE DOC READING: Documents up to 100+ pages now handled via
-//      progressive chunking + AI-assisted summarization per section
-//   3. TEXT OVERFLOW HARDENING: All layout renderers now use stricter autoFit + caps
-//   4. ISOLATED CHANGE: Regular bot chat is 100% unaffected
+// ✅ PATCH v1.5.0 — Adds:
+//   1. IMAGE GENERATION: DALL-E 3 support via isImageGenerationRequest() detector
+//      + _handleImageGenerationCommand() handler. Auto-detects size/quality/style from prompt.
+//   2. FLEXIBLE PPT PROMPT: Detects freeform layout requests (no /ppt prefix needed)
+//   3. CHUNKED LARGE DOC READING: Documents up to 100+ pages handled via chunked summarization
+//   4. DYNAMIC TOKEN BUDGET: slide count detector + calcTokenBudget() for large decks
+//   5. GRID_3X3 LAYOUT: 9-item 3×3 category grid for classification slides
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
 import XLSX     from 'xlsx';
 import fs       from 'fs';
 import path     from 'path';
+import axios    from 'axios';
 
 import Chat     from '../models/Chat.js';
 import Thread   from '../models/Thread.js';
@@ -511,9 +512,8 @@ function calcTokenBudget(requestedSlides) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PPT HELPER FUNCTIONS
+// PPT COMMAND DETECTOR
 // ─────────────────────────────────────────────────────────────
-
 function isPptCommand(message = '') {
   const t = (message || '').trim().toLowerCase();
   return (
@@ -523,9 +523,66 @@ function isPptCommand(message = '') {
     /^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t) ||
     (/\b(presentasi|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
       /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t)) ||
-    // ✅ v1.4.0: Also catch freeform detailed layout requests
     isFreeformLayoutRequest(message)
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+// ✅ NEW: IMAGE GENERATION DETECTOR
+// Detects when user is requesting an image to be created/generated.
+// Returns true if message is clearly an image generation request.
+// ─────────────────────────────────────────────────────────────
+function isImageGenerationRequest(message = '') {
+  const t = (message || '').trim();
+
+  // Must NOT be a PPT command — PPT takes priority
+  if (isPptCommand(t)) return false;
+
+  const triggers = [
+    // English
+    /^create\s+(a\s+|an\s+)?(image|photo|picture|illustration|drawing|artwork|render|visual|painting)/i,
+    /^generate\s+(a\s+|an\s+)?(image|photo|picture|illustration|artwork|render|visual)/i,
+    /^make\s+(a\s+|an\s+)?(image|photo|picture|illustration|artwork|render|visual)/i,
+    /^draw\s+(a\s+|an\s+|me\s+)?/i,
+    /^(design|render|illustrate|paint|sketch)\s+(a\s+|an\s+)?/i,
+    /\b(generate|create|make|draw|produce)\s+(a\s+)?(realistic|detailed|cinematic|4k|high.?res|ultra|professional|photorealistic)\s+(image|photo|picture|render|illustration)/i,
+    /\b(image|photo|picture|illustration)\s+of\b/i,
+    /\bvisual(ize|ization)?\s+(of|for|showing)\b/i,
+
+    // Indonesian
+    /^(buatkan?|buat|generate|create)\s+(gambar|foto|ilustrasi|desain|visual|render)/i,
+    /^(gambarkan|lukiskan|desainkan)\s+/i,
+    /\b(buat|buatkan|generate|create)\s+(gambar|foto|ilustrasi)\b/i,
+  ];
+
+  return triggers.some(r => r.test(t));
+}
+
+// ─────────────────────────────────────────────────────────────
+// ✅ NEW: PARSE IMAGE OPTIONS from prompt
+// Extracts size/quality/style hints from the user message.
+// ─────────────────────────────────────────────────────────────
+function parseImageOptions(message = '') {
+  const t = message.toLowerCase();
+
+  // Size: portrait vs landscape vs square
+  let size = '1792x1024'; // default landscape
+  if (/\b(portrait|vertical|tall|1024.?x.?1792)\b/.test(t))  size = '1024x1792';
+  if (/\b(square|1:1|1024.?x.?1024)\b/.test(t))              size = '1024x1024';
+
+  // Quality: hd if user mentions detail/realistic/4k/8k
+  let quality = 'standard';
+  if (/\b(hd|4k|8k|high.?res|ultra|detailed|realistic|cinematic|professional|photorealistic)\b/.test(t)) {
+    quality = 'hd';
+  }
+
+  // Style: natural if user says soft/calm/natural/watercolor
+  let style = 'vivid';
+  if (/\b(natural|soft|calm|watercolor|pastel|gentle|realistic.?photo)\b/.test(t)) {
+    style = 'natural';
+  }
+
+  return { size, quality, style };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -955,6 +1012,11 @@ class AICoreService {
       return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
     }
 
+    // ── ✅ NEW: Image Generation Handler ───────────────────────
+    if (isImageGenerationRequest(message)) {
+      return this._handleImageGenerationCommand({ userId, botId, bot, message, threadId });
+    }
+
     // ── Regular bot flow (100% unchanged) ──────────────────────
     let contextData = '';
 
@@ -1064,6 +1126,99 @@ class AICoreService {
     await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // ✅ NEW v1.5.0: IMAGE GENERATION COMMAND HANDLER
+  //
+  // Flow:
+  //   1. Parse size/quality/style hints from prompt
+  //   2. Call DALL-E 3 via AIProviderService.generateImage()
+  //   3. Download + save to /data/files/ (DALL-E URLs expire in 1 hour)
+  //   4. Return markdown with embedded preview + download link
+  // ─────────────────────────────────────────────────────────
+  async _handleImageGenerationCommand({ userId, botId, bot, message, threadId }) {
+    try {
+      console.log(`[ImageGen] Request: "${message.substring(0, 80)}..."`);
+
+      const provider = bot.aiProvider?.provider || 'openai';
+      if (provider !== 'openai') {
+        const errMsg = `⚠️ **Image generation tidak tersedia untuk provider "${provider}".**\n\nFitur ini membutuhkan OpenAI (DALL-E 3). Hubungi admin untuk mengaktifkan provider OpenAI.`;
+        await new Chat({ userId, botId, threadId, role: 'user',      content: message }).save();
+        await new Chat({ userId, botId, threadId, role: 'assistant', content: errMsg  }).save();
+        await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+        return { response: errMsg, threadId };
+      }
+
+      const options = parseImageOptions(message);
+      console.log(`[ImageGen] Options: size=${options.size} quality=${options.quality} style=${options.style}`);
+
+      const { imageUrl, revisedPrompt } = await AIProviderService.generateImage(
+        bot.aiProvider, message, options
+      );
+
+      // Save locally — DALL-E URLs expire after 1 hour
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+      const filename  = `GYS-image-${Date.now()}.png`;
+      const filepath  = path.join(outputDir, filename);
+      const publicUrl = `/api/files/${filename}`;
+      let   savedUrl  = imageUrl; // fallback to direct URL if download fails
+
+      try {
+        const imgResp = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 });
+        fs.writeFileSync(filepath, Buffer.from(imgResp.data));
+        savedUrl = publicUrl;
+        console.log(`[ImageGen] Saved: ${filename} (${Math.round(imgResp.data.byteLength / 1024)} KB)`);
+      } catch (dlErr) {
+        console.warn('[ImageGen] Could not save locally, using direct URL:', dlErr.message);
+      }
+
+      const isIndo    = /\b(buat|buatkan|gambar|ilustrasi|desain|lukis)\b/i.test(message);
+      const sizeLabel = options.size === '1792x1024' ? 'Landscape (1792×1024)'
+        : options.size === '1024x1792' ? 'Portrait (1024×1792)'
+        : 'Square (1024×1024)';
+      const promptNote = revisedPrompt && revisedPrompt !== message
+        ? `\n\n> 💡 **${isIndo ? 'Prompt direvisi oleh DALL-E' : 'Prompt revised by DALL-E'}:**\n> _${revisedPrompt.substring(0, 220)}${revisedPrompt.length > 220 ? '...' : ''}_`
+        : '';
+
+      const responseMarkdown = isIndo
+        ? `✅ **Gambar berhasil dibuat!**
+
+🎨 **Model:** DALL-E 3  |  📐 **Ukuran:** ${sizeLabel}  |  ✨ **Kualitas:** ${options.quality.toUpperCase()}  |  🖌️ **Gaya:** ${options.style}
+
+![Generated Image](${savedUrl})
+
+---
+### [⬇️ Download Gambar](${savedUrl})${promptNote}`
+        : `✅ **Image successfully generated!**
+
+🎨 **Model:** DALL-E 3  |  📐 **Size:** ${sizeLabel}  |  ✨ **Quality:** ${options.quality.toUpperCase()}  |  🖌️ **Style:** ${options.style}
+
+![Generated Image](${savedUrl})
+
+---
+### [⬇️ Download Image](${savedUrl})${promptNote}`;
+
+      const fileAttachment = savedUrl === publicUrl
+        ? [{ name: filename, path: savedUrl, type: 'image', size: '0' }]
+        : [];
+
+      await new Chat({ userId, botId, threadId, role: 'user',      content: message }).save();
+      await new Chat({ userId, botId, threadId, role: 'assistant', content: responseMarkdown, attachedFiles: fileAttachment }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return { response: responseMarkdown, threadId, attachedFiles: fileAttachment };
+
+    } catch (error) {
+      console.error('❌ [ImageGen]', error);
+      const errMsg = `❌ **Gagal membuat gambar.**\n\n${error.message}`;
+      await new Chat({ userId, botId, threadId, role: 'user',      content: message }).save();
+      await new Chat({ userId, botId, threadId, role: 'assistant', content: errMsg  }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+      return { response: errMsg, threadId };
+    }
   }
 
   // ─────────────────────────────────────────────────────────

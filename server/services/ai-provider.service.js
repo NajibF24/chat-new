@@ -510,6 +510,88 @@ class AIProviderService {
     return { text, usage };
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // ✅ NEW: generateImage — DALL-E 3 image generation
+  //
+  // @param {object} providerConfig  - bot.aiProvider config
+  // @param {string} prompt          - image description prompt
+  // @param {object} options         - { size, quality, style }
+  // @returns {object}               - { imageUrl, revisedPrompt }
+  //
+  // Size options   : "1024x1024" | "1792x1024" | "1024x1792"
+  // Quality options: "standard" | "hd"
+  // Style options  : "vivid" | "natural"
+  // ─────────────────────────────────────────────────────────────
+  async generateImage(providerConfig, prompt, options = {}) {
+    const apiKey = this.getApiKey(providerConfig);
+    if (!apiKey) {
+      throw new Error(
+        'Image generation membutuhkan OpenAI API Key. ' +
+        'Tambahkan OPENAI_API_KEY di .env atau di konfigurasi bot.'
+      );
+    }
+
+    const provider = providerConfig?.provider || 'openai';
+    if (provider !== 'openai') {
+      throw new Error(
+        `Image generation hanya tersedia untuk provider OpenAI (DALL-E). ` +
+        `Provider saat ini: "${provider}".`
+      );
+    }
+
+    const {
+      size    = '1792x1024',  // landscape default — lebih cocok untuk industrial
+      quality = 'hd',         // hd for detailed/realistic requests
+      style   = 'vivid',      // vivid = dramatic/detailed, natural = softer
+      n       = 1,
+    } = options;
+
+    const openai = new OpenAI({ apiKey, timeout: 120000 });
+
+    console.log(`[ImageGen] Calling DALL-E 3 | size=${size} quality=${quality} style=${style}`);
+    console.log(`[ImageGen] Prompt (${prompt.length} chars): ${prompt.substring(0, 100)}...`);
+
+    let response;
+    try {
+      response = await openai.images.generate({
+        model:   'dall-e-3',
+        prompt,
+        n,
+        size,
+        quality,
+        style,
+        response_format: 'url',
+      });
+    } catch (err) {
+      const status = err.status || err.response?.status;
+      const msg    = err.message || 'Unknown error';
+
+      if (status === 400) {
+        // Content policy violation
+        if (msg.includes('content_policy') || msg.includes('safety')) {
+          throw new Error(
+            'Prompt ditolak oleh OpenAI content policy. ' +
+            'Coba ubah deskripsi gambar — hindari konten yang sensitif atau terlalu spesifik tentang orang nyata.'
+          );
+        }
+        throw new Error(`DALL-E error: ${msg}`);
+      }
+      if (status === 401) throw new Error('OpenAI API Key tidak valid untuk image generation.');
+      if (status === 429) throw new Error('Rate limit OpenAI tercapai. Coba beberapa saat lagi.');
+      if (status === 503 || msg.includes('timeout')) throw new Error('OpenAI image generation timeout. Coba lagi.');
+      throw new Error(`Image generation gagal: ${msg}`);
+    }
+
+    const imageData    = response.data?.[0];
+    const imageUrl     = imageData?.url;
+    const revisedPrompt = imageData?.revised_prompt || prompt;
+
+    if (!imageUrl) throw new Error('DALL-E tidak mengembalikan URL gambar.');
+
+    console.log(`[ImageGen] Success — URL: ${imageUrl.substring(0, 80)}...`);
+    return { imageUrl, revisedPrompt };
+  }
+
   async testConnection(providerConfig) {
     try {
       const result = await this.generateCompletion({
