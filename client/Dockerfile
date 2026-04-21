@@ -6,7 +6,7 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# Production Stage
+# Production Stage 1
 FROM nginxinc/nginx-unprivileged:alpine
 
 # Copy hasil build React
