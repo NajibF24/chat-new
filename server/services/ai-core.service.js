@@ -60,7 +60,9 @@ Signs a request is FREEFORM (user is the designer):
 RULE #1 — FOLLOW USER INSTRUCTIONS EXACTLY
 ═══════════════════════════════════════════════════════
 - If user specifies slides explicitly (e.g. "slide 1: visi, slide 2: produk"), follow that structure EXACTLY.
-- If user specifies a number of slides, produce exactly that count.
+- If user specifies a number of slides (e.g. "12-slide", "10 slides"), produce EXACTLY that count — not fewer, not more.
+  ⚠️ This is the most important rule. Never stop early due to length. Complete ALL slides.
+  ⚠️ If the user says "12-slide presentation", you MUST write all 12 slide sections, even if content is brief.
 - If user only gives a title/topic, generate a logical 7–9 slide narrative arc.
 - Match the user's language 100% (Indonesian → Indonesian, English → English).
 
@@ -462,6 +464,50 @@ function isFreeformLayoutRequest(message = '') {
   // Need at least 3 indicators to be considered freeform
   const matches = indicators.filter(r => r.test(t));
   return matches.length >= 3;
+}
+
+// ─────────────────────────────────────────────────────────────
+// ✅ v1.5.0 — SLIDE COUNT DETECTOR
+// Reads how many slides the user explicitly requested.
+// Returns the number if found (min 1), or null if not specified.
+// ─────────────────────────────────────────────────────────────
+function detectRequestedSlideCount(message = '') {
+  const t = message || '';
+
+  // Patterns like "12-slide", "12 slide", "12 slides", "12 buah slide"
+  const patterns = [
+    /\b(\d+)[- ]?slide[s]?\b/i,
+    /\b(\d+)[- ]?buah[- ]?slide\b/i,
+    /\bslide[s]?\s+sebanyak\s+(\d+)\b/i,
+    /\bsebanyak\s+(\d+)\s+slide\b/i,
+    /\b(\d+)[- ]?halaman\s+(presentasi|slide)\b/i,
+    /\bpresentation\s+(?:deck\s+)?(?:of\s+)?(\d+)\s+slide[s]?\b/i,
+    /\b(\d+)\s+(?:total\s+)?slide[s]?\s+(?:deck|presentation)\b/i,
+    /\bcomprehensive\s+(\d+)[- ]?slide\b/i,
+  ];
+
+  for (const p of patterns) {
+    const m = t.match(p);
+    if (m) {
+      const n = parseInt(m[1] || m[2], 10);
+      if (!isNaN(n) && n >= 1 && n <= 50) return n;
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// ✅ v1.5.0 — TOKEN BUDGET CALCULATOR
+// Given requested slide count, returns appropriate maxTokens
+// so that all slides can be generated without truncation.
+// Rule of thumb: ~250 tokens per slide for content generation,
+//                ~350 tokens per slide for JSON conversion.
+// ─────────────────────────────────────────────────────────────
+function calcTokenBudget(requestedSlides) {
+  if (!requestedSlides) return { contentTokens: 4000, jsonTokens: 5000 };
+  const contentTokens = Math.min(Math.max(requestedSlides * 350, 4000), 8000);
+  const jsonTokens    = Math.min(Math.max(requestedSlides * 450, 5000), 10000);
+  return { contentTokens, jsonTokens };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1214,6 +1260,12 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
         contentUserMsg += `INSTRUKSI: Buat presentasi berkualitas tinggi dari dokumen di atas. `;
         contentUserMsg += `Gunakan layout yang tepat per slide. Untuk slide yang butuh gambar, `;
         contentUserMsg += `tambahkan [NEEDS_IMAGE: architecture/diagram/screenshot] di akhir konten slide tersebut.\n`;
+
+        // ✅ v1.5.0: If user specified exact slide count, reinforce it here to prevent AI from shortcutting
+        const requestedSlides = detectRequestedSlideCount(userRequest);
+        if (requestedSlides) {
+          contentUserMsg += `\n⚠️ WAJIB: User meminta TEPAT ${requestedSlides} slide. Kamu HARUS generate tepat ${requestedSlides} slide — tidak lebih, tidak kurang. Jangan stop lebih awal. Setiap slide yang diminta harus ada.\n`;
+        }
       }
 
       // Hard cap on total prompt
@@ -1226,8 +1278,14 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
       // ── STEP 3: Content Generation ──────────────────────────────────────────
       console.log(`[PPT] Step 1 — generating content (freeform: ${freeformMode})...`);
 
-      // ✅ v1.4.0: Freeform mode gets a higher token budget for detailed single slides
-      const contentMaxTokens = freeformMode ? 2000 : 3500;
+      // ✅ v1.5.0: Dynamic token budget — scales with requested slide count
+      const requestedSlides   = detectRequestedSlideCount(userRequest);
+      const { contentTokens, jsonTokens } = calcTokenBudget(requestedSlides);
+      const contentMaxTokens  = freeformMode ? 2000 : contentTokens;
+
+      if (requestedSlides) {
+        console.log(`[PPT] Detected ${requestedSlides} requested slides → contentTokens=${contentMaxTokens}, jsonTokens=${jsonTokens}`);
+      }
 
       const contentResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
@@ -1251,17 +1309,30 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
       // ── STEP 4: JSON Conversion ──────────────────────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
 
-      const slideContentForJson = slideContent.length > 8000
-        ? slideContent.substring(0, 8000) + '\n\n[... trimmed ...]'
+      // ✅ v1.5.0: Truncation limit scales with slide count — 1200 chars per slide, min 10000
+      const jsonTruncLimit     = requestedSlides
+        ? Math.max(requestedSlides * 1200, 10000)
+        : 10000;
+      const slideContentForJson = slideContent.length > jsonTruncLimit
+        ? slideContent.substring(0, jsonTruncLimit) + '\n\n[... trimmed ...]'
         : slideContent;
+
+      if (slideContent.length > jsonTruncLimit) {
+        console.warn(`[PPT] slideContent trimmed for JSON: ${slideContent.length} → ${jsonTruncLimit} chars`);
+      }
+
+      // ✅ v1.5.0: Add slide count enforcement to JSON conversion prompt
+      const jsonSlideCountNote = requestedSlides
+        ? `\n\n⚠️ CRITICAL: The presentation has EXACTLY ${requestedSlides} slides. Your JSON output MUST contain ALL ${requestedSlides} slide objects. Do NOT drop or merge any slides.`
+        : '';
 
       const jsonResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
         messages:       [],
-        userContent:    `Convert this presentation to JSON:\n\n${slideContentForJson}`,
+        userContent:    `Convert this presentation to JSON:${jsonSlideCountNote}\n\n${slideContentForJson}`,
         timeout:        120000,
-        maxTokens:      4000,
+        maxTokens:      freeformMode ? 4000 : jsonTokens,
       });
 
       let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
@@ -1277,6 +1348,11 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
       }
 
       if (!pptData?.slides?.length) throw new Error('JSON tidak memiliki slides.');
+
+      // ✅ v1.5.0: Warn if AI produced fewer slides than requested
+      if (requestedSlides && pptData.slides.length < requestedSlides) {
+        console.warn(`[PPT] ⚠️ AI returned ${pptData.slides.length} slides but user requested ${requestedSlides}. Consider increasing token budgets.`);
+      }
 
       const layoutLog = pptData.slides.map(s => s.layout || 'CONTENT').join(', ');
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
