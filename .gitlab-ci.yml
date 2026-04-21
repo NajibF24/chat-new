@@ -18,7 +18,7 @@ build_server:
       changes:
         - server/**/*
   script:
-    - docker build --cache-from -t $CI_REGISTRY/portalai/server:CI_COMMIT_BRANCH.$CI_COMMIT_SHA ./server .
+    - docker build -t $CI_REGISTRY/portalai/server:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHA} ./server
     - docker push $CI_REGISTRY/portalai:CI_COMMIT_BRANCH.$CI_COMMIT_SHA 
 
 build_client:
@@ -30,5 +30,5 @@ build_client:
       changes:
         - client/**/*
   script:
-    - docker build --cache-from -t $CI_REGISTRY/portalai/client:CI_COMMIT_BRANCH.$CI_COMMIT_SHA ./client .
+    - docker build -t $CI_REGISTRY/portalai/client:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHA} ./client
     - docker push $CI_REGISTRY/portalai:CI_COMMIT_BRANCH.$CI_COMMIT_SHA
