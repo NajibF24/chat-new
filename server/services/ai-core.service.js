@@ -75,6 +75,12 @@ You MUST select the most impactful layout for each slide. Apply this decision tr
   Is it a topic transition / section divider?
     → LAYOUT: SECTION
 
+  Does it present 5–9 categories, modules, or feature groups in a matrix view?
+    → LAYOUT: GRID_3X3  (3×3 icon cards grid — ideal for classification/overview slides)
+      Use GRID_3X3 when: user asks for a "3x3 grid", "9 categories", "matrix layout",
+      or lists 5–9 distinct items that should each get their own card.
+      Each item has: icon, title, and a subItems list (short bullet points).
+
   Does it present 2–4 strategic pillars, features, or themes?
     → LAYOUT: GRID  (icon cards — most visual impact)
 
@@ -114,6 +120,7 @@ You MUST select the most impactful layout for each slide. Apply this decision tr
 RULE #3 — RICH CONTENT STANDARDS (NO LAZY CONTENT)
 ═══════════════════════════════════════════════════════
 - GRID items: emoji icon + short title (3–5 words) + 2–3 sentence description (20+ words)
+- GRID_3X3 items: emoji icon + short title (2–4 words) + 2–4 subItems (each 2–5 words, concise)
 - STATS: emoji icon + bold value + label + context subtitle
 - TIMELINE: 3–6 steps, each with time label + title + 1–2 sentence description
 - TABLE: 3–5 columns, minimum 3 data rows, each cell has real content
@@ -164,6 +171,23 @@ items:
 - icon: 🌱
   title: Sustainability
   text: Carbon footprint reduced 18% through energy optimization aligned with Yamato Steel Group global standards.
+
+## [9-Category Overview]
+LAYOUT: GRID_3X3
+items:
+- icon: 🪖
+  title: Personal PPE
+  subItems:
+    - Hardhat Detection
+    - Safety Vest
+    - Uniform Compliance
+    - Gloves
+- icon: 👤
+  title: Personal Behavior
+  subItems:
+    - Over the Fence
+    - Sleep Guard
+    - Crowd Detection
 
 ## [Key Performance Indicators]
 LAYOUT: STATS
@@ -309,8 +333,12 @@ SECTION:
 CONTENT:
 { "layout": "CONTENT", "title": "...", "bullets": ["Full sentence bullet 1", "Full sentence bullet 2"], "needsImage": "architecture|diagram|screenshot|cover|none" }
 
-GRID (visual icon cards):
+GRID (visual icon cards, 2–4 items):
 { "layout": "GRID", "title": "...", "items": [{ "icon": "🚀", "title": "Short Title", "text": "Full description sentence here." }] }
+
+GRID_3X3 (3×3 matrix grid, 5–9 category cards):
+{ "layout": "GRID_3X3", "title": "...", "items": [{ "icon": "🪖", "title": "Category Name", "subItems": ["Sub-item 1", "Sub-item 2", "Sub-item 3"] }] }
+Note: GRID_3X3 uses "subItems" (array of short strings), NOT "text". Include 2–4 subItems per card.
 
 STATS (KPI number cards):
 { "layout": "STATS", "title": "...", "stats": [{ "icon": "📈", "value": "94%", "label": "Metric Name", "sub": "Context description" }] }
@@ -375,7 +403,8 @@ CRITICAL RULES:
 1. Preserve ALL slides in the exact same order — do NOT drop, merge, or reorder slides.
 2. For TIMELINE: map "steps" array exactly. NEVER convert a TIMELINE to a TABLE.
 3. For GRID: map "items" array exactly with icon, title, text fields.
-4. For STATS: map "stats" array with icon, value, label, sub fields.
+4. For GRID_3X3: map "items" array with icon, title, and subItems (string array) fields. NEVER use "text" for GRID_3X3 — use "subItems".
+5. For STATS: map "stats" array with icon, value, label, sub fields.
 5. Preserve original language (ID/EN) in ALL text fields.
 6. "title" must never be empty — use a short placeholder if blank.
 7. All string values must be properly escaped JSON strings.
@@ -397,6 +426,17 @@ Output format:
 // ─────────────────────────────────────────────────────────────
 function isFreeformLayoutRequest(message = '') {
   const t = message || '';
+
+  // ── EARLY EXIT: Grid/category layout requests are NOT freeform ──────────
+  // These are content requests that should go through normal AI layout detection.
+  const gridPatterns = [
+    /\b(3x3|3 x 3|grid|matrix)\b/i,
+    /\b(\d+)\s*(kategori|categories|category|items?)\b/i,
+    /buatkan\s+(slide|ppt|presentasi)/i,
+    /create\s+(a\s+)?(slide|ppt|presentation)/i,
+  ];
+  if (gridPatterns.some(r => r.test(t))) return false;
+
   const indicators = [
     /LEFT\s+PANEL/i,
     /RIGHT\s+PANEL/i,
@@ -1281,7 +1321,7 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
       const isEnglish = engWords.length > indWords.length || freeformMode;
 
       const layoutIcons = {
-        TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
+        TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', GRID_3X3: '🔲', STATS: '📊',
         TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
         TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯',
         IMAGE_SLIDE: '🖼️', STATUS_SLIDE: '🔄',

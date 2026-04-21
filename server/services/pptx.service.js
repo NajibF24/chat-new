@@ -500,6 +500,112 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
   addFooter(slide, pptx, GYS, pageLabel);
 }
 
+// ────────────────────────────────────────────────────────────
+// GRID_3X3 — 3×3 grid layout for 5–9 category cards
+// Slide layout: LAYOUT_16x9 (10" × 5.625")
+// Header bar: 0.72in → content starts at y=0.85in
+// 3 columns × 3 rows of cards, each with icon + title + sub-items
+// ────────────────────────────────────────────────────────────
+function renderGrid3x3(pptx, slide, data, GYS, pageLabel) {
+  // Background
+  slide.addShape(pptx.ShapeType.rect, {
+    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
+    fill: { color: GYS.offWhite }, line: { type: "none" },
+  });
+  addHeaderBar(slide, pptx, GYS);
+  addLogoLight(slide, pptx, GYS);
+  addSlideTitle(slide, GYS, data.title);
+
+  const allItems = (data.items || []).slice(0, 9);
+  const COLS     = 3;
+  const ROWS     = Math.ceil(allItems.length / COLS);
+
+  // Grid geometry — tight fit for 3×3
+  const startX  = 0.22;
+  const startY  = 0.95;       // just below the header+title zone
+  const gapX    = 0.14;
+  const gapY    = 0.12;
+  const availW  = GYS.slideW - startX * 2;
+  const availH  = GYS.slideH - startY - 0.38; // leave room for footer
+  const cardW   = (availW - gapX * (COLS - 1)) / COLS;
+  const cardH   = (availH - gapY * (ROWS - 1)) / ROWS;
+
+  allItems.forEach((item, idx) => {
+    const col = idx % COLS;
+    const row = Math.floor(idx / COLS);
+    const cx  = startX + col * (cardW + gapX);
+    const cy  = startY + row * (cardH + gapY);
+
+    // Card shadow
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: cx + 0.03, y: cy + 0.04, w: cardW, h: cardH,
+      fill: { color: "D8E4E0" }, line: { type: "none" }, rectRadius: 0.10,
+    });
+    // Card body
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: cx, y: cy, w: cardW, h: cardH,
+      fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 0.75 }, rectRadius: 0.10,
+    });
+    // Top accent strip
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: cx, y: cy, w: cardW, h: 0.09,
+      fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.05,
+    });
+
+    // Icon circle
+    const iconSize = 0.38;
+    const iconX    = cx + 0.12;
+    const iconY    = cy + 0.13;
+    slide.addShape(pptx.ShapeType.ellipse, {
+      x: iconX, y: iconY, w: iconSize, h: iconSize,
+      fill: { color: GYS.tealLight }, line: { type: "none" },
+    });
+    slide.addText(item.icon || "📦", {
+      x: iconX, y: iconY, w: iconSize, h: iconSize,
+      fontSize: 14, align: "center", valign: "middle",
+    });
+
+    // Category title (right of icon)
+    const titleX  = cx + 0.57;
+    const titleW  = cardW - 0.64;
+    const titleStr = truncateText(item.title || "Category", 28);
+    const titleFs  = calcFontSize(titleStr, 20, 9, 7);
+    slide.addText(titleStr, {
+      x: titleX, y: iconY, w: titleW, h: iconSize,
+      fontSize: titleFs, bold: true, color: GYS.darkText,
+      valign: "middle", wrap: true, fontFace: GYS.fontTitle, autoFit: true,
+    });
+
+    // Sub-items / description below icon row
+    const subY     = cy + 0.13 + iconSize + 0.06;
+    const subH     = cardH - (iconSize + 0.13 + 0.06) - 0.06;
+    const subItems = item.subItems || item.bullets || [];
+
+    if (subItems.length > 0) {
+      // Render as small bullet list
+      const subFs = bulletFontSize(subItems, subH, 7.5, 6, cardW - 0.16);
+      slide.addText(
+        subItems.map(s => ({ text: String(s), options: { bullet: true, breakLine: true } })),
+        {
+          x: cx + 0.10, y: subY, w: cardW - 0.16, h: subH,
+          fontSize: subFs, color: GYS.bodyText, fontFace: GYS.fontBody,
+          valign: "top", paraSpaceAfter: 1, lineSpacingMultiple: 1.15, autoFit: true,
+        }
+      );
+    } else if (item.text) {
+      // Fallback: plain description text
+      const textFs = calcFontSizeByArea(String(item.text), cardW - 0.18, subH, 7.5, 6);
+      slide.addText(String(item.text), {
+        x: cx + 0.10, y: subY, w: cardW - 0.18, h: subH,
+        fontSize: textFs, color: GYS.bodyText, fontFace: GYS.fontBody,
+        valign: "top", wrap: true, lineSpacingMultiple: 1.15, autoFit: true,
+      });
+    }
+  });
+
+  addFooter(slide, pptx, GYS, pageLabel);
+}
+
 function renderContent(pptx, slide, data, GYS, pageLabel) {
   slide.addShape(pptx.ShapeType.rect, {
     x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
@@ -1548,7 +1654,15 @@ const PptxService = {
         switch (layout) {
           case "TITLE":        renderTitle(pptx, slide, sd, GYS, pageLabel);       break;
           case "SECTION":      renderSection(pptx, slide, sd, GYS, pageLabel);     break;
-          case "GRID":         renderGrid(pptx, slide, sd, GYS, pageLabel);        break;
+          case "GRID":
+            // Auto-upgrade to GRID_3X3 when there are 5–9 items
+            if ((sd.items || []).length >= 5) {
+              renderGrid3x3(pptx, slide, sd, GYS, pageLabel);
+            } else {
+              renderGrid(pptx, slide, sd, GYS, pageLabel);
+            }
+            break;
+          case "GRID_3X3":     renderGrid3x3(pptx, slide, sd, GYS, pageLabel);    break;
           case "CONTENT":      renderContent(pptx, slide, sd, GYS, pageLabel);     break;
           case "TWO_COLUMN":
           case "TWOCOLUMN":    renderTwoColumn(pptx, slide, sd, GYS, pageLabel);   break;
