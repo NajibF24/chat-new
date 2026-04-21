@@ -101,7 +101,23 @@ class SmartsheetLiveService {
         row.cells.forEach(cell => {
           const title = colMap[cell.columnId];
           if (title) {
-            flat[title] = cell.displayValue ?? cell.value ?? null;
+            // ✅ FIX v1.2.0: Untuk cell teks biasa, gunakan `value` sebagai prioritas utama
+            // karena `displayValue` dari Smartsheet API bisa terpotong pada teks panjang
+            // (misal: kolom Issues, Remarks yang berisi multi-line text).
+            // `displayValue` tetap dipakai sebagai fallback untuk date/formula/currency
+            // yang memang butuh format display (bukan raw value).
+            const rawVal     = cell.value ?? null;
+            const displayVal = cell.displayValue ?? null;
+
+            // Pakai displayValue hanya jika: tidak ada rawVal, ATAU rawVal adalah angka/boolean
+            // (tanggal dari Smartsheet datang sebagai string ISO di displayValue, bukan number)
+            const useDisplay = displayVal !== null && (
+              rawVal === null ||
+              typeof rawVal === 'number' ||
+              typeof rawVal === 'boolean'
+            );
+
+            flat[title] = useDisplay ? displayVal : (rawVal ?? displayVal ?? null);
           }
         });
         return flat;
@@ -201,6 +217,88 @@ class SmartsheetLiveService {
   buildProjectContext(flatRows, msg, today, context, cols) {
     const categorized = this.categorizeRows(flatRows, today, cols);
 
+    // ✅ FIX v1.3.0: Deteksi single-project query PERTAMA, sebelum branch lainnya.
+    // Query seperti "status project e-asset" atau "show me e-asset" harus langsung
+    // menampilkan detail satu project dengan Issues PENUH — tidak masuk rowsToTable.
+    const allRows   = [...categorized.completed, ...categorized.overdue, ...categorized.active, ...categorized.canceled];
+    const stopWords = new Set([
+      'give','show','status','project','proyek','please','what','the','and',
+      'for','dari','me','is','are','how','ada','apa','yang','dengan','ini',
+      'nya','saya','get','tell','find','tampilkan','cari','lihat','bagaimana',
+      'gimana','update','latest','terbaru','info','informasi','detail','about',
+      'tentang','mengenai','regarding','current','terkini','sekarang','progress',
+    ]);
+    const words       = msg.replace(/[^a-z0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 3);
+    const searchWords = words.filter(w => !stopWords.has(w.toLowerCase()));
+
+    // Hanya coba single-project jika ada kata kunci spesifik yang bisa dicocokkan ke nama project
+    // ✅ FIX v1.3.1: Fuzzy match — normalisasi tanda hubung dan variasi ejaan ID/EN
+    // Contoh: "e-aset" → cocok dengan "E-Asset", "iot" → cocok dengan "IoT"
+    // Normalisasi string: hapus tanda hubung, spasi, karakter non-alphanumeric
+    // + transliterasi kata Indonesia → Inggris yang umum dipakai di nama project
+    const idToEnMap = {
+      'aset': 'asset', 'sistem': 'system', 'jaringan': 'network',
+      'gudang': 'warehouse', 'keuangan': 'finance', 'pembelian': 'procurement',
+      'penjualan': 'sales', 'sdm': 'hr', 'kepegawaian': 'hr',
+    };
+    const normalizeStr = (s) => {
+      let str = String(s || '').toLowerCase().replace(/-/g, '').replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+      // Cek apakah seluruh string cocok dengan alias ID→EN
+      return idToEnMap[str] || str;
+    };
+
+    let singleMatch = null;
+    if (searchWords.length > 0) {
+      singleMatch = allRows.find(row => {
+        const rawName  = String(this.resolveField(row, 'projectName') || '');
+        const normName = normalizeStr(rawName);
+        // Juga pecah nama project per kata untuk partial match
+        const nameParts = rawName.toLowerCase().replace(/-/g, ' ').split(/\s+/).filter(p => p.length >= 2);
+
+        return searchWords.some(w => {
+          const normW = normalizeStr(w);
+          if (!normW || normW.length < 2) return false;
+          // Exact substring match (normalized)
+          if (normName.includes(normW)) return true;
+          // Partial match per kata di nama project
+          if (nameParts.some(p => normalizeStr(p).includes(normW) || normW.includes(normalizeStr(p)))) return true;
+          return false;
+        });
+      });
+    }
+
+    if (singleMatch) {
+      // Tampilkan detail lengkap satu project — Issues PENUH tanpa truncate
+      const issueRaw    = this.resolveField(singleMatch, 'issues') || '-';
+      const projectName = this.resolveField(singleMatch, 'projectName') || '-';
+      const pm          = this.resolveField(singleMatch, 'pm') || '-';
+      const status      = this.resolveField(singleMatch, 'status') || '-';
+      const progressRaw = parseFloat(this.resolveField(singleMatch, 'progress') || 0) || 0;
+      const progressPct = progressRaw > 1 ? Math.round(progressRaw) : Math.round(progressRaw * 100);
+      const health      = this.resolveField(singleMatch, 'health') || '-';
+      const targetEnd   = this.formatDate(this.resolveField(singleMatch, 'targetEnd')) || '-';
+      const dept        = this.resolveField(singleMatch, 'department') || '-';
+      const vendor      = this.resolveField(singleMatch, 'vendor') || '-';
+      const remarks     = this.resolveField(singleMatch, 'remarks') || '-';
+      const healthEmoji = health === 'Green' ? '🟢' : health === 'Yellow' ? '🟡' : health === 'Red' ? '🔴' : '⚪';
+      const daysOverdue = singleMatch._daysOverdue ? `${singleMatch._daysOverdue} hari` : '-';
+
+      context += `--- DETAIL PROYEK: ${projectName} ---\n`;
+      context += `Project Name  : ${projectName}\n`;
+      context += `PM            : ${pm}\n`;
+      context += `Department    : ${dept}\n`;
+      context += `Status        : ${status}\n`;
+      context += `Progress      : ${progressPct}%\n`;
+      context += `Health        : ${healthEmoji} ${health}\n`;
+      context += `Target End    : ${targetEnd}\n`;
+      context += `Days Overdue  : ${daysOverdue}\n`;
+      context += `Vendor        : ${vendor}\n`;
+      context += `Remarks       : ${remarks}\n`;
+      context += `Issues        :\n${issueRaw}\n`;
+      return context;
+    }
+
+    // Bukan single-project query — lanjut ke branch generik
     context += `--- RINGKASAN STATUS ---\n`;
     context += `✅ Completed : ${categorized.completed.length}\n`;
     context += `🔴 Overdue   : ${categorized.overdue.length}\n`;
@@ -325,9 +423,12 @@ class SmartsheetLiveService {
       const daysOverdue  = row._daysOverdue ? `${row._daysOverdue} hari` : '-';
 
       const issueRaw    = this.resolveField(row, 'issues') || '';
+      // ✅ FIX v1.1.0: Naikkan limit Issues dari 150 → 600 char agar konten detail
+      // (multi-line roadmap, milestone list, dll) tidak terpotong di tengah.
+      // \n diganti <br> agar lebih readable di tabel, bukan dihapus.
       const issues      = (!issueRaw || issueRaw === '-' || issueRaw.toLowerCase() === 'no issue')
                           ? '-'
-                          : this.truncate(issueRaw.replace(/\n/g, ' '), 150);
+                          : this.truncate(issueRaw.replace(/\r?\n/g, ' | '), 600);
 
       const values = [name];
       if (cols.pm)         values.push(pm);
