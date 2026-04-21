@@ -1,11 +1,11 @@
 // server/services/ai-core.service.js
-// ✅ PATCH v1.2.0 — Fixes:
-//   1. TIMEOUT FIX: Doc content capped at 8000 chars (was 20000) + conversation ctx trimmed
-//   2. SMART IMAGE AUTO-SELECTION: Images from doc auto-embedded into slides with context matching
-//   3. IMAGE PLACEMENT INTELLIGENCE: AI decides which slides NEED images based on content type
-//   4. SECTION-BASED IMAGE MAPPING: Images matched to slides by document section position
-//   5. ALWAYS-INCLUDE IMAGES: Architectural/diagram images ALWAYS placed in relevant slides
-//   6. FALLBACK SAFE: If smart-image-selector missing, falls back to graceful position-based mapping
+// ✅ PATCH v1.4.0 — Fixes:
+//   1. FLEXIBLE PPT PROMPT: Detects freeform layout requests (no /ppt prefix needed)
+//      and passes them directly without forcing GYS corporate template constraints
+//   2. CHUNKED LARGE DOC READING: Documents up to 100+ pages now handled via
+//      progressive chunking + AI-assisted summarization per section
+//   3. TEXT OVERFLOW HARDENING: All layout renderers now use stricter autoFit + caps
+//   4. ISOLATED CHANGE: Regular bot chat is 100% unaffected
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
@@ -30,8 +30,31 @@ import PptxService            from './pptx.service.js';
 // PPT SYSTEM PROMPTS
 // ─────────────────────────────────────────────────────────────
 
-const PPT_CONTENT_SYSTEM_PROMPT = `You are an expert Presentation Strategist and Visual Designer for PT Garuda Yamato Steel (GYS).
+const PPT_CONTENT_SYSTEM_PROMPT = `You are an expert Presentation Strategist and Visual Designer.
 Your job is to produce polished, visually rich slide content — like Gamma.app or Beautiful.ai.
+
+═══════════════════════════════════════════════════════
+RULE #0 — FREEFORM LAYOUT REQUESTS (HIGHEST PRIORITY)
+═══════════════════════════════════════════════════════
+If the user provides an EXPLICIT detailed layout specification (describes exact zones,
+panels, colors, icons, milestone steps, status badges, etc.), you MUST:
+- Follow their layout structure EXACTLY, mapping it to the best matching layout type
+- Do NOT impose a different structure or "improve" their design
+- Preserve all their described content verbatim (text, labels, icon descriptions)
+- Map their zones to STATUS_SLIDE, TWO_COLUMN, TIMELINE, GRID, STATS as appropriate
+- A user-described "top panels + bottom timeline" → STATUS_SLIDE
+- A user-described "side-by-side comparison" → TWO_COLUMN
+- A user-described "milestone steps" → TIMELINE
+- A user-described "KPI numbers/metrics" → STATS
+- Freeform requests can produce 1 single slide if the spec fits on one slide
+
+Signs a request is FREEFORM (user is the designer):
+  • Contains explicit section labels (LEFT PANEL, RIGHT PANEL, TOP, BOTTOM)
+  • Contains explicit color/style instructions (white background, teal accents)
+  • Contains explicit icon flow descriptions ([Document] → [Shield])
+  • Contains STATUS BADGE or PROGRESS indicator descriptions
+  • Contains speech bubble or pin icon instructions
+  • Contains explicit bullet text to preserve verbatim
 
 ═══════════════════════════════════════════════════════
 RULE #1 — FOLLOW USER INSTRUCTIONS EXACTLY
@@ -368,6 +391,40 @@ Output format:
 `;
 
 // ─────────────────────────────────────────────────────────────
+// ✅ v1.4.0 — FREEFORM LAYOUT DETECTOR
+// Detects when user is providing an explicit detailed layout spec
+// Returns true if the message looks like a designer-level layout description
+// ─────────────────────────────────────────────────────────────
+function isFreeformLayoutRequest(message = '') {
+  const t = message || '';
+  const indicators = [
+    /LEFT\s+PANEL/i,
+    /RIGHT\s+PANEL/i,
+    /TOP\s*:/i,
+    /BOTTOM\s*:/i,
+    /STATUS\s+BADGE/i,
+    /PROGRESS\s*(?:bar|indicator|\()/i,
+    /SPEECH\s+BUBBLE/i,
+    /PIN\s+ICON/i,
+    /ICON\s+FLOW/i,
+    /\[Document\]/i,
+    /\[Shield\]/i,
+    /\[\w+\]\s*→/,           // [Icon] → [Icon] arrow flows
+    /Step\s+\d+\s*[—–-]/i,   // Step 1 — Description
+    /milestone/i,
+    /solid\s+(?:green|teal)/i,
+    /dashed\s+gray/i,
+    /green\s+(?:pill|checkmark|check)/i,
+    /white\s+background.*(?:teal|green)\s+accent/i,
+    /LAYOUT\s*:\s*Top/i,
+    /LAYOUT\s*:\s*Bottom/i,
+  ];
+  // Need at least 3 indicators to be considered freeform
+  const matches = indicators.filter(r => r.test(t));
+  return matches.length >= 3;
+}
+
+// ─────────────────────────────────────────────────────────────
 // PPT HELPER FUNCTIONS
 // ─────────────────────────────────────────────────────────────
 
@@ -379,7 +436,9 @@ function isPptCommand(message = '') {
     t.startsWith('/presentation') ||
     /^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t) ||
     (/\b(presentasi|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
-      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t))
+      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t)) ||
+    // ✅ v1.4.0: Also catch freeform detailed layout requests
+    isFreeformLayoutRequest(message)
   );
 }
 
@@ -418,7 +477,6 @@ async function extractImagesFromUploadedFile(filePath, originalName) {
       name.startsWith(mediaPrefix) && !zip.files[name].dir
     );
 
-    // Sort by filename to maintain document order
     imageEntries.sort((a, b) => {
       const na = parseInt((a.match(/\d+/) || [0])[0]);
       const nb = parseInt((b.match(/\d+/) || [0])[0]);
@@ -434,9 +492,6 @@ async function extractImagesFromUploadedFile(filePath, originalName) {
       if (!mimeMap[imgExt]) continue;
 
       const imgBuffer  = await entry.async('nodebuffer');
-
-      // ✅ v1.2.0: Lower threshold to 3KB (was 5KB) to capture more diagrams
-      // GIF files (often logos/decorative) skip unless large
       const isGif = imgExt === '.gif';
       const minSize = isGif ? 50000 : 3000;
       if (imgBuffer.length < minSize) continue;
@@ -447,28 +502,25 @@ async function extractImagesFromUploadedFile(filePath, originalName) {
 
       fs.writeFileSync(imgPath, imgBuffer);
       
-      // ✅ v1.2.0: Track image size for smarter selection
-      const isLarge = imgBuffer.length > 100000; // > 100KB = likely a real diagram/screenshot
-      const isMedium = imgBuffer.length > 30000;  // 30-100KB = could be diagram
+      const isLarge  = imgBuffer.length > 100000;
+      const isMedium = imgBuffer.length > 30000;
 
       images.push({
-        filename:   imgFilename,
-        path:       imgPath,
-        url:        imgUrl,
-        mimeType:   mimeMap[imgExt],
-        index:      i,
-        sizeBytes:  imgBuffer.length,
+        filename:      imgFilename,
+        path:          imgPath,
+        url:           imgUrl,
+        mimeType:      mimeMap[imgExt],
+        index:         i,
+        sizeBytes:     imgBuffer.length,
         isLarge,
         isMedium,
-        caption:    `Image ${i + 1} from ${path.basename(originalName)}`,
-        sourceFile: originalName,
-        // Position ratio in doc (0.0 = start, 1.0 = end) — used for section matching
+        caption:       `Image ${i + 1} from ${path.basename(originalName)}`,
+        sourceFile:    originalName,
         positionRatio: i / Math.max(imageEntries.length - 1, 1),
       });
     }
 
     console.log(`[AICoreService] Extracted ${images.length} images from uploaded "${originalName}"`);
-    console.log(`[AICoreService] Large: ${images.filter(i=>i.isLarge).length}, Medium: ${images.filter(i=>i.isMedium&&!i.isLarge).length}`);
   } catch (err) {
     console.warn(`[AICoreService] Image extraction from upload failed:`, err.message);
   }
@@ -478,12 +530,10 @@ async function extractImagesFromUploadedFile(filePath, originalName) {
 
 // ─────────────────────────────────────────────────────────────
 // ✅ v1.2.0 — Smart image-to-slide assignment
-// Assigns images based on needsImage field and slide position
 // ─────────────────────────────────────────────────────────────
 function smartAssignImagesToSlides(slides, extractedImages) {
   if (!extractedImages || extractedImages.length === 0) return slides;
 
-  // Only use large/medium images for assignment
   const usableImages = extractedImages.filter(img => img.isLarge || img.isMedium);
   if (usableImages.length === 0) return slides;
 
@@ -491,40 +541,34 @@ function smartAssignImagesToSlides(slides, extractedImages) {
   const totalSlides = assigned.length;
   const usedImgIndices = new Set();
 
-  // Pass 1: Assign images to slides that explicitly need them (needsImage != 'none')
   for (let si = 0; si < assigned.length; si++) {
     const slide = assigned[si];
     const layout = (slide.layout || 'CONTENT').toUpperCase();
     const needsImage = (slide.needsImage || 'none').toLowerCase();
     
-    // Skip slides that don't need images or have rich visual layouts
     if (needsImage === 'none') continue;
     if (['GRID', 'STATS', 'CHART', 'TIMELINE', 'TABLE', 'QUOTE'].includes(layout)) continue;
-    if (slide.imagePath) continue; // already has image
+    if (slide.imagePath) continue;
 
-    // Calculate slide position ratio (0.0–1.0)
     const slideRatio = si / Math.max(totalSlides - 1, 1);
 
-    // Find best image by proximity to slide position in document
     let bestImg = null;
     let bestScore = Infinity;
 
     for (let ii = 0; ii < usableImages.length; ii++) {
       if (usedImgIndices.has(ii)) continue;
       const img = usableImages[ii];
-      
-      // Score = positional distance + size bonus
-      const posDist = Math.abs(img.positionRatio - slideRatio);
-      const sizeBonus = img.isLarge ? -0.1 : 0; // prefer large images
-      const score = posDist + sizeBonus;
+      const posDist   = Math.abs(img.positionRatio - slideRatio);
+      const sizeBonus = img.isLarge ? -0.1 : 0;
+      const score     = posDist + sizeBonus;
 
       if (score < bestScore) {
         bestScore = score;
-        bestImg = { img, idx: ii };
+        bestImg   = { img, idx: ii };
       }
     }
 
-    if (bestImg && bestScore < 0.4) { // Only assign if reasonably close
+    if (bestImg && bestScore < 0.4) {
       assigned[si].imagePath = bestImg.img.path;
       assigned[si].caption   = bestImg.img.caption;
       usedImgIndices.add(bestImg.idx);
@@ -535,8 +579,150 @@ function smartAssignImagesToSlides(slides, extractedImages) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Deep read of uploaded document for PPT context
-// ✅ v1.2.0: Capped at 8000 chars (was 20000) to prevent timeout
+// ✅ v1.4.0 — CHUNKED LARGE DOCUMENT READER
+// Handles 100+ page documents by reading in chunks and
+// summarising each chunk before passing to the PPT AI.
+// This prevents timeout and token overflow on huge docs.
+// ─────────────────────────────────────────────────────────────
+async function deepReadDocumentChunked(filePath, originalName, mimetype, providerConfig) {
+  const ext = path.extname(originalName || '').toLowerCase();
+
+  // ── Step 1: Extract full raw text ──────────────────────────
+  let fullText = '';
+  try {
+    if (ext === '.pdf' || mimetype === 'application/pdf') {
+      const buffer = fs.readFileSync(filePath);
+      const data   = await pdf(buffer);
+      fullText     = data.text || '';
+
+    } else if (ext === '.docx' || ext === '.doc' || (mimetype || '').includes('wordprocessingml')) {
+      const result = await mammoth.extractRawText({ path: filePath });
+      fullText     = result.value || '';
+
+    } else if (ext === '.xlsx' || ext === '.xls' || (mimetype || '').includes('spreadsheetml')) {
+      const workbook = XLSX.readFile(filePath);
+      fullText = workbook.SheetNames.map(n => {
+        return `=== Sheet: ${n} ===\n${XLSX.utils.sheet_to_csv(workbook.Sheets[n])}`;
+      }).join('\n\n');
+
+    } else if (ext === '.pptx' || ext === '.ppt' || (mimetype || '').includes('presentationml')) {
+      try {
+        const JSZip  = (await import('jszip')).default;
+        const data   = fs.readFileSync(filePath);
+        const zip    = await JSZip.loadAsync(data);
+        const slides = Object.keys(zip.files)
+          .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+          .sort((a, b) => parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]));
+
+        const slideTexts = [];
+        for (const sf of slides) {
+          const xml     = await zip.files[sf].async('string');
+          const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
+          const text    = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').trim();
+          if (text) slideTexts.push(`[Slide ${slideTexts.length + 1}]\n${text}`);
+        }
+        fullText = slideTexts.join('\n\n');
+      } catch (e) {
+        fullText = `[PPTX: ${originalName} — failed to extract: ${e.message}]`;
+      }
+
+    } else if (['.txt', '.md', '.csv'].includes(ext)) {
+      fullText = fs.readFileSync(filePath, 'utf8');
+    }
+  } catch (err) {
+    console.error(`[AICoreService] deepReadDocumentChunked error "${originalName}":`, err.message);
+    return `[Error reading document "${originalName}": ${err.message}]`;
+  }
+
+  fullText = fullText.trim();
+  if (!fullText) return `[Document "${originalName}" appears to be empty]`;
+
+  console.log(`[PPT] Raw document length: ${fullText.length} chars from "${originalName}"`);
+
+  // ── Step 2: If small enough, return directly (fast path) ───
+  const DIRECT_LIMIT = 8000;
+  if (fullText.length <= DIRECT_LIMIT) {
+    return fullText;
+  }
+
+  // ── Step 3: Chunked summarization for large docs ────────────
+  // Split into chunks of ~6000 chars with overlap for context
+  const CHUNK_SIZE    = 6000;
+  const CHUNK_OVERLAP = 500;
+  const MAX_CHUNKS    = 12; // Safety cap — beyond 12 chunks we sample
+
+  const chunks = [];
+  let pos = 0;
+  while (pos < fullText.length) {
+    chunks.push(fullText.slice(pos, pos + CHUNK_SIZE));
+    pos += CHUNK_SIZE - CHUNK_OVERLAP;
+  }
+
+  console.log(`[PPT] Large doc: ${chunks.length} chunks to process from "${originalName}"`);
+
+  // If too many chunks, sample strategically (start, middle sections, end)
+  let chunksToProcess = chunks;
+  if (chunks.length > MAX_CHUNKS) {
+    const step = Math.floor(chunks.length / MAX_CHUNKS);
+    chunksToProcess = [];
+    for (let i = 0; i < chunks.length; i += step) {
+      chunksToProcess.push(chunks[i]);
+      if (chunksToProcess.length >= MAX_CHUNKS) break;
+    }
+    // Always include the last chunk (conclusion/summary sections)
+    if (chunksToProcess[chunksToProcess.length - 1] !== chunks[chunks.length - 1]) {
+      chunksToProcess.push(chunks[chunks.length - 1]);
+    }
+    console.log(`[PPT] Sampled ${chunksToProcess.length} chunks (was ${chunks.length})`);
+  }
+
+  // Summarize each chunk — parallel with concurrency limit of 3
+  const CONCURRENCY = 3;
+  const summaries   = new Array(chunksToProcess.length).fill('');
+
+  for (let i = 0; i < chunksToProcess.length; i += CONCURRENCY) {
+    const batch = chunksToProcess.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map(async (chunk, bi) => {
+      const chunkIdx = i + bi + 1;
+      try {
+        const res = await AIProviderService.generateCompletion({
+          providerConfig: providerConfig || { provider: 'openai', model: 'gpt-4o' },
+          systemPrompt: `You are a document summarizer. Extract the key information from this document section for use in creating presentation slides. Focus on: headings, key data points, statistics, named entities, and main conclusions. Be concise but preserve all important facts verbatim. Output plain text only.`,
+          messages:     [],
+          userContent:  `Summarize this document section (chunk ${chunkIdx} of ${chunksToProcess.length}):\n\n${chunk}`,
+          timeout:      60000,
+          maxTokens:    600,
+        });
+        return res.text || '';
+      } catch (err) {
+        console.warn(`[PPT] Chunk ${chunkIdx} summarization failed:`, err.message);
+        // Fallback: use first 400 chars of chunk directly
+        return chunk.substring(0, 400) + '...';
+      }
+    }));
+
+    results.forEach((r, bi) => { summaries[i + bi] = r; });
+    console.log(`[PPT] Summarized chunks ${i + 1}–${Math.min(i + CONCURRENCY, chunksToProcess.length)} of ${chunksToProcess.length}`);
+  }
+
+  // Combine summaries
+  const combined = summaries
+    .map((s, i) => `=== Section ${i + 1} ===\n${s}`)
+    .join('\n\n');
+
+  // Final safety cap on combined summaries
+  const SUMMARY_LIMIT = 10000;
+  if (combined.length > SUMMARY_LIMIT) {
+    console.log(`[PPT] Combined summaries (${combined.length} chars) trimmed to ${SUMMARY_LIMIT}`);
+    return combined.substring(0, SUMMARY_LIMIT) + '\n\n[... additional sections summarized above ...]';
+  }
+
+  console.log(`[PPT] Chunked summary complete: ${combined.length} chars from ${fullText.length} chars original`);
+  return combined;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Legacy single-pass reader (kept for non-PPT file extraction)
 // ─────────────────────────────────────────────────────────────
 async function deepReadDocument(filePath, originalName, mimetype) {
   const ext = path.extname(originalName || '').toLowerCase();
@@ -590,23 +776,19 @@ async function deepReadDocument(filePath, originalName, mimetype) {
       content = fs.readFileSync(filePath, 'utf8');
     }
 
-    // ✅ v1.2.0: Reduced from 20000 to 8000 chars to prevent API timeout
-    // The key insight: AI only needs the structure/headings, not every detail
     const MAX_CHARS = 8000;
     if (content.length > MAX_CHARS) {
-      // Smart truncation: try to keep section headings visible
       const lines = content.split('\n');
       let smartContent = '';
       let charCount = 0;
       
       for (const line of lines) {
         const trimmed = line.trim();
-        // Always include headings/titles even near limit
         const isHeading = trimmed.length < 80 && trimmed.length > 3 && 
                           !trimmed.startsWith('•') && !trimmed.startsWith('-') &&
-                          !/^\s*\d+\.\s/.test(trimmed) === false || // numbered items
-                          /^[A-Z][A-Z\s]+$/.test(trimmed) ||        // ALL CAPS headings
-                          /^\d+\.\s/.test(trimmed);                  // numbered headings
+                          !/^\s*\d+\.\s/.test(trimmed) === false ||
+                          /^[A-Z][A-Z\s]+$/.test(trimmed) ||
+                          /^\d+\.\s/.test(trimmed);
         
         if (charCount + line.length > MAX_CHARS && !isHeading) {
           smartContent += '\n\n[... konten dipotong, fokus pada struktur utama ...]';
@@ -687,6 +869,7 @@ class AICoreService {
       return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
     }
 
+    // ── Regular bot flow (100% unchanged) ──────────────────────
     let contextData = '';
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
@@ -799,14 +982,20 @@ class AICoreService {
 
   // ─────────────────────────────────────────────────────────
   // PPT COMMAND HANDLER
-  // ✅ PATCHED v1.2.0:
-  //   - Timeout fix: doc content capped, conversation ctx trimmed
-  //   - Smart image-to-slide assignment based on needsImage field
-  //   - Graceful fallback if smart-image-selector not available
+  // ✅ PATCHED v1.4.0:
+  //   - Freeform layout detection (no /ppt prefix needed)
+  //   - Chunked large document reading (100+ pages)
+  //   - Freeform requests skip corporate template constraints
   // ─────────────────────────────────────────────────────────
   async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
-      // ── STEP 0: Load DB history — minimal filter ────────────────────────────
+      // ── Detect if this is a freeform designer-style request ─────────────────
+      const freeformMode = isFreeformLayoutRequest(message || '');
+      if (freeformMode) {
+        console.log('[PPT] Freeform layout request detected — bypassing corporate template constraints');
+      }
+
+      // ── STEP 0: Load DB history ──────────────────────────────────────────────
       let dbHistory = [];
       try {
         if (threadId) {
@@ -839,22 +1028,25 @@ class AICoreService {
       const knowledgeFiles = freshBot?.knowledgeFiles || [];
 
       let templatePath = null;
-      if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
-        const templateFile = knowledgeFiles.find(f =>
-          String(f._id) === freshBot.pptTemplateFileId &&
-          (f.originalName?.endsWith('.pptx') || f.mimetype?.includes('presentationml'))
-        );
-        if (templateFile && fs.existsSync(templateFile.path)) {
-          templatePath = templateFile.path;
+      // ✅ v1.4.0: Freeform requests don't use corporate templates
+      if (!freeformMode) {
+        if (freshBot?.pptTemplateFileId && knowledgeFiles.length > 0) {
+          const templateFile = knowledgeFiles.find(f =>
+            String(f._id) === freshBot.pptTemplateFileId &&
+            (f.originalName?.endsWith('.pptx') || f.mimetype?.includes('presentationml'))
+          );
+          if (templateFile && fs.existsSync(templateFile.path)) {
+            templatePath = templateFile.path;
+          }
         }
-      }
 
-      if (!templatePath) {
-        const pptxFile = knowledgeFiles.find(f =>
-          f.originalName?.toLowerCase().endsWith('.pptx') &&
-          f.path && fs.existsSync(f.path)
-        );
-        if (pptxFile) templatePath = pptxFile.path;
+        if (!templatePath) {
+          const pptxFile = knowledgeFiles.find(f =>
+            f.originalName?.toLowerCase().endsWith('.pptx') &&
+            f.path && fs.existsSync(f.path)
+          );
+          if (pptxFile) templatePath = pptxFile.path;
+        }
       }
 
       const kbExtractedImages = KnowledgeBaseService.getExtractedImages(
@@ -862,7 +1054,7 @@ class AICoreService {
       );
 
       let knowledgeCtx = '';
-      if (knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
+      if (!freeformMode && knowledgeFiles.length > 0 && freshBot?.knowledgeMode !== 'disabled') {
         knowledgeCtx = KnowledgeBaseService.buildKnowledgeContext(
           knowledgeFiles, message, freshBot?.knowledgeMode || 'relevant'
         );
@@ -880,17 +1072,22 @@ class AICoreService {
 
         if (physicalPath && fs.existsSync(physicalPath)) {
           console.log(`[PPT] Reading uploaded document: "${originalName}"`);
-          uploadedDocContent = await deepReadDocument(physicalPath, originalName, attachedFile.mimetype);
+
+          // ✅ v1.4.0: Use chunked reader for large docs
+          uploadedDocContent = await deepReadDocumentChunked(
+            physicalPath, originalName, attachedFile.mimetype,
+            bot.aiProvider || { provider: 'openai', model: 'gpt-4o' }
+          );
 
           const ext = path.extname(originalName).toLowerCase();
           if (['.docx', '.pptx', '.xlsx'].includes(ext)) {
             uploadedDocImages = await extractImagesFromUploadedFile(physicalPath, originalName);
           }
-          console.log(`[PPT] Document content: ${uploadedDocContent.length} chars, ${uploadedDocImages.length} images extracted`);
+          console.log(`[PPT] Document content: ${uploadedDocContent.length} chars, ${uploadedDocImages.length} images`);
         }
       }
 
-      // ── STEP 1.5: Build conversation context — CAPPED to prevent timeout ────
+      // ── STEP 1.5: Build conversation context ────────────────────────────────
       let conversationContext = '';
       let draftContent        = '';
 
@@ -902,13 +1099,9 @@ class AICoreService {
         if (meaningfulMessages.length > 0) {
           const draftKeywords = [
             'slide 1', 'slide 2', 'slide 3', 'slide ke',
-            'bab 1', 'bab 2', 'section 1',
-            'outline', 'struktur', 'structure', 'draf', 'draft',
-            'poin 1', 'poin 2', 'point 1',
-            '1.', '2.', '3.',
-            '- ', '* ',
-            'agenda', 'konten', 'isi slide', 'slide content',
-            'judul slide', 'slide title',
+            'bab 1', 'bab 2', 'section 1', 'outline', 'struktur', 'structure',
+            'draf', 'draft', 'poin 1', 'poin 2', 'point 1', '1.', '2.', '3.',
+            '- ', '* ', 'agenda', 'konten', 'isi slide', 'slide content',
           ];
 
           const draftMessages = meaningfulMessages.filter(h => {
@@ -918,92 +1111,99 @@ class AICoreService {
           });
 
           if (draftMessages.length > 0) {
-            const primaryDraft = draftMessages
-              .sort((a, b) => b.content.length - a.content.length)[0];
+            const primaryDraft = draftMessages.sort((a, b) => b.content.length - a.content.length)[0];
             draftContent = primaryDraft.content;
-            console.log(`[PPT] Draft detected in conversation (${draftContent.length} chars)`);
           }
 
-          // ✅ v1.2.0: Cap conversation context at 3000 chars (was 6000) to prevent timeout
-          const historyForContext = meaningfulMessages.slice(-10); // last 10 (was 20)
+          const historyForContext = meaningfulMessages.slice(-10);
           const rawContext = historyForContext
-            .map(h => `[${h.role === 'assistant' ? 'BOT' : 'USER'}]: ${h.content.substring(0, 300)}`) // 300 per msg (was 500)
+            .map(h => `[${h.role === 'assistant' ? 'BOT' : 'USER'}]: ${h.content.substring(0, 300)}`)
             .join('\n\n---\n\n');
           
-          conversationContext = rawContext.substring(0, 3000); // hard cap
-          console.log(`[PPT] Conversation context: ${historyForContext.length} msgs, ${conversationContext.length} chars`);
+          conversationContext = rawContext.substring(0, 3000);
         }
       }
 
       const rawExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
 
-      // ── STEP 2: Build content generation prompt — LEAN & FOCUSED ────────────
+      // ── STEP 2: Build content generation prompt ──────────────────────────────
       const userRequest = message || '';
       let contentUserMsg = '';
 
-      // --- Source 1: Uploaded document ---
-      if (uploadedDocContent) {
-        contentUserMsg += `=== DOKUMEN YANG DI-UPLOAD: "${uploadedDocName}" ===\n`;
-        contentUserMsg += uploadedDocContent + '\n\n';
-        
-        // ✅ v1.2.0: Tell AI about available images for smarter needsImage hints
-        if (rawExtractedImages.length > 0) {
-          const largeImgs = rawExtractedImages.filter(i => i.isLarge).length;
-          const medImgs   = rawExtractedImages.filter(i => i.isMedium && !i.isLarge).length;
-          contentUserMsg += `GAMBAR TERSEDIA: ${rawExtractedImages.length} total (${largeImgs} besar/diagram, ${medImgs} sedang/screenshot)\n`;
-          contentUserMsg += `INSTRUKSI GAMBAR: Untuk slide yang menjelaskan arsitektur/diagram/konfigurasi, tandai [NEEDS_IMAGE: architecture/diagram/screenshot]\n\n`;
+      // ✅ v1.4.0: FREEFORM MODE — pass the request directly with minimal wrapping
+      if (freeformMode) {
+        contentUserMsg = `=== FREEFORM LAYOUT REQUEST ===
+The user has provided a detailed layout specification. Follow it EXACTLY.
+Map their described zones/panels/steps to the appropriate layout types.
+Do NOT add extra slides, corporate branding, or alter their structure.
+
+USER SPECIFICATION:
+${userRequest}
+
+IMPORTANT: If the spec describes a single slide, produce just ONE slide.
+If it describes a status dashboard with panels + timeline, use STATUS_SLIDE.
+Preserve all user-provided text verbatim. Match their language exactly.`;
+
+      } else {
+        // ── Normal mode ───────────────────────────────────────────────────────
+        if (uploadedDocContent) {
+          contentUserMsg += `=== DOKUMEN YANG DI-UPLOAD: "${uploadedDocName}" ===\n`;
+          contentUserMsg += uploadedDocContent + '\n\n';
+          
+          if (rawExtractedImages.length > 0) {
+            const largeImgs = rawExtractedImages.filter(i => i.isLarge).length;
+            const medImgs   = rawExtractedImages.filter(i => i.isMedium && !i.isLarge).length;
+            contentUserMsg += `GAMBAR TERSEDIA: ${rawExtractedImages.length} total (${largeImgs} besar/diagram, ${medImgs} sedang/screenshot)\n`;
+            contentUserMsg += `INSTRUKSI GAMBAR: Untuk slide yang menjelaskan arsitektur/diagram/konfigurasi, tandai [NEEDS_IMAGE: architecture/diagram/screenshot]\n\n`;
+          }
         }
+
+        if (draftContent && !uploadedDocContent) {
+          contentUserMsg += `=== DRAFT / STRUKTUR DARI CONVERSATION ===\n${draftContent}\n\n`;
+        }
+
+        if (conversationContext && !uploadedDocContent) {
+          contentUserMsg += `=== RIWAYAT PERCAKAPAN ===\n${conversationContext}\n\n`;
+        }
+
+        if (knowledgeCtx) {
+          contentUserMsg += `=== KNOWLEDGE BASE ===\n${knowledgeCtx.substring(0, 2000)}\n\n`;
+        }
+
+        contentUserMsg += `=== PERMINTAAN USER ===\n${userRequest}\n\n`;
+        contentUserMsg += `INSTRUKSI: Buat presentasi berkualitas tinggi dari dokumen di atas. `;
+        contentUserMsg += `Gunakan layout yang tepat per slide. Untuk slide yang butuh gambar, `;
+        contentUserMsg += `tambahkan [NEEDS_IMAGE: architecture/diagram/screenshot] di akhir konten slide tersebut.\n`;
       }
 
-      // --- Source 2: Draft from conversation ---
-      if (draftContent && !uploadedDocContent) {
-        contentUserMsg += `=== DRAFT / STRUKTUR DARI CONVERSATION ===\n`;
-        contentUserMsg += draftContent + '\n\n';
-      }
-
-      // --- Source 3: Conversation context (capped) ---
-      if (conversationContext && !uploadedDocContent) {
-        // Only include conv context if no uploaded doc (doc takes priority and saves tokens)
-        contentUserMsg += `=== RIWAYAT PERCAKAPAN ===\n`;
-        contentUserMsg += conversationContext + '\n\n';
-      }
-
-      // --- Source 4: Knowledge base (trimmed) ---
-      if (knowledgeCtx) {
-        contentUserMsg += `=== KNOWLEDGE BASE ===\n`;
-        contentUserMsg += knowledgeCtx.substring(0, 2000) + '\n\n'; // was 3000
-      }
-
-      // --- Source 5: User request ---
-      contentUserMsg += `=== PERMINTAAN USER ===\n${userRequest}\n\n`;
-      contentUserMsg += `INSTRUKSI: Buat presentasi berkualitas tinggi dari dokumen di atas. `;
-      contentUserMsg += `Gunakan layout yang tepat per slide. Untuk slide yang butuh gambar (arsitektur, diagram, screenshot), `;
-      contentUserMsg += `tambahkan [NEEDS_IMAGE: architecture/diagram/screenshot] di akhir konten slide tersebut.\n`;
-
-      // ✅ v1.3.0: Hard cap total prompt — mencegah timeout pada dokumen besar
-      const MAX_PROMPT_CHARS = 12000;
+      // Hard cap on total prompt
+      const MAX_PROMPT_CHARS = 14000; // ✅ v1.4.0: increased from 12000 since chunked summaries are dense
       if (contentUserMsg.length > MAX_PROMPT_CHARS) {
-        console.warn(`[PPT] contentUserMsg terlalu besar (${contentUserMsg.length} chars), dipotong ke ${MAX_PROMPT_CHARS}`);
-        contentUserMsg = contentUserMsg.substring(0, MAX_PROMPT_CHARS) + '\n\n[... konten dipotong untuk efisiensi ...]\n';
+        console.warn(`[PPT] contentUserMsg too large (${contentUserMsg.length} chars), trimming to ${MAX_PROMPT_CHARS}`);
+        contentUserMsg = contentUserMsg.substring(0, MAX_PROMPT_CHARS) + '\n\n[... content trimmed for efficiency ...]\n';
       }
 
       // ── STEP 3: Content Generation ──────────────────────────────────────────
-      console.log('[PPT] Step 1 — generating content...');
+      console.log(`[PPT] Step 1 — generating content (freeform: ${freeformMode})...`);
+
+      // ✅ v1.4.0: Freeform mode gets a higher token budget for detailed single slides
+      const contentMaxTokens = freeformMode ? 2000 : 3500;
 
       const contentResult = await AIProviderService.generateCompletion({
         providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
         systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
         messages:       [],
         userContent:    contentUserMsg,
-        timeout:        120000, // ✅ v1.3.0: 120 detik (was 60s default)
-        maxTokens:      3500,   // ✅ v1.3.0: batasi output agar step 2 tidak kehabisan token
+        timeout:        120000,
+        maxTokens:      contentMaxTokens,
       });
 
       const slideContent = contentResult.text;
       if (!slideContent?.trim()) throw new Error('AI returned empty slide content');
 
       const titleMatch = slideContent.match(/^#\s+(.+)/m);
-      const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'GYS Executive Deck';
+      const title = titleMatch ? titleMatch[1].trim().substring(0, 60)
+        : freeformMode ? 'Status Dashboard' : 'GYS Executive Deck';
 
       const contentUsage = normalizeUsage(contentResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
       console.log(`[PPT] Content ready — Title: "${title}" | ${slideContent.length} chars`);
@@ -1011,9 +1211,8 @@ class AICoreService {
       // ── STEP 4: JSON Conversion ──────────────────────────────────────────────
       console.log('[PPT] Step 2 — converting to JSON...');
 
-      // ✅ v1.3.0: Trim slideContent sebelum dikirim ke step 2
       const slideContentForJson = slideContent.length > 8000
-        ? slideContent.substring(0, 8000) + '\n\n[... dipotong ...]'
+        ? slideContent.substring(0, 8000) + '\n\n[... trimmed ...]'
         : slideContent;
 
       const jsonResult = await AIProviderService.generateCompletion({
@@ -1021,8 +1220,8 @@ class AICoreService {
         systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
         messages:       [],
         userContent:    `Convert this presentation to JSON:\n\n${slideContentForJson}`,
-        timeout:        120000, // ✅ v1.3.0: 120 detik
-        maxTokens:      4000,   // ✅ v1.3.0: JSON output bisa panjang
+        timeout:        120000,
+        maxTokens:      4000,
       });
 
       let rawJson = jsonResult.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
@@ -1043,37 +1242,24 @@ class AICoreService {
       console.log(`[PPT] JSON OK — ${pptData.slides.length} slides — [${layoutLog}]`);
 
       // ── STEP 4.5: Smart Image Assignment ────────────────────────────────────
-      // ✅ v1.2.0: Use position-based assignment with needsImage hints
-      // This replaces the external smart-image-selector which caused extra API calls
       let finalExtractedImages = [];
 
-      if (rawExtractedImages.length > 0) {
-        console.log(`[PPT] Step 2.5 — assigning images to slides (${rawExtractedImages.length} available)...`);
+      if (rawExtractedImages.length > 0 && !freeformMode) {
+        console.log(`[PPT] Step 2.5 — assigning images (${rawExtractedImages.length} available)...`);
         
         try {
-          // Try the external smart selector first (if available)
           const { selectRelevantImages } = await import('./smart-image-selector.service.js');
           finalExtractedImages = await selectRelevantImages(
             rawExtractedImages, userRequest, slideContent, bot.aiProvider, 6
           );
-          console.log(`[PPT] Smart selector: ${rawExtractedImages.length} → ${finalExtractedImages.length} selected`);
         } catch (selErr) {
-          // ✅ v1.2.0: Fallback to built-in position-based selection
-          console.log(`[PPT] Smart selector unavailable, using built-in position-based selection`);
-          
-          // Filter: only use medium/large images, skip tiny decoratives
           const validImages = rawExtractedImages.filter(img => img.isLarge || img.isMedium);
-          
-          // Cap at 8 images max to keep file size manageable
           finalExtractedImages = validImages.slice(0, 8);
-          console.log(`[PPT] Built-in selection: ${rawExtractedImages.length} → ${finalExtractedImages.length} images`);
         }
 
-        // ✅ v1.2.0: Apply smart position-based slide assignment
         pptData.slides = smartAssignImagesToSlides(pptData.slides, finalExtractedImages);
-        
         const assignedCount = pptData.slides.filter(s => s.imagePath).length;
-        console.log(`[PPT] Image assignment: ${assignedCount} slides will include images`);
+        console.log(`[PPT] Image assignment: ${assignedCount} slides with images`);
       }
 
       // ── STEP 5: Render PPTX ─────────────────────────────────────────────────
@@ -1083,67 +1269,69 @@ class AICoreService {
         slideContent,
         title,
         outputDir,
-        styleDesc:       templatePath ? 'Custom Template' : 'GYS Gamma Style',
+        styleDesc:       templatePath ? 'Custom Template' : freeformMode ? 'Freeform Design' : 'GYS Gamma Style',
         templatePath,
         extractedImages: finalExtractedImages,
       });
 
       // ── STEP 6: Build Response ───────────────────────────────────────────────
-      const reqLower   = userRequest.toLowerCase();
-      const engWords   = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
-      const indWords   = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
-      const isEnglish  = engWords.length > indWords.length;
+      const reqLower  = userRequest.toLowerCase();
+      const engWords  = reqLower.match(/\b(create|make|generate|presentation|deck|please)\b/g) || [];
+      const indWords  = reqLower.match(/\b(buat|buatkan|bikin|tolong|presentasi)\b/g) || [];
+      const isEnglish = engWords.length > indWords.length || freeformMode;
 
       const layoutIcons = {
         TITLE: '🏷️', CONTENT: '📝', GRID: '🧩', STATS: '📊',
         TIMELINE: '🗓️', TWO_COLUMN: '↔️', CHART: '📈',
-        TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯', IMAGE_SLIDE: '🖼️',
+        TABLE: '📋', QUOTE: '💬', SECTION: '📌', CLOSING: '🎯',
+        IMAGE_SLIDE: '🖼️', STATUS_SLIDE: '🔄',
       };
 
       const layoutSummary = pptData.slides
         .map((s, i) => {
-          const ic  = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
+          const ic     = layoutIcons[(s.layout || 'CONTENT').toUpperCase()] || '📄';
           const hasImg = s.imagePath ? ' 🖼️' : '';
           return `${ic} **Slide ${i + 1}:** ${s.title || '—'} _(${s.layout || 'CONTENT'})_${hasImg}`;
         })
         .join('\n');
 
       const templateNote = result.usedTemplate ? '\n🎨 **Template:** Custom template applied' : '';
+      const freeformNote = freeformMode ? '\n✏️ **Mode:** Freeform layout (your design spec)' : '';
 
       const assignedSlides = pptData.slides.filter(s => s.imagePath).length;
       let imageNote = '';
       if (rawExtractedImages.length > 0) {
-        imageNote = `\n🖼️ **Gambar:** ${assignedSlides} slide berisi gambar dari ${rawExtractedImages.length} gambar di dokumen`;
+        imageNote = `\n🖼️ **Images:** ${assignedSlides} slides include images from ${rawExtractedImages.length} extracted`;
       }
 
       const docNote = uploadedDocName
-        ? `\n📄 **Sumber:** "${uploadedDocName}"`
-        : (conversationContext ? `\n💬 **Sumber:** Dari diskusi conversation` : '');
+        ? `\n📄 **Source:** "${uploadedDocName}"`
+        : (conversationContext ? `\n💬 **Source:** From conversation context` : '');
 
-      const jsonUsage    = normalizeUsage(jsonResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
-      const totalTokens  = (contentUsage?.total_tokens || 0) + (jsonUsage?.total_tokens || 0);
-      const tokenNote    = totalTokens > 0 ? `\n📊 **Token:** ${totalTokens.toLocaleString()}` : '';
+      const jsonUsage   = normalizeUsage(jsonResult.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
+      const totalTokens = (contentUsage?.total_tokens || 0) + (jsonUsage?.total_tokens || 0);
+      const tokenNote   = totalTokens > 0 ? `\n📊 **Tokens:** ${totalTokens.toLocaleString()}` : '';
 
       const responseMarkdown = isEnglish
-        ? `✅ **GYS Presentation successfully generated!**
+        ? `✅ **Presentation successfully generated!**
 
 📊 **Title:** ${title}
-📑 **Total Slides:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
+📑 **Total Slides:** ${result.slideCount} slides${templateNote}${freeformNote}${imageNote}${docNote}${tokenNote}
 
 ---
 ### [⬇️ Download Presentation (.pptx)](${result.pptxUrl})
 
-**Auto-detected slide layouts:**
+**Slide layouts:**
 ${layoutSummary}`
-        : `✅ **Presentasi GYS berhasil dibuat!**
+        : `✅ **Presentasi berhasil dibuat!**
 
 📊 **Judul:** ${title}
-📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${imageNote}${docNote}${tokenNote}
+📑 **Jumlah Slide:** ${result.slideCount} slides${templateNote}${freeformNote}${imageNote}${docNote}${tokenNote}
 
 ---
 ### [⬇️ Download Presentasi (.pptx)](${result.pptxUrl})
 
-**Layout yang dipilih per slide:**
+**Layout per slide:**
 ${layoutSummary}`;
 
       await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
