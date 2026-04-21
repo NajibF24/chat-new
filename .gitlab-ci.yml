@@ -12,14 +12,14 @@ stages:
 build_server:
   stage: build
   tags:
-    -  CI-Shell 
+    -  CI-Shell
   rules:
     - if: $CI_COMMIT_BRANCH == "development"
       changes:
         - server/**/*
   script:
     - docker build -t $CI_REGISTRY/portalai/server:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHA} ./server
-    - docker push $CI_REGISTRY/portalai:CI_COMMIT_BRANCH.$CI_COMMIT_SHA 
+    - docker push $CI_REGISTRY/portalai/server:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHA} 
 
 build_client:
   stage: build
@@ -31,4 +31,4 @@ build_client:
         - client/**/*
   script:
     - docker build -t $CI_REGISTRY/portalai/client:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHA} ./client
-    - docker push $CI_REGISTRY/portalai:CI_COMMIT_BRANCH.$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY/portalai/client:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHA}
