@@ -21,7 +21,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 RUN npm install --production
 
-# 4. Copy sisa kode aplikasi
+# 4. Copy sisa kode aplikasi sesuai
 COPY . .
 
 # 5. [SECURITY FIX] Setup folder dan permission
