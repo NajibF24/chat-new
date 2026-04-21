@@ -1090,19 +1090,39 @@ class AICoreService {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
+    // ✅ FIX: Bedakan instruksi untuk Smartsheet vs non-Smartsheet
+    // Untuk Smartsheet: tambahkan larangan eksplisit agar AI tidak menambah data dari memori/training.
+    const hasSmartsheetData = contextData.includes('DATA SMARTSHEET');
+    const groundingInstruction = hasSmartsheetData
+      ? [
+          'CRITICAL DATA INTEGRITY RULES:',
+          '1. Use ONLY the data provided above from Smartsheet API. Do NOT add, infer, or complete any field values from your training data or memory.',
+          '2. If a field (e.g. Issues, Remarks) appears incomplete or ends mid-sentence in the data above, copy it EXACTLY as-is. Do NOT continue or complete the sentence.',
+          '3. Never fabricate project names, dates, progress percentages, issue descriptions, or any other values.',
+          '4. If data for a specific project is not in the context above, say so — do not guess.',
+        ].join('\n')
+      : contextData
+        ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
+        : '';
+
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
       contextData,
-      contextData
-        ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
-        : '',
+      groundingInstruction,
     ].filter(Boolean).join('\n\n');
+
+    // ✅ FIX: Untuk Smartsheet queries, kirim history = [] (kosong).
+    // History conversation bisa mengandung jawaban AI sebelumnya yang salah/terpotong
+    // (misal: data yang sudah di-hallusinasikan). Data fresh dari Smartsheet API
+    // harus jadi satu-satunya sumber kebenaran — bukan jawaban lama di history.
+    const isSmartsheetQuery = bot.smartsheetConfig?.enabled && contextData.includes('DATA SMARTSHEET');
+    const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt,
-      messages: history.slice(-6),
+      messages: messagesForAI,
       userContent: userContent.length === 1 && userContent[0].type === 'text'
         ? userContent[0].text
         : userContent,
