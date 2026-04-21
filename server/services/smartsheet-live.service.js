@@ -199,10 +199,19 @@ class SmartsheetLiveService {
     context     += `Total data: ${flatRows.length} rows\n`;
     context     += `Kolom tersedia: ${cols.allColumns.join(', ')}\n\n`;
 
-    // ── FIX: Detect doc sheet — lebih robust, cek kolom 'Activity' dan ('User' atau 'Activity Time')
-    const isDocSheet = cols.allColumns.some(k => k === 'Activity') &&
+    // ✅ FIX v1.4.0: isDocSheet detection yang lebih ketat.
+    // Project sheet sering punya kolom "Activity" atau "User" untuk audit trail,
+    // tapi PASTI punya kolom project (Status, Progress, Target End Date).
+    // Doc tracking sheet TIDAK punya kolom project tersebut.
+    // Rule: isDocSheet = true HANYA jika ada Activity+User/ActivityTime
+    //       DAN tidak ada satupun kolom project utama.
+    const hasActivityCols = cols.allColumns.some(k => k === 'Activity') &&
       (cols.allColumns.some(k => k === 'User') ||
        cols.allColumns.some(k => k === 'Activity Time' || k === 'ActivityTime'));
+
+    const hasProjectCols = cols.status || cols.progress || cols.targetEnd || cols.health;
+
+    const isDocSheet = hasActivityCols && !hasProjectCols;
 
     if (isDocSheet) {
       return this.buildDocContext(flatRows, msg, today, context, cols);
@@ -233,9 +242,10 @@ class SmartsheetLiveService {
 
     // Hanya coba single-project jika ada kata kunci spesifik yang bisa dicocokkan ke nama project
     // ✅ FIX v1.3.1: Fuzzy match — normalisasi tanda hubung dan variasi ejaan ID/EN
-    // Contoh: "e-aset" → cocok dengan "E-Asset", "iot" → cocok dengan "IoT"
-    // Normalisasi string: hapus tanda hubung, spasi, karakter non-alphanumeric
-    // + transliterasi kata Indonesia → Inggris yang umum dipakai di nama project
+    // ✅ FIX v1.3.2: Scoring-based match — scoring per kata agar kata spesifik
+    //   (misal: "devsecops") lebih diutamakan dari kata generik ("implementation").
+    //   Tanpa ini, "give me status devsecops implementation" bisa match ke
+    //   "Hyperconverged Implementation" karena kata "implementation" lebih dulu ditemukan.
     const idToEnMap = {
       'aset': 'asset', 'sistem': 'system', 'jaringan': 'network',
       'gudang': 'warehouse', 'keuangan': 'finance', 'pembelian': 'procurement',
@@ -243,28 +253,46 @@ class SmartsheetLiveService {
     };
     const normalizeStr = (s) => {
       let str = String(s || '').toLowerCase().replace(/-/g, '').replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-      // Cek apakah seluruh string cocok dengan alias ID→EN
       return idToEnMap[str] || str;
     };
 
+    // Kata generik yang sering muncul di banyak nama project — bobot lebih rendah
+    const genericProjectWords = new Set([
+      'implementation','system','project','management','monitoring','improvement',
+      'development','integration','upgrade','migration','installation','deployment',
+      'aplikasi','sistem','proyek','manajemen','pengembangan','implementasi','new',
+    ]);
+
     let singleMatch = null;
     if (searchWords.length > 0) {
-      singleMatch = allRows.find(row => {
-        const rawName  = String(this.resolveField(row, 'projectName') || '');
-        const normName = normalizeStr(rawName);
-        // Juga pecah nama project per kata untuk partial match
-        const nameParts = rawName.toLowerCase().replace(/-/g, ' ').split(/\s+/).filter(p => p.length >= 2);
+      let bestScore = 0;
 
-        return searchWords.some(w => {
+      for (const row of allRows) {
+        const rawName   = String(this.resolveField(row, 'projectName') || '');
+        const normName  = normalizeStr(rawName);
+        const nameParts = rawName.toLowerCase().replace(/-/g, ' ').split(/\s+/)
+          .filter(p => p.length >= 2)
+          .map(p => normalizeStr(p));
+
+        let score = 0;
+        for (const w of searchWords) {
           const normW = normalizeStr(w);
-          if (!normW || normW.length < 2) return false;
-          // Exact substring match (normalized)
-          if (normName.includes(normW)) return true;
-          // Partial match per kata di nama project
-          if (nameParts.some(p => normalizeStr(p).includes(normW) || normW.includes(normalizeStr(p)))) return true;
-          return false;
-        });
-      });
+          if (!normW || normW.length < 2) continue;
+          // Kata spesifik (tidak generik) diberi bobot 3, kata generik bobot 1
+          const weight = genericProjectWords.has(normW) ? 1 : 3;
+          if (normName.includes(normW)) score += weight;
+          else if (nameParts.some(p => p.includes(normW) || normW.includes(p))) score += weight;
+        }
+
+        if (score > bestScore) {
+          bestScore   = score;
+          singleMatch = row;
+        }
+      }
+
+      // Threshold: minimal score 2 (1 kata spesifik, atau 2 kata generik)
+      // Tanpa threshold, kata tunggal generik seperti "system" bisa salah match
+      if (bestScore < 2) singleMatch = null;
     }
 
     if (singleMatch) {
