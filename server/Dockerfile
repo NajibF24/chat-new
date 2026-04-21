@@ -17,11 +17,11 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-# 3. Copy package files dan install dependencies
+# 3. Copy package files dan install dependencies 
 COPY package*.json ./
 RUN npm install --production
 
-# 4. Copy sisa kode aplikasi sesuai
+# 4. Copy sisa kode aplikasi yang sudah ditambahkan
 COPY . .
 
 # 5. [SECURITY FIX] Setup folder dan permission
