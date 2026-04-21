@@ -306,7 +306,7 @@ const Chat = ({ user, handleLogout }) => {
               className="h-8 w-auto object-contain"
               onError={e => { e.target.style.display = 'none'; }} />
             <div>
-              <h1 className="font-bold text-sm text-primary-dark tracking-wide">PORTAL AI</h1>
+              <h1 className="font-bold text-sm text-primary-dark tracking-wide">AI PORTAL</h1>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
                 <span className="text-[10px] text-emerald-600 font-semibold">Online</span>
