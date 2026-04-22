@@ -1113,8 +1113,8 @@ class AICoreService {
       const isPdf     = attachedFile.mimetype === 'application/pdf' ||
                         (attachedFile.originalname || '').toLowerCase().endsWith('.pdf');
 
-      // ── Vision-capable providers: OpenAI, Anthropic, Google ──
-      const visionProviders = new Set(['openai', 'anthropic', 'google']);
+      // ── Vision-capable providers: OpenAI, Anthropic, Google, Custom (Azure OpenAI) ──
+      const visionProviders = new Set(['openai', 'anthropic', 'google', 'custom']);
       const supportsVision  = visionProviders.has(provider);
 
       if (isImage && supportsVision) {
@@ -1141,7 +1141,7 @@ class AICoreService {
               source: { type: 'base64', media_type: mime, data: b64 },
             });
           } else {
-            // OpenAI and Google (Gemini) use image_url with data URI
+            // OpenAI, Google (Gemini), and Custom (Azure OpenAI) use image_url with data URI
             userContent.push({
               type:      'image_url',
               image_url: { url: `data:${mime};base64,${b64}` },
@@ -1171,16 +1171,27 @@ class AICoreService {
 
     // ── Ensure a vision-capable model is used when an image is attached ──
     const hasImageAttachment = userContent.some(c => c?.type === 'image' || c?.type === 'image_url');
-    const providerConfig = { ...(bot.aiProvider || { provider: 'openai', model: 'gpt-4o-mini' }) };
+    // ✅ FIX: Do NOT fall back to { provider: 'openai' } — use whatever the bot actually has.
+    // Falling back to 'openai' when the bot uses 'custom' (Azure) or another provider
+    // causes a "API Key not found for openai" error even though the bot has a valid key.
+    const providerConfig = { ...(bot.aiProvider || {}) };
+    if (!providerConfig.provider) {
+      // Only set openai as default if bot truly has no provider configured at all
+      providerConfig.provider = 'openai';
+      providerConfig.model    = providerConfig.model || 'gpt-4o-mini';
+    }
     if (hasImageAttachment) {
       const p = providerConfig.provider || 'openai';
       const m = (providerConfig.model || '').toLowerCase();
-      const isOpenAIVision = /gpt-4o|gpt-4-vision|gpt-4-turbo-vision/.test(m);
+      const isOpenAIVision    = /gpt-4o|gpt-4-vision|gpt-4-turbo-vision|gpt-4\.1|gpt-5/.test(m);
       const isAnthropicVision = /claude-3|sonnet|haiku|opus/.test(m);
-      const isGoogleVision = /gemini|1\.5|vision/.test(m);
+      const isGoogleVision    = /gemini|1\.5|vision/.test(m);
+      // For custom (Azure OpenAI): trust the configured model — Azure vision models
+      // are deployment-specific and the admin sets the correct model name.
       if (p === 'openai' && !isOpenAIVision) providerConfig.model = 'gpt-4o-mini';
       if (p === 'anthropic' && !isAnthropicVision) providerConfig.model = 'claude-3-haiku-20240307';
       if (p === 'google' && !isGoogleVision) providerConfig.model = 'gemini-1.5-flash';
+      // 'custom' provider: keep the configured model as-is (admin knows their deployment)
     }
 
     const today = new Date().toLocaleDateString('en-US', {
