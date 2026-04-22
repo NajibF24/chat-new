@@ -1113,12 +1113,9 @@ class AICoreService {
       const isPdf     = attachedFile.mimetype === 'application/pdf' ||
                         (attachedFile.originalname || '').toLowerCase().endsWith('.pdf');
 
-      console.log(`[AICoreService] attachedFile debug: provider=${provider} mimetype=${attachedFile.mimetype} isImage=${isImage} isPdf=${isPdf} originalname=${attachedFile.originalname}`);
-
       // ── Vision-capable providers: OpenAI, Anthropic, Google, Custom (Azure OpenAI) ──
       const visionProviders = new Set(['openai', 'anthropic', 'google', 'custom']);
       const supportsVision  = visionProviders.has(provider);
-      console.log(`[AICoreService] supportsVision=${supportsVision} for provider="${provider}"`);
 
       if (isImage && supportsVision) {
         // Send image directly to vision model
@@ -1174,7 +1171,6 @@ class AICoreService {
 
     // ── Ensure a vision-capable model is used when an image is attached ──
     const hasImageAttachment = userContent.some(c => c?.type === 'image' || c?.type === 'image_url');
-    console.log(`[AICoreService] userContent types: [${userContent.map(c => c?.type).join(', ')}] hasImageAttachment=${hasImageAttachment}`);
     // ✅ FIX: Do NOT fall back to { provider: 'openai' } — use whatever the bot actually has.
     // Falling back to 'openai' when the bot uses 'custom' (Azure) or another provider
     // causes a "API Key not found for openai" error even though the bot has a valid key.
@@ -1197,7 +1193,6 @@ class AICoreService {
       if (p === 'google' && !isGoogleVision) providerConfig.model = 'gemini-1.5-flash';
       // 'custom' provider: keep the configured model as-is (admin knows their deployment)
     }
-    console.log(`[AICoreService] Final providerConfig: provider=${providerConfig.provider} model=${providerConfig.model}`);
 
     const today = new Date().toLocaleDateString('en-US', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
