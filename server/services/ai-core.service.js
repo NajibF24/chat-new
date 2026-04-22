@@ -9,7 +9,7 @@
 
 import pdf      from 'pdf-parse';
 import mammoth  from 'mammoth';
-import XLSX     from 'xlsx';
+import ExcelJS  from 'exceljs';
 import fs       from 'fs';
 import path     from 'path';
 import axios    from 'axios';
@@ -743,10 +743,17 @@ async function deepReadDocumentChunked(filePath, originalName, mimetype, provide
       fullText     = result.value || '';
 
     } else if (ext === '.xlsx' || ext === '.xls' || (mimetype || '').includes('spreadsheetml')) {
-      const workbook = XLSX.readFile(filePath);
-      fullText = workbook.SheetNames.map(n => {
-        return `=== Sheet: ${n} ===\n${XLSX.utils.sheet_to_csv(workbook.Sheets[n])}`;
-      }).join('\n\n');
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
+      const sheetTexts = [];
+      workbook.eachSheet(sheet => {
+        const rows = [];
+        sheet.eachRow(row => {
+          rows.push(row.values.slice(1).map(v => (v == null ? '' : String(v))).join(','));
+        });
+        sheetTexts.push(`=== Sheet: ${sheet.name} ===\n${rows.join('\n')}`);
+      });
+      fullText = sheetTexts.join('\n\n');
 
     } else if (ext === '.pptx' || ext === '.ppt' || (mimetype || '').includes('presentationml')) {
       try {
@@ -882,11 +889,15 @@ async function deepReadDocument(filePath, originalName, mimetype) {
       content = result.value || '';
 
     } else if (ext === '.xlsx' || ext === '.xls' || (mimetype || '').includes('spreadsheetml')) {
-      const workbook = XLSX.readFile(filePath);
-      const parts    = workbook.SheetNames.map(sheetName => {
-        const sheet = workbook.Sheets[sheetName];
-        const csv   = XLSX.utils.sheet_to_csv(sheet);
-        return `=== Sheet: ${sheetName} ===\n${csv}`;
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
+      const parts = [];
+      workbook.eachSheet(sheet => {
+        const rows = [];
+        sheet.eachRow(row => {
+          rows.push(row.values.slice(1).map(v => (v == null ? '' : String(v))).join(','));
+        });
+        parts.push(`=== Sheet: ${sheet.name} ===\n${rows.join('\n')}`);
       });
       content = parts.join('\n\n');
 
@@ -992,8 +1003,17 @@ class AICoreService {
         const result = await mammoth.extractRawText({ path: physicalPath });
         return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
-        const workbook = XLSX.readFile(physicalPath);
-        const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(physicalPath);
+        const parts = [];
+        workbook.eachSheet(sheet => {
+          const rows = [];
+          sheet.eachRow(row => {
+            rows.push(row.values.slice(1).map(v => (v == null ? '' : String(v))).join(','));
+          });
+          parts.push(rows.join('\n'));
+        });
+        const content = parts.join('\n');
         return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.pptx' || ext === '.ppt') {
         // ✅ FIX: Extract text from PPTX slides using JSZip (same as deepReadDocument)
