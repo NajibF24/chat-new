@@ -123,94 +123,8 @@ function bulletFontSize(bullets = [], containerH = 4.2, baseSize = 16, minSize =
 // ────────────────────────────────────────────────────────────
 // TEMPLATE PARSER
 // ────────────────────────────────────────────────────────────
-// ────────────────────────────────────────────────────────────
-// Helper: resolve a relationship rId → image base64 from a zip
-// basePath is the folder of the XML file (e.g. 'ppt/slides')
-// ────────────────────────────────────────────────────────────
-async function resolveRelsImage(zip, xmlFilePath, rId) {
-  // Build the .rels path: ppt/slides/_rels/slide1.xml.rels
-  const parts    = xmlFilePath.split('/');
-  const fileName = parts.pop();
-  const relsPath = [...parts, '_rels', `${fileName}.rels`].join('/');
-
-  if (!zip.files[relsPath]) return null;
-
-  const relsXml  = await zip.files[relsPath].async('string');
-  const relMatch = relsXml.match(new RegExp(`Id="${rId}"[^>]*Target="([^"]+)"`));
-  if (!relMatch) return null;
-
-  let imgPath = relMatch[1];
-  // Resolve relative path from the XML file's folder
-  if (!imgPath.startsWith('ppt/')) {
-    imgPath = [...parts, imgPath].join('/');
-  }
-  // Normalize ../  sequences
-  const resolved = [];
-  for (const seg of imgPath.split('/')) {
-    if (seg === '..') resolved.pop();
-    else if (seg && seg !== '.') resolved.push(seg);
-  }
-  imgPath = resolved.join('/');
-
-  // Case-insensitive lookup in zip
-  const imgKey = Object.keys(zip.files).find(k =>
-    k.toLowerCase() === imgPath.toLowerCase() ||
-    k.toLowerCase().endsWith('/' + imgPath.toLowerCase().split('/').pop())
-  );
-  if (!imgKey) return null;
-
-  const imgData = await zip.files[imgKey].async('base64');
-  const ext     = imgKey.split('.').pop().toLowerCase();
-  return { data: imgData, ext: ext === 'jpg' ? 'jpeg' : (ext || 'png'), key: imgKey };
-}
-
-// ────────────────────────────────────────────────────────────
-// Helper: extract background (image or solid color) from a
-// slide/layout/master XML string + its zip + its file path.
-// Returns { bgImageData, bgImageExt, bgColor, hasTemplateBg }
-// ────────────────────────────────────────────────────────────
-async function extractBgFromXml(zip, xmlFilePath, xml) {
-  const result = { bgImageData: null, bgImageExt: 'png', bgColor: null, hasTemplateBg: false };
-
-  // Background image via blipFill
-  const blipMatch = xml.match(/<p:bg[\s\S]*?<a:blip\s[^>]*r:embed="([^"]+)"/);
-  if (blipMatch) {
-    const img = await resolveRelsImage(zip, xmlFilePath, blipMatch[1]);
-    if (img) {
-      result.bgImageData   = img.data;
-      result.bgImageExt    = img.ext;
-      result.hasTemplateBg = true;
-      console.log(`[PPT Template] Slide bg image from ${xmlFilePath}: ${img.key}`);
-      return result;
-    }
-  }
-
-  // Solid fill color
-  const solidMatch = xml.match(/<p:bg[\s\S]*?<a:solidFill>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
-  if (solidMatch) {
-    result.bgColor       = solidMatch[1].toUpperCase();
-    result.hasTemplateBg = true;
-    return result;
-  }
-
-  return result;
-}
-
 async function extractTemplateTheme(pptxFilePath) {
-  const theme = {
-    ...GYS_DEFAULTS,
-    // Per-slide backgrounds extracted from the template's actual slides:
-    //   slide1Bg — used for TITLE / SECTION / CLOSING layouts
-    //   slide2Bg — used for all other content layouts
-    // Each is: { bgImageData, bgImageExt, bgColor, hasTemplateBg }
-    slide1Bg: null,
-    slide2Bg: null,
-    // Legacy single-bg fields (kept for applyTemplateBackground fallback)
-    bgImageData:    null,
-    bgImageExt:     'png',
-    bgColor:        null,
-    hasTemplateBg:  false,
-  };
+  const theme = { ...GYS_DEFAULTS };
 
   try {
     if (!pptxFilePath || !fs.existsSync(pptxFilePath)) return theme;
@@ -218,7 +132,7 @@ async function extractTemplateTheme(pptxFilePath) {
     const data = fs.readFileSync(pptxFilePath);
     const zip  = await JSZip.loadAsync(data);
 
-    // ── 1. Extract accent colors and fonts from theme XML ─────
+    // Extract accent colors and fonts from theme XML
     const themeFiles = Object.keys(zip.files).filter(f =>
       f.match(/ppt\/theme\/theme\d*\.xml$/)
     );
@@ -231,8 +145,8 @@ async function extractTemplateTheme(pptxFilePath) {
       for (const m of accentMatches) accents.push(m[1].toUpperCase());
 
       if (accents.length > 0) {
-        theme.teal        = accents[0];
-        theme.tealAccent  = accents[1] || accents[0];
+        theme.teal       = accents[0];
+        theme.tealAccent = accents[1] || accents[0];
         theme.chartColors = accents.slice(0, 6).length >= 2
           ? accents.slice(0, 6)
           : [accents[0], accents[0] + '88', accents[0] + '55', 'CCCCCC', 'AAAAAA', '888888'];
@@ -250,53 +164,7 @@ async function extractTemplateTheme(pptxFilePath) {
       }
     }
 
-    // ── 2. Extract per-slide backgrounds from the template's actual slides ──
-    // Sort slide files numerically so slide1 < slide2 < slide3 ...
-    const slideFiles = Object.keys(zip.files)
-      .filter(f => f.match(/ppt\/slides\/slide\d+\.xml$/))
-      .sort((a, b) => {
-        const na = parseInt(a.match(/slide(\d+)\.xml$/)?.[1] || '0');
-        const nb = parseInt(b.match(/slide(\d+)\.xml$/)?.[1] || '0');
-        return na - nb;
-      });
-
-    console.log(`[PPT Template] Found ${slideFiles.length} slides in template: ${slideFiles.join(', ')}`);
-
-    if (slideFiles.length >= 1) {
-      const xml1 = await zip.files[slideFiles[0]].async('string');
-      theme.slide1Bg = await extractBgFromXml(zip, slideFiles[0], xml1);
-    }
-
-    if (slideFiles.length >= 2) {
-      const xml2 = await zip.files[slideFiles[1]].async('string');
-      theme.slide2Bg = await extractBgFromXml(zip, slideFiles[1], xml2);
-    }
-
-    // ── 3. Fallback: if slides have no bg, try slide master ───
-    if (!theme.slide1Bg?.hasTemplateBg && !theme.slide2Bg?.hasTemplateBg) {
-      const masterFiles = Object.keys(zip.files).filter(f =>
-        f.match(/ppt\/slideMasters\/slideMaster\d*\.xml$/)
-      );
-      if (masterFiles.length > 0) {
-        const masterXml = await zip.files[masterFiles[0]].async('string');
-        const masterBg  = await extractBgFromXml(zip, masterFiles[0], masterXml);
-        if (masterBg.hasTemplateBg) {
-          theme.slide1Bg = masterBg;
-          theme.slide2Bg = masterBg;
-        }
-      }
-    }
-
-    // Populate legacy single-bg fields from slide2 (content) or slide1
-    const primaryBg = theme.slide2Bg?.hasTemplateBg ? theme.slide2Bg : theme.slide1Bg;
-    if (primaryBg?.hasTemplateBg) {
-      theme.bgImageData   = primaryBg.bgImageData;
-      theme.bgImageExt    = primaryBg.bgImageExt;
-      theme.bgColor       = primaryBg.bgColor;
-      theme.hasTemplateBg = true;
-    }
-
-    console.log(`[PPT Template] Extracted theme — primary: #${theme.teal}, font: ${theme.fontTitle}, slide1Bg: ${theme.slide1Bg?.hasTemplateBg}, slide2Bg: ${theme.slide2Bg?.hasTemplateBg}`);
+    console.log(`[PPT Template] Extracted theme — primary: #${theme.teal}, font: ${theme.fontTitle}`);
 
   } catch (err) {
     console.warn('[PPT Template] Theme extraction failed, using defaults:', err.message);
@@ -307,50 +175,6 @@ async function extractTemplateTheme(pptxFilePath) {
   theme.tealLight = theme.offWhite || 'F0F9F6';
 
   return theme;
-}
-
-// ────────────────────────────────────────────────────────────
-// Apply template background to a slide.
-// bgData: { bgImageData, bgImageExt, bgColor, hasTemplateBg }
-//   — comes from GYS.slide1Bg (title slides) or GYS.slide2Bg (content slides)
-// GYS: full theme object (for slideW/slideH dimensions)
-// ────────────────────────────────────────────────────────────
-function applyTemplateBackground(slide, GYS, bgData) {
-  // bgData can be a per-slide bg object or fall back to legacy GYS fields
-  const bg = bgData || GYS;
-  if (!bg.hasTemplateBg) return;
-
-  if (bg.bgImageData) {
-    // Full-bleed background image from the template slide
-    slide.addImage({
-      data: `data:image/${bg.bgImageExt};base64,${bg.bgImageData}`,
-      x: 0, y: 0,
-      w: GYS.slideW,
-      h: GYS.slideH,
-      sizing: { type: 'cover', w: GYS.slideW, h: GYS.slideH },
-    });
-  } else if (bg.bgColor) {
-    // Solid background color
-    slide.background = { color: bg.bgColor };
-  }
-}
-
-// ────────────────────────────────────────────────────────────
-// Pick the correct per-slide background from GYS based on layout.
-// TITLE / SECTION / CLOSING → slide1Bg (title slide from template)
-// Everything else            → slide2Bg (content slide from template)
-// Falls back to legacy GYS fields if per-slide bgs are not available.
-// ────────────────────────────────────────────────────────────
-function pickSlideBg(GYS, layout) {
-  const titleLayouts = new Set(['TITLE', 'SECTION', 'CLOSING', 'THANKYOU', 'THANK_YOU']);
-  const isTitle = titleLayouts.has((layout || '').toUpperCase());
-  if (isTitle && GYS.slide1Bg?.hasTemplateBg) return GYS.slide1Bg;
-  if (!isTitle && GYS.slide2Bg?.hasTemplateBg) return GYS.slide2Bg;
-  // Fallback: use whichever is available
-  if (GYS.slide1Bg?.hasTemplateBg) return GYS.slide1Bg;
-  if (GYS.slide2Bg?.hasTemplateBg) return GYS.slide2Bg;
-  // Final fallback: legacy GYS fields
-  return GYS;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1801,12 +1625,6 @@ const PptxService = {
     pptx.subject = title || "Presentation";
     pptx.title   = title || "Presentation";
 
-    // Note: PptxGenJS 3.x does not support pptx.load().
-    // Template theming is applied via:
-    //   1. extractTemplateTheme() — extracts colors, fonts, background from the PPTX file
-    //   2. applyTemplateBackground() — applies background image/color to each slide
-    //   3. All render functions use GYS theme tokens (colors, fonts) from the template
-
     let slideCount   = 0;
     let usedFallback = false;
 
@@ -1819,13 +1637,6 @@ const PptxService = {
       slidesWithImages.forEach((sd, idx) => {
         const slide     = pptx.addSlide();
         const layout    = (sd.layout || "CONTENT").toUpperCase();
-
-        // ✅ Pick the correct template background based on slide layout:
-        //   - TITLE / SECTION / CLOSING → slide1Bg (template's title slide)
-        //   - All other content layouts  → slide2Bg (template's content slide)
-        // Must be called BEFORE any content so it renders behind everything.
-        applyTemplateBackground(slide, GYS, pickSlideBg(GYS, layout));
-
         const pageLabel = `${idx + 1} / ${total}`;
         slideCount++;
 
@@ -1866,8 +1677,6 @@ const PptxService = {
       usedFallback = true;
       slideCount   = 1;
       const slide  = pptx.addSlide();
-      // Apply title slide background to fallback slide
-      applyTemplateBackground(slide, GYS, pickSlideBg(GYS, 'TITLE'));
       renderTitle(pptx, slide, {
         title:    title || "GYS Presentation",
         subtitle: "Generated by GYS Portal AI",

@@ -508,9 +508,27 @@ class AIProviderService {
   // ── Anthropic Claude ───────────────────────────────────────
   // ✅ PATCH v1.3.0: Added `timeout` param (was hardcoded 60000)
   async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 60000 }) {
-    const userText = Array.isArray(userContent)
-      ? userContent.map(b => b.text || '').join('\n')
-      : String(userContent);
+    // Build Anthropic-format content blocks (supports text + image)
+    let anthropicUserContent;
+    if (Array.isArray(userContent)) {
+      anthropicUserContent = userContent.map(block => {
+        if (block.type === 'image' && block.source) {
+          // Already in Anthropic format (set by ai-core.service.js)
+          return block;
+        }
+        if (block.type === 'image_url' && block.image_url?.url) {
+          // Convert OpenAI-style data URI to Anthropic format
+          const dataUri = block.image_url.url;
+          const match   = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
+          }
+        }
+        return { type: 'text', text: block.text || String(block) };
+      });
+    } else {
+      anthropicUserContent = [{ type: 'text', text: String(userContent) }];
+    }
 
     const anthropicMessages = [];
     for (const m of messages.slice(-6)) {
@@ -518,7 +536,7 @@ class AIProviderService {
         anthropicMessages.push({ role: m.role, content: m.content });
       }
     }
-    anthropicMessages.push({ role: 'user', content: userText });
+    anthropicMessages.push({ role: 'user', content: anthropicUserContent });
 
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
@@ -529,7 +547,7 @@ class AIProviderService {
           'anthropic-version': '2023-06-01',
           'content-type':      'application/json',
         },
-        timeout, // ✅ PATCH: was hardcoded 60000, now dynamic
+        timeout,
       }
     );
 
@@ -541,15 +559,32 @@ class AIProviderService {
   // ── Google Gemini ──────────────────────────────────────────
   // ✅ PATCH v1.3.0: Added `timeout` param (was hardcoded 60000)
   async _callGemini({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 60000 }) {
-    const userText = Array.isArray(userContent)
-      ? userContent.map(b => b.text || '').join('\n')
-      : String(userContent);
+    // Build Gemini-format parts (supports text + inlineData images)
+    let geminiUserParts;
+    if (Array.isArray(userContent)) {
+      geminiUserParts = userContent.map(block => {
+        if (block.type === 'image_url' && block.image_url?.url) {
+          const dataUri = block.image_url.url;
+          const match   = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            return { inlineData: { mimeType: match[1], data: match[2] } };
+          }
+        }
+        if (block.type === 'image' && block.source?.data) {
+          // Anthropic-style image block — convert to Gemini inlineData
+          return { inlineData: { mimeType: block.source.media_type, data: block.source.data } };
+        }
+        return { text: block.text || String(block) };
+      });
+    } else {
+      geminiUserParts = [{ text: String(userContent) }];
+    }
 
     const contents = [];
     for (const m of messages.slice(-6)) {
       contents.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] });
     }
-    contents.push({ role: 'user', parts: [{ text: userText }] });
+    contents.push({ role: 'user', parts: geminiUserParts });
 
     const ep = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const response = await axios.post(

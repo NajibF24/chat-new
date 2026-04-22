@@ -1103,13 +1103,51 @@ class AICoreService {
     if (message) userContent.push({ type: 'text', text: message });
 
     if (attachedFile) {
-      if (attachedFile.mimetype?.startsWith('image/') && bot.aiProvider?.provider === 'openai') {
-        const imgBuffer = fs.readFileSync(attachedFile.path);
-        userContent.push({
-          type: 'image_url',
-          image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` },
-        });
+      const provider  = bot.aiProvider?.provider || 'openai';
+      const isImage   = attachedFile.mimetype?.startsWith('image/');
+      const isPdf     = attachedFile.mimetype === 'application/pdf' ||
+                        (attachedFile.originalname || '').toLowerCase().endsWith('.pdf');
+
+      // ── Vision-capable providers: OpenAI, Anthropic, Google ──
+      const visionProviders = new Set(['openai', 'anthropic', 'google']);
+      const supportsVision  = visionProviders.has(provider);
+
+      if (isImage && supportsVision) {
+        // Send image directly to vision model
+        const filePath  = attachedFile.serverPath || attachedFile.path;
+        const imgBuffer = fs.readFileSync(filePath);
+        const b64       = imgBuffer.toString('base64');
+        const mime      = attachedFile.mimetype;
+
+        if (provider === 'anthropic') {
+          // Anthropic uses a different image format
+          userContent.push({
+            type:   'image',
+            source: { type: 'base64', media_type: mime, data: b64 },
+          });
+        } else {
+          // OpenAI and Google (Gemini) use image_url with data URI
+          userContent.push({
+            type:      'image_url',
+            image_url: { url: `data:${mime};base64,${b64}` },
+          });
+        }
+        console.log(`[AICoreService] Image attached (${provider}): ${attachedFile.originalname}`);
+
+      } else if (isPdf && supportsVision) {
+        // Try text extraction first; fall back to vision if text is empty (scanned PDF)
+        const text = await this.extractFileContent(attachedFile);
+        if (text && text.trim().length > 50) {
+          userContent.push({ type: 'text', text });
+        } else {
+          // Scanned/image-based PDF — inform the user we can't read it via vision
+          userContent.push({
+            type: 'text',
+            text: `\n\n[FILE: ${attachedFile.originalname}]\nThis PDF appears to be image-based (scanned). Text extraction returned no content. Please describe what you need from this document.\n[END FILE]\n`,
+          });
+        }
       } else {
+        // All other file types: extract text content
         const text = await this.extractFileContent(attachedFile);
         if (text) userContent.push({ type: 'text', text });
       }
