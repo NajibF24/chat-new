@@ -151,12 +151,14 @@ async function canAccessBot(user, botOrId) {
 // ============================================================
 router.get('/token-stats', requireAdmin, async (req, res) => {
   try {
-    const { dateFrom, dateTo, groupBy = 'user' } = req.query;
+    const { dateFrom, dateTo, provider: providerFilter = '', model: modelFilter = '' } = req.query;
 
     const matchStage = {
       role: 'assistant',
       'tokenUsage.totalTokens': { $gt: 0 },
     };
+    if (providerFilter) matchStage['tokenUsage.provider'] = providerFilter;
+    if (modelFilter)    matchStage['tokenUsage.model']    = modelFilter;
     if (dateFrom || dateTo) {
       matchStage.createdAt = {};
       if (dateFrom) matchStage.createdAt.$gte = new Date(dateFrom);
@@ -185,6 +187,14 @@ router.get('/token-stats', requireAdmin, async (req, res) => {
           lastUsed:         { $max: '$createdAt' },
         },
       },
+      {
+        $sort: {
+          '_id.userId': 1,
+          '_id.botId':  1,
+          '_id.provider': 1,
+          '_id.model': 1,
+        }
+      }
     ]);
 
     // ── Fetch user and bot info for projection ────────────────

@@ -466,6 +466,8 @@ function AdminDashboard({ user, handleLogout }) {
   const [tokenLoading,      setTokenLoading]      = useState(false);
   const [tokenDateFrom,     setTokenDateFrom]      = useState('');
   const [tokenDateTo,       setTokenDateTo]        = useState('');
+  const [tokenProvider,     setTokenProvider]     = useState('');
+  const [tokenModel,        setTokenModel]        = useState('');
 
   useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage, chatSearch, chatRole, chatDateFrom, chatDateTo, chatBotFilter]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -537,6 +539,8 @@ function AdminDashboard({ user, handleLogout }) {
       const p = new URLSearchParams();
       if (tokenDateFrom) p.set('dateFrom', tokenDateFrom);
       if (tokenDateTo)   p.set('dateTo',   tokenDateTo);
+      if (tokenProvider) p.set('provider', tokenProvider);
+      if (tokenModel)    p.set('model',    tokenModel);
       const r = await axios.get(`/api/admin/token-stats?${p}`);
       setTokenStats(r.data);
     } catch (e) {
