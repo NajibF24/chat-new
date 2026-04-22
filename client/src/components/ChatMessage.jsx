@@ -167,14 +167,23 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
               components={{
                 code({ node, inline, className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || '');
-                  const lang  = match ? match[1] : '';
+                  const lang  = match ? match[1].toLowerCase() : '';
                   const code  = String(children).replace(/\n$/, '');
-                  if (!inline) {
+
+                  // Allow only code-like languages; otherwise render as inline text
+                  const ALLOWED = new Set([
+                    'js','javascript','ts','typescript','jsx','tsx','react','vue','svelte','html','css','scss','less','json','yaml','yml','xml','sql','bash','sh','shell','zsh','powershell','ps1','python','py','go','rust','rs','java','c','cpp','c++','c#','cs','php','ruby','rb','kotlin','swift','dart','r','perl','lua','elixir','clojure','haskell','scala','groovy','make','dockerfile','nginx','ini','toml','md'
+                  ]);
+
+                  const isAllowed = !lang || ALLOWED.has(lang);
+
+                  if (!inline && isAllowed) {
                     return (
                       <CodeBlock lang={lang} code={code} isUser={isUser}
                         onOpenArtifact={!isUser ? onOpenArtifact : null} />
                     );
                   }
+
                   return (
                     <code
                       className={`${isUser ? 'bg-white/20 text-white' : 'bg-gray-100 text-primary-dark'} px-1.5 py-0.5 rounded text-xs font-mono`}
