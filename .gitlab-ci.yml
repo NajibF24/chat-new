@@ -1,5 +1,28 @@
 variables:
-  CI_REGISTRY: harbor.gyssteel.com
+  # --- KONFIGURASI UMUM ---
+  GIT_CLONE_PATH: '$CI_BUILDS_DIR/$CI_CONCURRENT_ID/project-portal-ai'
+  GIT_CLEAN_FLAGS: -ffdx -e data/
+  GIT_DEPTH: "0"
+
+  # --- DOCKER IMAGES (PROD - branch: main) ---
+  SERVER_IMAGE: $CI_REGISTRY_IMAGE/server:$CI_COMMIT_SHORT_SHA
+  SERVER_IMAGE_LATEST: $CI_REGISTRY_IMAGE/server:latest
+  CLIENT_IMAGE: $CI_REGISTRY_IMAGE/client:$CI_COMMIT_SHORT_SHA
+  CLIENT_IMAGE_LATEST: $CI_REGISTRY_IMAGE/client:latest
+
+  # --- DOCKER IMAGES (DEV - branch: dev) ---
+  SERVER_IMAGE_DEV: $CI_REGISTRY_IMAGE/server:dev-$CI_COMMIT_SHORT_SHA
+  SERVER_IMAGE_DEV_LATEST: $CI_REGISTRY_IMAGE/server:dev
+  CLIENT_IMAGE_DEV: $CI_REGISTRY_IMAGE/client:dev-$CI_COMMIT_SHORT_SHA
+  CLIENT_IMAGE_DEV_LATEST: $CI_REGISTRY_IMAGE/client:dev
+
+  # --- DOCKER IMAGES (RELEASE - git tag: v*.*.*) ---
+  SERVER_IMAGE_TAG: $CI_REGISTRY_IMAGE/server:$CI_COMMIT_TAG
+  CLIENT_IMAGE_TAG: $CI_REGISTRY_IMAGE/client:$CI_COMMIT_TAG
+
+  # --- TARGET URL ---
+  TARGET_URL_PROD: "https://chat.gyssteel.com"
+  TARGET_URL_DEV: "http://172.16.31.48:8080"
 
 stages:
   - build
@@ -12,23 +35,231 @@ stages:
 build_server:
   stage: build
   tags:
-    -  CI-Shell
+    - portal-ai
   rules:
-    - if: $CI_COMMIT_BRANCH == "development"
+    - if: $CI_COMMIT_BRANCH == "main"
       changes:
         - server/**/*
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
-    - docker build -t $CI_REGISTRY/portalai/server:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHORT_SHA} ./server
-    - docker push $CI_REGISTRY/portalai/server:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHORT_SHA} 
+    - echo "🏗️ [PROD] Building Server Image..."
+    - docker pull $SERVER_IMAGE_LATEST || true
+    - docker build --cache-from $SERVER_IMAGE_LATEST -t $SERVER_IMAGE -t $SERVER_IMAGE_LATEST ./server
+    - docker push $SERVER_IMAGE
+    - docker push $SERVER_IMAGE_LATEST
 
 build_client:
   stage: build
   tags:
-    -  CI-Shell
+    - portal-ai
   rules:
-    - if: $CI_COMMIT_BRANCH == "development"
+    - if: $CI_COMMIT_BRANCH == "main"
       changes:
         - client/**/*
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
-    - docker build -t $CI_REGISTRY/portalai/client:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHORT_SHA} ./client
-    - docker push $CI_REGISTRY/portalai/client:${CI_COMMIT_BRANCH}.${CI_COMMIT_SHORT_SHA}
+    - echo "🏗️ [PROD] Building Client Image..."
+    - docker pull $CLIENT_IMAGE_LATEST || true
+    - docker build --cache-from $CLIENT_IMAGE_LATEST --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t $CLIENT_IMAGE -t $CLIENT_IMAGE_LATEST ./client
+    - docker push $CLIENT_IMAGE
+    - docker push $CLIENT_IMAGE_LATEST
+
+# ==========================================================
+# PROD — DEPLOY STAGE (branch: main)
+# ==========================================================
+
+deploy_server:
+  stage: deploy
+  tags:
+    - portal-ai
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - server/**/*
+  needs: ["build_server"]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🚀 [PROD] Updating Server Service..."
+    - echo "$DOT_ENV_FILE" > .env
+    - docker pull $SERVER_IMAGE_LATEST
+    - docker compose up -d --no-deps --force-recreate server
+    - docker image prune -f
+
+deploy_client:
+  stage: deploy
+  tags:
+    - portal-ai
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - client/**/*
+  needs: ["build_client"]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🚀 [PROD] Updating Client Service..."
+    - echo "$DOT_ENV_FILE" > .env
+    - docker pull $CLIENT_IMAGE_LATEST
+    - docker compose up -d --no-deps --force-recreate client
+    - docker image prune -f
+
+# ==========================================================
+# DEV — BUILD STAGE (branch: dev)
+# ==========================================================
+
+build_server_dev:
+  stage: build
+  tags:
+    - portal-ai-dev
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - server/**/*
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🏗️ [DEV] Building Server Image..."
+    - docker pull $SERVER_IMAGE_DEV_LATEST || true
+    - docker build --cache-from $SERVER_IMAGE_DEV_LATEST -t $SERVER_IMAGE_DEV -t $SERVER_IMAGE_DEV_LATEST ./server
+    - docker push $SERVER_IMAGE_DEV
+    - docker push $SERVER_IMAGE_DEV_LATEST
+
+build_client_dev:
+  stage: build
+  tags:
+    - portal-ai-dev
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - client/**/*
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🏗️ [DEV] Building Client Image..."
+    - docker pull $CLIENT_IMAGE_DEV_LATEST || true
+    - docker build --cache-from $CLIENT_IMAGE_DEV_LATEST --build-arg REACT_APP_API_URL=${REACT_APP_API_URL_DEV} -t $CLIENT_IMAGE_DEV -t $CLIENT_IMAGE_DEV_LATEST ./client
+    - docker push $CLIENT_IMAGE_DEV
+    - docker push $CLIENT_IMAGE_DEV_LATEST
+
+# ==========================================================
+# DEV — DEPLOY STAGE (branch: dev)
+# ==========================================================
+
+deploy_server_dev:
+  stage: deploy
+  tags:
+    - portal-ai-dev
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - server/**/*
+  needs: ["build_server_dev"]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🚀 [DEV] Updating Server Service..."
+    - echo "$DOT_ENV_FILE_DEV" > .env
+    - docker pull $SERVER_IMAGE_DEV_LATEST
+    - docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate server
+    - docker network connect project-portal-ai_internal-chat-network mongo || true
+    - docker image prune -f
+
+deploy_client_dev:
+  stage: deploy
+  tags:
+    - portal-ai-dev
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - client/**/*
+  needs: ["build_client_dev"]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🚀 [DEV] Updating Client Service..."
+    - echo "$DOT_ENV_FILE_DEV" > .env
+    - docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate client
+    - docker image prune -f
+
+# ==========================================================
+# RELEASE — BUILD STAGE (git tag: v*.*.*)
+# Source dari: main branch (tag dibuat dari main)
+# Runner menggunakan: portal-ai (sama seperti prod)
+# ==========================================================
+
+build_server_release:
+  stage: build
+  tags:
+    - portal-ai
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🏗️ [RELEASE] Building Server Image tag $CI_COMMIT_TAG..."
+    - docker pull $SERVER_IMAGE_LATEST || true
+    - docker build --cache-from $SERVER_IMAGE_LATEST
+        -t $SERVER_IMAGE_TAG
+        -t $SERVER_IMAGE_LATEST
+        ./server
+    - docker push $SERVER_IMAGE_TAG
+    - docker push $SERVER_IMAGE_LATEST
+
+build_client_release:
+  stage: build
+  tags:
+    - portal-ai
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🏗️ [RELEASE] Building Client Image tag $CI_COMMIT_TAG..."
+    - docker pull $CLIENT_IMAGE_LATEST || true
+    - docker build --cache-from $CLIENT_IMAGE_LATEST
+        --build-arg REACT_APP_API_URL=${REACT_APP_API_URL}
+        -t $CLIENT_IMAGE_TAG
+        -t $CLIENT_IMAGE_LATEST
+        ./client
+    - docker push $CLIENT_IMAGE_TAG
+    - docker push $CLIENT_IMAGE_LATEST
+
+# ==========================================================
+# RELEASE — DEPLOY STAGE (git tag: v*.*.*)
+# Deploy ke PROD server (sama seperti main)
+# ==========================================================
+
+deploy_server_release:
+  stage: deploy
+  tags:
+    - portal-ai
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  needs: ["build_server_release"]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🚀 [RELEASE] Deploying Server $CI_COMMIT_TAG to PROD..."
+    - echo "$DOT_ENV_FILE" > .env
+    - docker pull $SERVER_IMAGE_TAG
+    - docker compose up -d --no-deps --force-recreate server
+    - docker image prune -f
+
+deploy_client_release:
+  stage: deploy
+  tags:
+    - portal-ai
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  needs: ["build_client_release"]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - echo "🚀 [RELEASE] Deploying Client $CI_COMMIT_TAG to PROD..."
+    - echo "$DOT_ENV_FILE" > .env
+    - docker pull $CLIENT_IMAGE_TAG
+    - docker compose up -d --no-deps --force-recreate client
+    - docker image prune -f
