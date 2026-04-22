@@ -466,6 +466,8 @@ function AdminDashboard({ user, handleLogout }) {
   const [tokenLoading,      setTokenLoading]      = useState(false);
   const [tokenDateFrom,     setTokenDateFrom]      = useState('');
   const [tokenDateTo,       setTokenDateTo]        = useState('');
+  const [tokenProvider,     setTokenProvider]     = useState('');
+  const [tokenModel,        setTokenModel]        = useState('');
 
   useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage, chatSearch, chatRole, chatDateFrom, chatDateTo, chatBotFilter]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -537,6 +539,8 @@ function AdminDashboard({ user, handleLogout }) {
       const p = new URLSearchParams();
       if (tokenDateFrom) p.set('dateFrom', tokenDateFrom);
       if (tokenDateTo)   p.set('dateTo',   tokenDateTo);
+      if (tokenProvider) p.set('provider', tokenProvider);
+      if (tokenModel)    p.set('model',    tokenModel);
       const r = await axios.get(`/api/admin/token-stats?${p}`);
       setTokenStats(r.data);
     } catch (e) {
@@ -1221,6 +1225,7 @@ function AdminDashboard({ user, handleLogout }) {
                     { label: 'Prompt Tokens',     value: (tokenStats.totals?.promptTokens     || 0).toLocaleString(), icon: '📤', bg: 'bg-blue-50',     text: 'text-blue-700'     },
                     { label: 'Completion Tokens', value: (tokenStats.totals?.completionTokens || 0).toLocaleString(), icon: '📥', bg: 'bg-emerald-50',  text: 'text-emerald-700'  },
                     { label: 'AI Responses',      value: (tokenStats.totals?.messageCount     || 0).toLocaleString(), icon: '💬', bg: 'bg-amber-50',    text: 'text-amber-700'    },
+                    { label: 'Est. Cost (USD)',   value: (tokenStats.totals?.costUSD         || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }), icon: '💵', bg: 'bg-emerald-50/60', text: 'text-emerald-700' },
                   ].map(s => (
                     <div key={s.label} className={`${s.bg} rounded-2xl p-4 border border-white/60`}>
                       <div className={`text-2xl font-bold ${s.text} tabular-nums`}>{s.value}</div>
@@ -1247,6 +1252,7 @@ function AdminDashboard({ user, handleLogout }) {
                           <th className="px-5 py-3 text-right font-semibold">Completion</th>
                           <th className="px-5 py-3 text-right font-semibold">Responses</th>
                           <th className="px-5 py-3 text-right font-semibold">Avg/Response</th>
+                          <th className="px-5 py-3 text-right font-semibold">Cost (USD)</th>
                           <th className="px-5 py-3 text-right font-semibold">Last Used</th>
                         </tr>
                       </thead>
@@ -1255,6 +1261,7 @@ function AdminDashboard({ user, handleLogout }) {
                           const maxTokens = tokenStats.perUser[0]?.totalTokens || 1;
                           const pct = Math.round((u.totalTokens / maxTokens) * 100);
                           const avg = u.messageCount > 0 ? Math.round(u.totalTokens / u.messageCount) : 0;
+                          const cost = u.costUSD || 0;
                           return (
                             <tr key={String(u.userId)} className="hover:bg-gray-50/60 transition-colors">
                               <td className="px-5 py-3 text-gray-400 font-mono">{idx + 1}</td>
@@ -1275,6 +1282,7 @@ function AdminDashboard({ user, handleLogout }) {
                               <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{u.completionTokens.toLocaleString()}</td>
                               <td className="px-5 py-3 text-right text-gray-600 tabular-nums">{u.messageCount.toLocaleString()}</td>
                               <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{avg.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-emerald-700 tabular-nums font-semibold">{cost.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })}</td>
                               <td className="px-5 py-3 text-right text-gray-400 whitespace-nowrap">
                                 {u.lastUsed ? new Date(u.lastUsed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
                               </td>
@@ -1300,22 +1308,23 @@ function AdminDashboard({ user, handleLogout }) {
                       {(tokenStats.perBot || []).map((b, idx) => {
                         const maxB = tokenStats.perBot[0]?.totalTokens || 1;
                         const pct  = Math.round((b.totalTokens / maxB) * 100);
-                        return (
-                          <div key={String(b.botId)} className="px-5 py-3 flex items-center gap-3">
-                            <span className="text-[10px] text-gray-400 w-4 text-right font-mono">{idx + 1}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-gray-800 text-xs truncate">{b.botName || '—'}</div>
-                              <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
-                              </div>
-                            </div>
-                            <div className="text-right flex-shrink-0">
-                              <div className="font-bold text-gray-800 text-xs tabular-nums">{b.totalTokens.toLocaleString()}</div>
-                              <div className="text-[10px] text-gray-400">{b.messageCount} calls</div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                                return (
+                                  <div key={String(b.botId)} className="px-5 py-3 flex items-center gap-3">
+                                    <span className="text-[10px] text-gray-400 w-4 text-right font-mono">{idx + 1}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-gray-800 text-xs truncate">{b.botName || '—'}</div>
+                                      <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                                      </div>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                      <div className="font-bold text-gray-800 text-xs tabular-nums">{b.totalTokens.toLocaleString()}</div>
+                                      <div className="text-[10px] text-gray-400">{b.messageCount} calls</div>
+                                      <div className="text-[10px] text-emerald-700 font-semibold">{(b.costUSD || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })}</div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                       {(tokenStats.perBot || []).length === 0 && (
                         <div className="px-5 py-8 text-center text-gray-400 text-xs">No data yet</div>
                       )}

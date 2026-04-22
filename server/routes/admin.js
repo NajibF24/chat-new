@@ -89,6 +89,27 @@ const sanitizeCapabilities = (caps = {}) => ({
   fileSearch:      Boolean(caps.fileSearch),
 });
 
+// ── Helper: Token pricing (USD per 1M tokens) ─────────────────
+// Prices are approximate; adjust as needed. Models not listed → $0.
+// prompt = input tokens, completion = output tokens.
+const TOKEN_PRICING = {
+  openai: {
+    'gpt-4o':        { prompt: 5,    completion: 15 },
+    'gpt-4.1':       { prompt: 5,    completion: 15 },
+    'gpt-4o-mini':   { prompt: 0.15, completion: 0.6 },
+    'gpt-4.1-mini':  { prompt: 0.2,  completion: 0.6 },
+  },
+  // Add other provider/model prices here if desired
+};
+
+function calcCostUSD(promptTokens = 0, completionTokens = 0, provider = '', model = '') {
+  const pricing = TOKEN_PRICING[provider]?.[model];
+  if (!pricing) return 0;
+  const promptCost     = (promptTokens     / 1_000_000) * pricing.prompt;
+  const completionCost = (completionTokens / 1_000_000) * pricing.completion;
+  return promptCost + completionCost;
+}
+
 // ── Helper: build diff ────────────────────────────────────────
 function buildDiff(before, after, keys) {
   const b = {}, a = {};
@@ -130,12 +151,14 @@ async function canAccessBot(user, botOrId) {
 // ============================================================
 router.get('/token-stats', requireAdmin, async (req, res) => {
   try {
-    const { dateFrom, dateTo, groupBy = 'user' } = req.query;
+    const { dateFrom, dateTo, provider: providerFilter = '', model: modelFilter = '' } = req.query;
 
     const matchStage = {
       role: 'assistant',
       'tokenUsage.totalTokens': { $gt: 0 },
     };
+    if (providerFilter) matchStage['tokenUsage.provider'] = providerFilter;
+    if (modelFilter)    matchStage['tokenUsage.model']    = modelFilter;
     if (dateFrom || dateTo) {
       matchStage.createdAt = {};
       if (dateFrom) matchStage.createdAt.$gte = new Date(dateFrom);
@@ -146,74 +169,105 @@ router.get('/token-stats', requireAdmin, async (req, res) => {
       }
     }
 
-    // ── Per-user aggregation ──────────────────────────────────
-    const perUser = await Chat.aggregate([
+    // ── Base aggregation: group by user + provider + model ────
+    const usage = await Chat.aggregate([
       { $match: matchStage },
       {
         $group: {
-          _id: '$userId',
-          totalTokens:      { $sum: '$tokenUsage.totalTokens' },
+          _id: {
+            userId:  '$userId',
+            botId:   '$botId',
+            provider:'$tokenUsage.provider',
+            model:   '$tokenUsage.model',
+          },
           promptTokens:     { $sum: '$tokenUsage.promptTokens' },
           completionTokens: { $sum: '$tokenUsage.completionTokens' },
+          totalTokens:      { $sum: '$tokenUsage.totalTokens' },
           messageCount:     { $sum: 1 },
           lastUsed:         { $max: '$createdAt' },
         },
       },
-      { $sort: { totalTokens: -1 } },
       {
-        $lookup: {
-          from: 'users',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'userInfo',
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          userId:           '$_id',
-          username:         { $arrayElemAt: ['$userInfo.username', 0] },
-          displayName:      { $arrayElemAt: ['$userInfo.displayName', 0] },
-          department:       { $arrayElemAt: ['$userInfo.department', 0] },
-          totalTokens:      1,
-          promptTokens:     1,
-          completionTokens: 1,
-          messageCount:     1,
-          lastUsed:         1,
-        },
-      },
+        $sort: {
+          '_id.userId': 1,
+          '_id.botId':  1,
+          '_id.provider': 1,
+          '_id.model': 1,
+        }
+      }
     ]);
 
-    // ── Per-bot aggregation ───────────────────────────────────
-    const perBot = await Chat.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: '$botId',
-          totalTokens:  { $sum: '$tokenUsage.totalTokens' },
-          messageCount: { $sum: 1 },
-        },
-      },
-      { $sort: { totalTokens: -1 } },
-      { $limit: 10 },
-      {
-        $lookup: {
-          from: 'bots',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'botInfo',
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          botId:        '$_id',
-          botName:      { $arrayElemAt: ['$botInfo.name', 0] },
-          totalTokens:  1,
-          messageCount: 1,
-        },
-      },
-    ]);
+    // ── Fetch user and bot info for projection ────────────────
+    const userIds = [...new Set(usage.map(u => u._id.userId?.toString()).filter(Boolean))];
+    const botIds  = [...new Set(usage.map(u => u._id.botId?.toString()).filter(Boolean))];
+    const usersMap = new Map(
+      (await User.find({ _id: { $in: userIds } }).select('username displayName department').lean())
+        .map(u => [u._id.toString(), u])
+    );
+    const botsMap = new Map(
+      (await Bot.find({ _id: { $in: botIds } }).select('name').lean())
+        .map(b => [b._id.toString(), b])
+    );
+
+    // ── Per-user aggregation in JS (with cost) ────────────────
+    const perUserMap = new Map();
+    usage.forEach(u => {
+      const userId = u._id.userId?.toString();
+      if (!userId) return;
+      const provider = u._id.provider || '';
+      const model    = u._id.model    || '';
+      const costUSD  = calcCostUSD(u.promptTokens, u.completionTokens, provider, model);
+
+      const prev = perUserMap.get(userId) || {
+        userId,
+        username: usersMap.get(userId)?.username || '—',
+        displayName: usersMap.get(userId)?.displayName || '',
+        department: usersMap.get(userId)?.department || '',
+        totalTokens: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        messageCount: 0,
+        lastUsed: null,
+        costUSD: 0,
+      };
+
+      prev.totalTokens      += u.totalTokens;
+      prev.promptTokens     += u.promptTokens;
+      prev.completionTokens += u.completionTokens;
+      prev.messageCount     += u.messageCount;
+      prev.costUSD          += costUSD;
+      prev.lastUsed          = (!prev.lastUsed || u.lastUsed > prev.lastUsed) ? u.lastUsed : prev.lastUsed;
+
+      perUserMap.set(userId, prev);
+    });
+
+    const perUser = Array.from(perUserMap.values()).sort((a, b) => b.totalTokens - a.totalTokens);
+
+    // ── Per-bot aggregation in JS (with cost) ────────────────
+    const perBotMap = new Map();
+    usage.forEach(u => {
+      const botId = u._id.botId?.toString();
+      if (!botId) return;
+      const provider = u._id.provider || '';
+      const model    = u._id.model    || '';
+      const costUSD  = calcCostUSD(u.promptTokens, u.completionTokens, provider, model);
+
+      const prev = perBotMap.get(botId) || {
+        botId,
+        botName: botsMap.get(botId)?.name || '—',
+        totalTokens: 0,
+        messageCount: 0,
+        costUSD: 0,
+      };
+
+      prev.totalTokens  += u.totalTokens;
+      prev.messageCount += u.messageCount;
+      prev.costUSD      += costUSD;
+
+      perBotMap.set(botId, prev);
+    });
+
+    const perBot = Array.from(perBotMap.values()).sort((a, b) => b.totalTokens - a.totalTokens).slice(0, 10);
 
     // ── Daily trend (last 30 days) ────────────────────────────
     const thirtyDaysAgo = new Date();
@@ -230,16 +284,14 @@ router.get('/token-stats', requireAdmin, async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
-    // ── Grand totals ──────────────────────────────────────────
-    const totals = perUser.reduce(
-      (acc, u) => ({
-        totalTokens:      acc.totalTokens      + u.totalTokens,
-        promptTokens:     acc.promptTokens     + u.promptTokens,
-        completionTokens: acc.completionTokens + u.completionTokens,
-        messageCount:     acc.messageCount     + u.messageCount,
-      }),
-      { totalTokens: 0, promptTokens: 0, completionTokens: 0, messageCount: 0 }
-    );
+    // ── Grand totals (with cost) ─────────────────────────────
+    const totals = perUser.reduce((acc, u) => ({
+      totalTokens:      acc.totalTokens      + u.totalTokens,
+      promptTokens:     acc.promptTokens     + u.promptTokens,
+      completionTokens: acc.completionTokens + u.completionTokens,
+      messageCount:     acc.messageCount     + u.messageCount,
+      costUSD:          acc.costUSD          + u.costUSD,
+    }), { totalTokens: 0, promptTokens: 0, completionTokens: 0, messageCount: 0, costUSD: 0 });
 
     res.json({ totals, perUser, perBot, dailyTrend });
   } catch (err) {
