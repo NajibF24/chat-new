@@ -988,15 +988,43 @@ class AICoreService {
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
         return `\n\n[ISI FILE: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
-      } else if (ext === '.docx') {
+      } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
         return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
         const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
         return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
-      } else {
+      } else if (ext === '.pptx' || ext === '.ppt') {
+        // ✅ FIX: Extract text from PPTX slides using JSZip (same as deepReadDocument)
+        // Previously fell through to utf8 read which returned corrupted binary content.
+        try {
+          const JSZip = (await import('jszip')).default;
+          const data  = fs.readFileSync(physicalPath);
+          const zip   = await JSZip.loadAsync(data);
+          const slides = Object.keys(zip.files)
+            .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+            .sort((a, b) => parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]));
+
+          const slideTexts = [];
+          for (const sf of slides) {
+            const xml     = await zip.files[sf].async('string');
+            const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
+            const text    = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').trim();
+            if (text) slideTexts.push(`[Slide ${slideTexts.length + 1}]\n${text}`);
+          }
+          const content = slideTexts.join('\n\n');
+          if (!content) return '';
+          return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+        } catch (e) {
+          console.warn(`[AICoreService] PPTX extraction failed for "${originalName}":`, e.message);
+          return '';
+        }
+      } else if (['.txt', '.md', '.csv'].includes(ext)) {
         return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
+      } else {
+        // Unknown binary format — skip rather than returning garbage
+        return '';
       }
     } catch { return ''; }
   }
