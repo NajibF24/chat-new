@@ -55,10 +55,19 @@ const chatSchema = new mongoose.Schema({
     url: String,
     mimetype: String
   },
-  
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
+
+  // ✅ NEW: Token usage tracking per AI response
+  tokenUsage: {
+    promptTokens:     { type: Number, default: 0 },
+    completionTokens: { type: Number, default: 0 },
+    totalTokens:      { type: Number, default: 0 },
+    provider:         { type: String, default: '' },
+    model:            { type: String, default: '' },
+  },
+
+  createdAt: {
+    type: Date,
+    default: Date.now
   }
 }, { 
   timestamps: true,
