@@ -230,30 +230,40 @@ class SmartsheetLiveService {
     // Query seperti "status project e-asset" atau "show me e-asset" harus langsung
     // menampilkan detail satu project dengan Issues PENUH — tidak masuk rowsToTable.
     const allRows   = [...categorized.completed, ...categorized.overdue, ...categorized.active, ...categorized.canceled];
+    // ✅ FIX v1.4.1: Extended stopWords — tambahkan query-type words agar tidak
+    // salah dicocokkan ke nama project (misal: "all" → "EV BYD Sealion" via "al").
     const stopWords = new Set([
       'give','show','status','project','proyek','please','what','the','and',
       'for','dari','me','is','are','how','ada','apa','yang','dengan','ini',
       'nya','saya','get','tell','find','tampilkan','cari','lihat','bagaimana',
       'gimana','update','latest','terbaru','info','informasi','detail','about',
       'tentang','mengenai','regarding','current','terkini','sekarang','progress',
+      // ✅ NEW: query-type words that must never be treated as project name tokens
+      'all','semua','overdue','delay','terlambat','active','aktif','complete',
+      'selesai','done','finish','dashboard','summary','overview','statistik',
+      'report','laporan','issue','masalah','kendala','risk','budget','biaya',
+      'cost','anggaran','health','red','merah','kritis','critical','today',
+      'hari','minggu','bulan','week','month','year','tahun','list','daftar',
     ]);
     const words       = msg.replace(/[^a-z0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 3);
     const searchWords = words.filter(w => !stopWords.has(w.toLowerCase()));
 
-    // Hanya coba single-project jika ada kata kunci spesifik yang bisa dicocokkan ke nama project
-    // ✅ FIX v1.3.1: Fuzzy match — normalisasi tanda hubung dan variasi ejaan ID/EN
-    // ✅ FIX v1.3.2: Scoring-based match — scoring per kata agar kata spesifik
-    //   (misal: "devsecops") lebih diutamakan dari kata generik ("implementation").
-    //   Tanpa ini, "give me status devsecops implementation" bisa match ke
-    //   "Hyperconverged Implementation" karena kata "implementation" lebih dulu ditemukan.
+    // ✅ FIX v1.4.1: normalizeStr — split hyphenated words BEFORE alias mapping
+    // so "e-aset" → ["e","aset"] → ["e","asset"] → "easset" (correct)
+    // instead of "e-aset" → "easet" → no alias match (wrong).
     const idToEnMap = {
       'aset': 'asset', 'sistem': 'system', 'jaringan': 'network',
       'gudang': 'warehouse', 'keuangan': 'finance', 'pembelian': 'procurement',
       'penjualan': 'sales', 'sdm': 'hr', 'kepegawaian': 'hr',
     };
     const normalizeStr = (s) => {
-      let str = String(s || '').toLowerCase().replace(/-/g, '').replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-      return idToEnMap[str] || str;
+      // Split on hyphens/spaces first, map each token through alias, then join
+      const tokens = String(s || '').toLowerCase()
+        .split(/[-\s]+/)
+        .map(t => t.replace(/[^a-z0-9]/g, ''))
+        .filter(Boolean)
+        .map(t => idToEnMap[t] || t);
+      return tokens.join('');
     };
 
     // Kata generik yang sering muncul di banyak nama project — bobot lebih rendah
@@ -270,6 +280,7 @@ class SmartsheetLiveService {
       for (const row of allRows) {
         const rawName   = String(this.resolveField(row, 'projectName') || '');
         const normName  = normalizeStr(rawName);
+        // nameParts: each word of the project name, normalized individually
         const nameParts = rawName.toLowerCase().replace(/-/g, ' ').split(/\s+/)
           .filter(p => p.length >= 2)
           .map(p => normalizeStr(p));
@@ -280,8 +291,14 @@ class SmartsheetLiveService {
           if (!normW || normW.length < 2) continue;
           // Kata spesifik (tidak generik) diberi bobot 3, kata generik bobot 1
           const weight = genericProjectWords.has(normW) ? 1 : 3;
-          if (normName.includes(normW)) score += weight;
-          else if (nameParts.some(p => p.includes(normW) || normW.includes(p))) score += weight;
+          // ✅ FIX v1.4.1: ONE-DIRECTIONAL match only.
+          // normName/namePart must CONTAIN the search word — NOT the reverse.
+          // Old: normW.includes(p) caused "ev" (from "EV BYD") to match inside "devsecops".
+          if (normName.includes(normW)) {
+            score += weight;
+          } else if (nameParts.some(p => p.includes(normW))) {
+            score += weight;
+          }
         }
 
         if (score > bestScore) {
@@ -687,12 +704,19 @@ class SmartsheetLiveService {
     });
 
     // ── Step 2: Check if any sheet has a direct project match ──
+    // ✅ FIX v1.4.1: Same 3 fixes as buildProjectContext (stopWords, normalizeStr, one-directional match)
     const stopWords = new Set([
       'give','show','status','project','proyek','please','what','the','and',
       'for','dari','me','is','are','how','ada','apa','yang','dengan','ini',
       'nya','saya','get','tell','find','tampilkan','cari','lihat','bagaimana',
       'gimana','update','latest','terbaru','info','informasi','detail','about',
       'tentang','mengenai','regarding','current','terkini','sekarang','progress',
+      // ✅ NEW: query-type words that must never be treated as project name tokens
+      'all','semua','overdue','delay','terlambat','active','aktif','complete',
+      'selesai','done','finish','dashboard','summary','overview','statistik',
+      'report','laporan','issue','masalah','kendala','risk','budget','biaya',
+      'cost','anggaran','health','red','merah','kritis','critical','today',
+      'hari','minggu','bulan','week','month','year','tahun','list','daftar',
     ]);
     const words       = msg.replace(/[^a-z0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 3);
     const searchWords = words.filter(w => !stopWords.has(w.toLowerCase()));
@@ -702,9 +726,14 @@ class SmartsheetLiveService {
       'gudang': 'warehouse', 'keuangan': 'finance', 'pembelian': 'procurement',
       'penjualan': 'sales', 'sdm': 'hr', 'kepegawaian': 'hr',
     };
+    // ✅ FIX v1.4.1: Split on hyphens/spaces BEFORE alias mapping
     const normalizeStr = (s) => {
-      let str = String(s || '').toLowerCase().replace(/-/g, '').replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-      return idToEnMap[str] || str;
+      const tokens = String(s || '').toLowerCase()
+        .split(/[-\s]+/)
+        .map(t => t.replace(/[^a-z0-9]/g, ''))
+        .filter(Boolean)
+        .map(t => idToEnMap[t] || t);
+      return tokens.join('');
     };
     const genericProjectWords = new Set([
       'implementation','system','project','management','monitoring','improvement',
@@ -737,8 +766,12 @@ class SmartsheetLiveService {
             const normW  = normalizeStr(w);
             if (!normW || normW.length < 2) continue;
             const weight = genericProjectWords.has(normW) ? 1 : 3;
-            if (normName.includes(normW)) score += weight;
-            else if (nameParts.some(p => p.includes(normW) || normW.includes(p))) score += weight;
+            // ✅ FIX v1.4.1: ONE-DIRECTIONAL — project name must contain search word, not reverse
+            if (normName.includes(normW)) {
+              score += weight;
+            } else if (nameParts.some(p => p.includes(normW))) {
+              score += weight;
+            }
           }
 
           if (score > globalBestScore) {
