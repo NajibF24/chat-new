@@ -122,7 +122,7 @@ const initialBotState = {
     maxTokens: 8000
   },
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
-  smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '' },
+  smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', sheetIds: [], sheetLabels: [] },
   kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
   azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
   wahaConfig: {
@@ -558,7 +558,16 @@ function AdminDashboard({ user, handleLogout }) {
         fileSearch:      bot.capabilities?.fileSearch      || false,
       },
 
-      smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', ...bot.smartsheetConfig },
+      smartsheetConfig:  {
+        enabled: false, apiKey: '', sheetId: '',
+        sheetIds: [], sheetLabels: [],
+        ...bot.smartsheetConfig,
+        // Migrate legacy sheetId into sheetIds array if sheetIds is empty
+        sheetIds: (bot.smartsheetConfig?.sheetIds?.length > 0)
+          ? bot.smartsheetConfig.sheetIds
+          : (bot.smartsheetConfig?.sheetId ? [bot.smartsheetConfig.sheetId] : []),
+        sheetLabels: bot.smartsheetConfig?.sheetLabels || [],
+      },
       kouventaConfig:    { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
       onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
@@ -2002,11 +2011,115 @@ function AdminDashboard({ user, handleLogout }) {
                     );
                   })()}
 
-                  {/* Smartsheet / Kouventa / Azure Search */}
+                  {/* ── Smartsheet Integration (custom multi-sheet UI) ── */}
+                  {(() => {
+                    const config = botForm.smartsheetConfig || {};
+                    const sheetIds     = config.sheetIds     || [];
+                    const sheetLabels  = config.sheetLabels  || [];
+
+                    const updateSheetId = (idx, val) => {
+                      const next = [...sheetIds]; next[idx] = val;
+                      setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, sheetIds: next } }));
+                    };
+                    const updateSheetLabel = (idx, val) => {
+                      const next = [...sheetLabels]; next[idx] = val;
+                      setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, sheetLabels: next } }));
+                    };
+                    const addSheet = () => {
+                      setBotForm(f => ({
+                        ...f,
+                        smartsheetConfig: {
+                          ...f.smartsheetConfig,
+                          sheetIds:    [...(f.smartsheetConfig.sheetIds || []), ''],
+                          sheetLabels: [...(f.smartsheetConfig.sheetLabels || []), ''],
+                        }
+                      }));
+                    };
+                    const removeSheet = (idx) => {
+                      const nextIds    = sheetIds.filter((_, i) => i !== idx);
+                      const nextLabels = sheetLabels.filter((_, i) => i !== idx);
+                      setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, sheetIds: nextIds, sheetLabels: nextLabels } }));
+                    };
+
+                    return (
+                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white'}`}>
+                        {/* Header + toggle */}
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">📊</span>
+                            <span className="font-semibold text-sm text-gray-800">Smartsheet Integration</span>
+                          </div>
+                          <button type="button"
+                            onClick={() => setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, enabled: !config.enabled } }))}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+
+                        {config.enabled && (
+                          <div className="space-y-3">
+                            {/* API Key */}
+                            <input type="password" placeholder="API Key (override .env)" autoComplete="new-password"
+                              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors"
+                              value={config.apiKey || ''}
+                              onChange={e => setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, apiKey: e.target.value } }))} />
+
+                            {/* Multi-sheet IDs */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                  Sheet IDs <span className="text-primary font-bold">({sheetIds.length} sheet{sheetIds.length !== 1 ? 's' : ''})</span>
+                                </label>
+                                <button type="button" onClick={addSheet}
+                                  className="text-[10px] px-2 py-0.5 bg-primary/10 text-primary font-semibold rounded-lg hover:bg-primary/20 transition-colors">
+                                  + Add Sheet
+                                </button>
+                              </div>
+
+                              {sheetIds.length === 0 && (
+                                <div className="text-[10px] text-gray-400 italic bg-gray-50 border border-dashed border-gray-200 rounded-xl p-3 text-center">
+                                  No sheets configured. Click <strong>+ Add Sheet</strong> to add a Smartsheet ID.
+                                </div>
+                              )}
+
+                              <div className="space-y-2">
+                                {sheetIds.map((id, idx) => (
+                                  <div key={idx} className="flex gap-1.5 items-center">
+                                    <div className="flex-1 flex gap-1.5">
+                                      <input type="text" placeholder={`Sheet ID #${idx + 1} (numeric)`}
+                                        className="flex-1 bg-white border border-gray-200 rounded-xl p-2 text-xs font-mono outline-none focus:border-primary/40 transition-colors"
+                                        value={id}
+                                        onChange={e => updateSheetId(idx, e.target.value)} />
+                                      <input type="text" placeholder="Label (optional)"
+                                        className="w-28 bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-primary/40 transition-colors"
+                                        value={sheetLabels[idx] || ''}
+                                        onChange={e => updateSheetLabel(idx, e.target.value)} />
+                                    </div>
+                                    <button type="button" onClick={() => removeSheet(idx)}
+                                      className="w-6 h-6 flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                                      title="Remove sheet">
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {sheetIds.length > 0 && (
+                                <p className="text-[9px] text-gray-400 mt-1.5">
+                                  💡 Bot will search across <strong>all {sheetIds.length} sheet{sheetIds.length !== 1 ? 's' : ''}</strong> when answering questions. Find Sheet ID in the Smartsheet URL: <code className="bg-gray-100 px-1 rounded">…smartsheet.com/sheets/<strong>SHEET_ID</strong></code>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Kouventa / Azure Search (unchanged generic renderer) ── */}
                   {[
-                    { key: 'smartsheet',  label: 'Smartsheet Integration', icon: '📊', fields: [{ key: 'sheetId', label: 'Sheet ID', type: 'text' }, { key: 'apiKey', label: 'API Key (override .env)', type: 'password' }] },
-                    { key: 'kouventa',    label: 'Kouventa AI Engine',     icon: '🔗', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
-                    { key: 'azureSearch', label: 'Azure AI Search',        icon: '🔍', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
+                    { key: 'kouventa',    label: 'Kouventa AI Engine', icon: '🔗', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
+                    { key: 'azureSearch', label: 'Azure AI Search',    icon: '🔍', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
                   ].map(intg => {
                     const configKey = `${intg.key}Config`;
                     const config = botForm[configKey] || {};

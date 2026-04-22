@@ -638,6 +638,145 @@ class SmartsheetLiveService {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // MULTI-SHEET: Fetch all sheets and build merged context
+  // ─────────────────────────────────────────────────────────────
+  /**
+   * Fetch multiple sheets in parallel and build a merged AI context.
+   * Each sheet is fetched independently; errors on individual sheets are
+   * logged but do not abort the whole operation.
+   *
+   * @param {string[]} sheetIds   - Array of Smartsheet sheet IDs to fetch
+   * @param {string}   userMessage - The user's query
+   * @returns {string} merged context string ready to inject into AI prompt
+   */
+  async buildMultiSheetContext(sheetIds, userMessage) {
+    if (!sheetIds || sheetIds.length === 0) {
+      throw new Error('No sheet IDs provided');
+    }
+
+    // Deduplicate
+    const uniqueIds = [...new Set(sheetIds.filter(Boolean))];
+    console.log(`📡 [SmartsheetLive] Fetching ${uniqueIds.length} sheet(s): ${uniqueIds.join(', ')}`);
+
+    // Fetch all sheets in parallel
+    const results = await Promise.allSettled(
+      uniqueIds.map(id => this.fetchSheet(id))
+    );
+
+    const successfulSheets = [];
+    results.forEach((result, idx) => {
+      if (result.status === 'fulfilled') {
+        successfulSheets.push(result.value);
+      } else {
+        console.error(`❌ [SmartsheetLive] Failed to fetch sheet ${uniqueIds[idx]}: ${result.reason?.message}`);
+      }
+    });
+
+    if (successfulSheets.length === 0) {
+      throw new Error(`Gagal memuat semua sheet (${uniqueIds.length} sheet dicoba)`);
+    }
+
+    // Build context for each sheet and merge
+    const msg = (userMessage || '').toLowerCase();
+
+    // ── Step 1: Try to find a single-project match across ALL sheets first ──
+    // Collect all flat rows from all sheets with sheet metadata
+    const allSheetData = successfulSheets.map(sheet => {
+      const flatRows = this.processToFlatRows(sheet);
+      return { sheet, flatRows };
+    });
+
+    // ── Step 2: Check if any sheet has a direct project match ──
+    const stopWords = new Set([
+      'give','show','status','project','proyek','please','what','the','and',
+      'for','dari','me','is','are','how','ada','apa','yang','dengan','ini',
+      'nya','saya','get','tell','find','tampilkan','cari','lihat','bagaimana',
+      'gimana','update','latest','terbaru','info','informasi','detail','about',
+      'tentang','mengenai','regarding','current','terkini','sekarang','progress',
+    ]);
+    const words       = msg.replace(/[^a-z0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 3);
+    const searchWords = words.filter(w => !stopWords.has(w.toLowerCase()));
+
+    const idToEnMap = {
+      'aset': 'asset', 'sistem': 'system', 'jaringan': 'network',
+      'gudang': 'warehouse', 'keuangan': 'finance', 'pembelian': 'procurement',
+      'penjualan': 'sales', 'sdm': 'hr', 'kepegawaian': 'hr',
+    };
+    const normalizeStr = (s) => {
+      let str = String(s || '').toLowerCase().replace(/-/g, '').replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+      return idToEnMap[str] || str;
+    };
+    const genericProjectWords = new Set([
+      'implementation','system','project','management','monitoring','improvement',
+      'development','integration','upgrade','migration','installation','deployment',
+      'aplikasi','sistem','proyek','manajemen','pengembangan','implementasi','new',
+    ]);
+
+    // Find best match across all sheets
+    let globalBestScore = 0;
+    let globalBestRow   = null;
+    let globalBestSheet = null;
+
+    if (searchWords.length > 0) {
+      for (const { sheet, flatRows } of allSheetData) {
+        if (!flatRows.length) continue;
+        const cols = this.detectAvailableColumns(flatRows);
+        // Only search project sheets (not doc tracking sheets)
+        const hasProjectCols = cols.status || cols.progress || cols.targetEnd || cols.health;
+        if (!hasProjectCols) continue;
+
+        for (const row of flatRows) {
+          const rawName  = String(this.resolveField(row, 'projectName') || '');
+          const normName = normalizeStr(rawName);
+          const nameParts = rawName.toLowerCase().replace(/-/g, ' ').split(/\s+/)
+            .filter(p => p.length >= 2)
+            .map(p => normalizeStr(p));
+
+          let score = 0;
+          for (const w of searchWords) {
+            const normW  = normalizeStr(w);
+            if (!normW || normW.length < 2) continue;
+            const weight = genericProjectWords.has(normW) ? 1 : 3;
+            if (normName.includes(normW)) score += weight;
+            else if (nameParts.some(p => p.includes(normW) || normW.includes(p))) score += weight;
+          }
+
+          if (score > globalBestScore) {
+            globalBestScore = score;
+            globalBestRow   = row;
+            globalBestSheet = sheet;
+          }
+        }
+      }
+    }
+
+    // ── Step 3: If strong single-project match found, return detail from that sheet ──
+    if (globalBestScore >= 2 && globalBestRow && globalBestSheet) {
+      console.log(`✅ [SmartsheetLive] Cross-sheet match found in "${globalBestSheet.name}" (score=${globalBestScore})`);
+      const flatRows = this.processToFlatRows(globalBestSheet);
+      return this.buildAIContext(flatRows, userMessage, globalBestSheet.name);
+    }
+
+    // ── Step 4: No single match — build context from all sheets and merge ──
+    const today = new Date();
+    let mergedContext = '';
+
+    for (const { sheet, flatRows } of allSheetData) {
+      if (!flatRows.length) {
+        mergedContext += `\n=== SHEET: ${sheet.name} ===\n(Tidak ada data)\n`;
+        continue;
+      }
+      mergedContext += `\n${this.buildAIContext(flatRows, userMessage, sheet.name)}\n`;
+    }
+
+    const header = `=== SMARTSHEET DATA (${successfulSheets.length} sheet dimuat) ===\n` +
+      `Sheet: ${successfulSheets.map(s => s.name).join(' | ')}\n` +
+      `Tanggal: ${today.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n\n`;
+
+    return header + mergedContext;
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────────────────────
   parseDate(str) {
