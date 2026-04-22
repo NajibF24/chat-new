@@ -1085,13 +1085,19 @@ class AICoreService {
         // ✅ Build the full list of sheet IDs to query:
         //    1. New multi-sheet array (sheetIds)
         //    2. Legacy single sheetId / primarySheetId fields
-        //    3. Environment variable fallback
-        const sheetIdsFromConfig = [
+        //    3. Environment variable fallback — ONLY when bot has no sheet IDs configured
+        const botSheetIds = [
           ...(bot.smartsheetConfig.sheetIds || []),
           bot.smartsheetConfig.sheetId        || '',
           bot.smartsheetConfig.primarySheetId || '',
-          process.env.SMARTSHEET_PRIMARY_SHEET_ID || '',
         ].map(id => String(id || '').trim()).filter(Boolean);
+
+        // Only fall back to env var if the bot has no sheet IDs configured at all.
+        // This prevents the env var sheet from being appended to a bot that already
+        // has its own sheet(s) configured, which would cause unintended multi-sheet queries.
+        const sheetIdsFromConfig = botSheetIds.length > 0
+          ? botSheetIds
+          : [process.env.SMARTSHEET_PRIMARY_SHEET_ID || ''].filter(Boolean);
 
         // Deduplicate
         const uniqueSheetIds = [...new Set(sheetIdsFromConfig)];
