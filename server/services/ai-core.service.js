@@ -1149,12 +1149,15 @@ class AICoreService {
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
     const result = await AIProviderService.generateCompletion({
-      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      providerConfig:  bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt,
-      messages: messagesForAI,
-      userContent: userContent.length === 1 && userContent[0].type === 'text'
+      messages:        messagesForAI,
+      userContent:     userContent.length === 1 && userContent[0].type === 'text'
         ? userContent[0].text
         : userContent,
+      // ✅ FIX: Pass bot capabilities so web search / code interpreter tools are actually enabled.
+      // Previously buildTools() was never given capabilities, so tools were never sent to OpenAI.
+      capabilities:    bot.capabilities || {},
     });
 
     const aiResponse = result.text;

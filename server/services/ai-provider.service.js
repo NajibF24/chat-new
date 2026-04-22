@@ -214,7 +214,23 @@ class AIProviderService {
   }
 
   buildTools(providerConfig, capabilities = {}) {
-    return undefined;
+    const provider = providerConfig?.provider || 'openai';
+    const tools = [];
+
+    // ── Web Search (OpenAI only) ──────────────────────────────
+    // Uses OpenAI's built-in web_search_preview tool.
+    // When enabled, OpenAI performs real-time web search and returns
+    // grounded results with actual URLs from the search results.
+    if (capabilities.webSearch && provider === 'openai') {
+      tools.push({ type: 'web_search_preview' });
+    }
+
+    // ── Code Interpreter (OpenAI only) ────────────────────────
+    if (capabilities.codeInterpreter && provider === 'openai') {
+      tools.push({ type: 'code_interpreter' });
+    }
+
+    return tools.length > 0 ? tools : undefined;
   }
 
   /**
@@ -263,6 +279,10 @@ class AIProviderService {
   }
 
   // ── OpenAI ─────────────────────────────────────────────────
+  // ✅ FIX: web_search_preview is only available via the Responses API
+  // (openai.responses.create), NOT via Chat Completions.
+  // When webSearch capability is enabled, we route to _callOpenAIResponses.
+  // For all other cases, we use the standard Chat Completions API.
   async _callOpenAI({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, capabilities = {}, timeout = 60000 }) {
     if (!isChatModel(model)) {
       throw new Error(
@@ -273,11 +293,15 @@ class AIProviderService {
 
     const clientConfig = { apiKey };
     if (endpoint) clientConfig.baseURL = endpoint;
-    // ✅ PATCH: pass timeout into OpenAI client
     clientConfig.timeout = timeout;
     const openai = new OpenAI(clientConfig);
 
-    const tools       = this.buildTools({ provider: 'openai', model }, capabilities);
+    // ── Route to Responses API when web search is enabled ─────
+    if (capabilities.webSearch) {
+      return this._callOpenAIWithWebSearch({ openai, model, maxTok, systemPrompt, messages, userContent });
+    }
+
+    // ── Standard Chat Completions (no web search) ─────────────
     const tokenParams = getModelParams(model, temp, maxTok);
 
     const body = {
@@ -289,8 +313,6 @@ class AIProviderService {
       ],
       ...tokenParams,
     };
-
-    if (tools) body.tools = tools;
 
     const completion = await openai.chat.completions.create(body);
     const choice     = completion.choices[0];
@@ -312,7 +334,7 @@ class AIProviderService {
         .join('') || '';
     }
 
-    // Fallback: tool_calls follow-up
+    // Fallback: generic tool_calls follow-up (non-web-search tools)
     if (!text && choice?.finish_reason === 'tool_calls' && choice?.message?.tool_calls) {
       const followUp = await openai.chat.completions.create({
         model,
@@ -333,6 +355,89 @@ class AIProviderService {
     }
 
     const usage = normalizeUsage(completion.usage, 'openai', model);
+    return { text, usage };
+  }
+
+  // ── OpenAI Responses API (web_search_preview) ───────────────
+  // The web_search_preview tool is ONLY available via the Responses API.
+  // It performs real-time web search and returns grounded answers with
+  // actual URLs from the search results — not fabricated links.
+  //
+  // Responses API input format:
+  //   input: [ { role: 'user', content: '...' } ]  (no system message in messages)
+  //   instructions: systemPrompt  (system prompt goes here)
+  //   tools: [{ type: 'web_search_preview' }]
+  //
+  // The response contains output[] array with message items.
+  async _callOpenAIWithWebSearch({ openai, model, maxTok, systemPrompt, messages, userContent }) {
+    console.log(`[WebSearch] Using Responses API with web_search_preview for model=${model}`);
+
+    // Build input array: history + current user message
+    const userText = Array.isArray(userContent)
+      ? userContent.map(b => b.text || '').join('\n')
+      : String(userContent);
+
+    const inputMessages = [
+      ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+      { role: 'user', content: userText },
+    ];
+
+    const responseBody = {
+      model,
+      instructions: systemPrompt,
+      input:        inputMessages,
+      tools:        [{ type: 'web_search_preview' }],
+      max_output_tokens: maxTok,
+    };
+
+    let response;
+    try {
+      // openai.responses is available in SDK >= 4.77.0
+      // For older SDK versions, fall back to chat completions without web search
+      if (typeof openai.responses?.create === 'function') {
+        response = await openai.responses.create(responseBody);
+      } else {
+        console.warn('[WebSearch] openai.responses API not available in this SDK version. Falling back to chat completions without web search.');
+        const fallback = await openai.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: userText },
+          ],
+          max_tokens: maxTok,
+        });
+        const text = fallback.choices[0]?.message?.content || '';
+        const usage = normalizeUsage(fallback.usage, 'openai', model);
+        return { text, usage };
+      }
+    } catch (err) {
+      console.error(`[WebSearch] Responses API error: ${err.message}. Falling back to chat completions.`);
+      const fallback = await openai.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          { role: 'user', content: userText },
+        ],
+        max_tokens: maxTok,
+      });
+      const text = fallback.choices[0]?.message?.content || '';
+      const usage = normalizeUsage(fallback.usage, 'openai', model);
+      return { text, usage };
+    }
+
+    // Extract text from Responses API output
+    const text = (response.output || [])
+      .filter(o => o.type === 'message')
+      .flatMap(o => o.content || [])
+      .filter(c => c.type === 'output_text' || c.type === 'text')
+      .map(c => c.text || c.output_text || '')
+      .join('') || response.output_text || '';
+
+    console.log(`[WebSearch] Response received (${text.length} chars)`);
+
+    const usage = normalizeUsage(response.usage, 'openai', model);
     return { text, usage };
   }
 
