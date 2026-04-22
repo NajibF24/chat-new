@@ -1160,7 +1160,39 @@ class AICoreService {
       capabilities:    bot.capabilities || {},
     });
 
-    const aiResponse = result.text;
+    // ✅ FIX: Strip HTML tags from AI response for Smartsheet bots.
+    // Some AI models (especially when given HTML-rich context) output <br>, <b>, etc.
+    // in their responses. We strip these to plain text before saving/returning.
+    // Only applied when Smartsheet is enabled to avoid breaking other bots
+    // that may legitimately return HTML (e.g. code generation bots).
+    let aiResponse = result.text;
+    if (bot.smartsheetConfig?.enabled && aiResponse) {
+      aiResponse = aiResponse
+        // <br> variants → newline
+        .replace(/<br\s*\/?>/gi, '\n')
+        // </p> → newline, <p> → nothing
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<p[^>]*>/gi, '')
+        // <li> → bullet
+        .replace(/<li[^>]*>/gi, '\n• ')
+        .replace(/<\/li>/gi, '')
+        // list containers
+        .replace(/<\/?[uo]l[^>]*>/gi, '')
+        // inline formatting — strip tags, keep text
+        .replace(/<\/?(b|strong|i|em|u|s|span|div|h[1-6])[^>]*>/gi, '')
+        // any remaining tags
+        .replace(/<[^>]+>/g, '')
+        // HTML entities
+        .replace(/&amp;/gi,  '&')
+        .replace(/&lt;/gi,   '<')
+        .replace(/&gt;/gi,   '>')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi,  "'")
+        // collapse 3+ consecutive newlines → 2
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
 
     // ✅ Extract token usage from AI response
     const usage = normalizeUsage(result.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
