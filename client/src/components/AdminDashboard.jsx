@@ -454,9 +454,16 @@ function AdminDashboard({ user, handleLogout }) {
   const [auditExpanded,   setAuditExpanded]   = useState(null);
   const [auditTokenStats, setAuditTokenStats] = useState(null);
 
+  // Token Usage Monitoring state
+  const [tokenStats,        setTokenStats]        = useState(null);
+  const [tokenLoading,      setTokenLoading]      = useState(false);
+  const [tokenDateFrom,     setTokenDateFrom]      = useState('');
+  const [tokenDateTo,       setTokenDateTo]        = useState('');
+
   useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'audit' && user?.isAdmin) fetchAuditLogs(); }, [activeTab, auditPage, auditCategory]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeTab === 'tokens' && user?.isAdmin) fetchTokenStats(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchStats    = async () => { try { const r = await axios.get('/api/admin/stats'); setStats(r.data); } catch {} };
   const fetchUsers    = async () => { if (!user?.isAdmin) return; try { const r = await axios.get('/api/admin/users'); setUsers(r.data.users || []); } catch {} };
@@ -499,6 +506,22 @@ function AdminDashboard({ user, handleLogout }) {
     setAuditCategory(''); setAuditSearch(''); setAuditDateFrom(''); setAuditDateTo('');
     setAuditPage(1); setAuditTokenStats(null);
     setTimeout(fetchAuditLogs, 50);
+  };
+
+  const fetchTokenStats = async () => {
+    if (!user?.isAdmin) return;
+    setTokenLoading(true);
+    try {
+      const p = new URLSearchParams();
+      if (tokenDateFrom) p.set('dateFrom', tokenDateFrom);
+      if (tokenDateTo)   p.set('dateTo',   tokenDateTo);
+      const r = await axios.get(`/api/admin/token-stats?${p}`);
+      setTokenStats(r.data);
+    } catch (e) {
+      console.error('Token stats error:', e);
+    } finally {
+      setTokenLoading(false);
+    }
   };
 
   // Bot CRUD
@@ -747,6 +770,7 @@ function AdminDashboard({ user, handleLogout }) {
               { id: 'bots',      icon: '🤖', label: 'Bots',        show: true },
               { id: 'users',     icon: '👥', label: 'User Access', show: user?.isAdmin },
               { id: 'chats',     icon: '💬', label: 'Chat Logs',   show: user?.isAdmin },
+              { id: 'tokens',    icon: '🪙', label: 'Token Usage',  show: user?.isAdmin },
               { id: 'audit',     icon: '🕵️', label: 'Audit Trail', show: user?.isAdmin },
             ].filter(t => t.show).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
@@ -1043,6 +1067,191 @@ function AdminDashboard({ user, handleLogout }) {
                 <button disabled={logPage===logTotalPages} onClick={()=>setLogPage(p=>p+1)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 font-medium transition-colors">Next →</button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TOKEN USAGE */}
+        {activeTab === 'tokens' && user?.isAdmin && (
+          <div className="space-y-5">
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">🪙 Token Usage Monitoring</h2>
+                <p className="text-sm text-gray-400 mt-0.5">Track AI token consumption per user and bot</p>
+              </div>
+              <div className="flex gap-2 flex-wrap items-end">
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">From</label>
+                  <input type="date" value={tokenDateFrom} onChange={e => setTokenDateFrom(e.target.value)}
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">To</label>
+                  <input type="date" value={tokenDateTo} onChange={e => setTokenDateTo(e.target.value)}
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
+                </div>
+                <button onClick={fetchTokenStats} disabled={tokenLoading}
+                  className="px-4 py-2 bg-primary-dark text-white text-xs font-semibold rounded-xl hover:bg-primary disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                  {tokenLoading
+                    ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Loading...</>
+                    : <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh</>
+                  }
+                </button>
+              </div>
+            </div>
+
+            {tokenLoading && !tokenStats && (
+              <div className="flex items-center justify-center py-16 gap-3 text-gray-400">
+                <div className="w-5 h-5 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
+                <span className="text-sm">Loading token statistics...</span>
+              </div>
+            )}
+
+            {tokenStats && (
+              <>
+                {/* Grand Totals */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total Tokens',      value: (tokenStats.totals?.totalTokens      || 0).toLocaleString(), icon: 'Σ',  bg: 'bg-primary/5',   text: 'text-primary-dark' },
+                    { label: 'Prompt Tokens',     value: (tokenStats.totals?.promptTokens     || 0).toLocaleString(), icon: '📤', bg: 'bg-blue-50',     text: 'text-blue-700'     },
+                    { label: 'Completion Tokens', value: (tokenStats.totals?.completionTokens || 0).toLocaleString(), icon: '📥', bg: 'bg-emerald-50',  text: 'text-emerald-700'  },
+                    { label: 'AI Responses',      value: (tokenStats.totals?.messageCount     || 0).toLocaleString(), icon: '💬', bg: 'bg-amber-50',    text: 'text-amber-700'    },
+                  ].map(s => (
+                    <div key={s.label} className={`${s.bg} rounded-2xl p-4 border border-white/60`}>
+                      <div className={`text-2xl font-bold ${s.text} tabular-nums`}>{s.value}</div>
+                      <div className="text-[10px] text-gray-500 mt-1 font-medium uppercase tracking-wide">{s.icon} {s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Per-User Table */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-gray-50 flex items-center justify-between">
+                    <h3 className="font-semibold text-sm text-gray-800">👤 Token Usage per User</h3>
+                    <span className="text-[10px] text-gray-400">{tokenStats.perUser?.length || 0} users</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50/80 text-gray-400 uppercase text-[10px] tracking-wider">
+                        <tr>
+                          <th className="px-5 py-3 text-left font-semibold">#</th>
+                          <th className="px-5 py-3 text-left font-semibold">User</th>
+                          <th className="px-5 py-3 text-left font-semibold">Department</th>
+                          <th className="px-5 py-3 text-right font-semibold">Total Tokens</th>
+                          <th className="px-5 py-3 text-right font-semibold">Prompt</th>
+                          <th className="px-5 py-3 text-right font-semibold">Completion</th>
+                          <th className="px-5 py-3 text-right font-semibold">Responses</th>
+                          <th className="px-5 py-3 text-right font-semibold">Avg/Response</th>
+                          <th className="px-5 py-3 text-right font-semibold">Last Used</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {(tokenStats.perUser || []).map((u, idx) => {
+                          const maxTokens = tokenStats.perUser[0]?.totalTokens || 1;
+                          const pct = Math.round((u.totalTokens / maxTokens) * 100);
+                          const avg = u.messageCount > 0 ? Math.round(u.totalTokens / u.messageCount) : 0;
+                          return (
+                            <tr key={String(u.userId)} className="hover:bg-gray-50/60 transition-colors">
+                              <td className="px-5 py-3 text-gray-400 font-mono">{idx + 1}</td>
+                              <td className="px-5 py-3">
+                                <div className="font-semibold text-gray-800">{u.username || '—'}</div>
+                                {u.displayName && u.displayName !== u.username && (
+                                  <div className="text-[10px] text-gray-400">{u.displayName}</div>
+                                )}
+                              </td>
+                              <td className="px-5 py-3 text-gray-500">{u.department || '—'}</td>
+                              <td className="px-5 py-3 text-right">
+                                <div className="font-bold text-gray-800 tabular-nums">{u.totalTokens.toLocaleString()}</div>
+                                <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden w-24 ml-auto">
+                                  <div className="h-full bg-primary-dark rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{u.promptTokens.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{u.completionTokens.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-600 tabular-nums">{u.messageCount.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{avg.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-400 whitespace-nowrap">
+                                {u.lastUsed ? new Date(u.lastUsed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {(tokenStats.perUser || []).length === 0 && (
+                          <tr><td colSpan={9} className="px-5 py-10 text-center text-gray-400 text-sm">No token data yet. Token tracking starts from the next AI response.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Per-Bot + Daily Trend side by side */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Per-Bot */}
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-50">
+                      <h3 className="font-semibold text-sm text-gray-800">🤖 Top Bots by Token Usage</h3>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {(tokenStats.perBot || []).map((b, idx) => {
+                        const maxB = tokenStats.perBot[0]?.totalTokens || 1;
+                        const pct  = Math.round((b.totalTokens / maxB) * 100);
+                        return (
+                          <div key={String(b.botId)} className="px-5 py-3 flex items-center gap-3">
+                            <span className="text-[10px] text-gray-400 w-4 text-right font-mono">{idx + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-gray-800 text-xs truncate">{b.botName || '—'}</div>
+                              <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className="font-bold text-gray-800 text-xs tabular-nums">{b.totalTokens.toLocaleString()}</div>
+                              <div className="text-[10px] text-gray-400">{b.messageCount} calls</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {(tokenStats.perBot || []).length === 0 && (
+                        <div className="px-5 py-8 text-center text-gray-400 text-xs">No data yet</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Daily Trend */}
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-50">
+                      <h3 className="font-semibold text-sm text-gray-800">📈 Daily Token Trend (30 days)</h3>
+                    </div>
+                    <div className="px-5 py-4 space-y-1.5 max-h-72 overflow-y-auto">
+                      {(tokenStats.dailyTrend || []).slice().reverse().map(d => {
+                        const maxD = Math.max(...(tokenStats.dailyTrend || []).map(x => x.totalTokens), 1);
+                        const pct  = Math.round((d.totalTokens / maxD) * 100);
+                        return (
+                          <div key={d._id} className="flex items-center gap-3">
+                            <span className="text-[10px] text-gray-400 w-20 flex-shrink-0 font-mono">{d._id}</span>
+                            <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-primary/60 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-[10px] text-gray-600 tabular-nums w-16 text-right font-medium">{d.totalTokens.toLocaleString()}</span>
+                          </div>
+                        );
+                      })}
+                      {(tokenStats.dailyTrend || []).length === 0 && (
+                        <div className="py-8 text-center text-gray-400 text-xs">No trend data yet</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!tokenLoading && !tokenStats && (
+              <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
+                <span className="text-4xl">🪙</span>
+                <p className="font-semibold text-sm">No token data loaded</p>
+                <p className="text-xs">Click Refresh to load token usage statistics.</p>
+              </div>
+            )}
           </div>
         )}
 

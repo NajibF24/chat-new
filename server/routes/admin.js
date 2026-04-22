@@ -126,6 +126,129 @@ async function canAccessBot(user, botOrId) {
 }
 
 // ============================================================
+// 📊 TOKEN USAGE STATS
+// ============================================================
+router.get('/token-stats', requireAdmin, async (req, res) => {
+  try {
+    const { dateFrom, dateTo, groupBy = 'user' } = req.query;
+
+    const matchStage = {
+      role: 'assistant',
+      'tokenUsage.totalTokens': { $gt: 0 },
+    };
+    if (dateFrom || dateTo) {
+      matchStage.createdAt = {};
+      if (dateFrom) matchStage.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) {
+        const end = new Date(dateTo);
+        end.setHours(23, 59, 59, 999);
+        matchStage.createdAt.$lte = end;
+      }
+    }
+
+    // ── Per-user aggregation ──────────────────────────────────
+    const perUser = await Chat.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: '$userId',
+          totalTokens:      { $sum: '$tokenUsage.totalTokens' },
+          promptTokens:     { $sum: '$tokenUsage.promptTokens' },
+          completionTokens: { $sum: '$tokenUsage.completionTokens' },
+          messageCount:     { $sum: 1 },
+          lastUsed:         { $max: '$createdAt' },
+        },
+      },
+      { $sort: { totalTokens: -1 } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'userInfo',
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          userId:           '$_id',
+          username:         { $arrayElemAt: ['$userInfo.username', 0] },
+          displayName:      { $arrayElemAt: ['$userInfo.displayName', 0] },
+          department:       { $arrayElemAt: ['$userInfo.department', 0] },
+          totalTokens:      1,
+          promptTokens:     1,
+          completionTokens: 1,
+          messageCount:     1,
+          lastUsed:         1,
+        },
+      },
+    ]);
+
+    // ── Per-bot aggregation ───────────────────────────────────
+    const perBot = await Chat.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: '$botId',
+          totalTokens:  { $sum: '$tokenUsage.totalTokens' },
+          messageCount: { $sum: 1 },
+        },
+      },
+      { $sort: { totalTokens: -1 } },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: 'bots',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'botInfo',
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          botId:        '$_id',
+          botName:      { $arrayElemAt: ['$botInfo.name', 0] },
+          totalTokens:  1,
+          messageCount: 1,
+        },
+      },
+    ]);
+
+    // ── Daily trend (last 30 days) ────────────────────────────
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dailyTrend = await Chat.aggregate([
+      { $match: { ...matchStage, createdAt: { $gte: thirtyDaysAgo } } },
+      {
+        $group: {
+          _id:         { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          totalTokens: { $sum: '$tokenUsage.totalTokens' },
+          messages:    { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // ── Grand totals ──────────────────────────────────────────
+    const totals = perUser.reduce(
+      (acc, u) => ({
+        totalTokens:      acc.totalTokens      + u.totalTokens,
+        promptTokens:     acc.promptTokens     + u.promptTokens,
+        completionTokens: acc.completionTokens + u.completionTokens,
+        messageCount:     acc.messageCount     + u.messageCount,
+      }),
+      { totalTokens: 0, promptTokens: 0, completionTokens: 0, messageCount: 0 }
+    );
+
+    res.json({ totals, perUser, perBot, dailyTrend });
+  } catch (err) {
+    console.error('Token stats error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
 // 📊 STATS
 // ============================================================
 router.get('/stats', requireAdminOrBotCreator, async (req, res) => {
@@ -458,6 +581,27 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
 
     await newBot.save();
 
+    // ✅ Auto-assign: add bot to creator's assignedBots + all admin users' assignedBots
+    try {
+      const botObjectId = newBot._id;
+
+      // 1. Add to creator's assignedBots (if not admin — admins see all bots anyway)
+      if (!req.user.isAdmin) {
+        await User.findByIdAndUpdate(
+          req.user._id,
+          { $addToSet: { assignedBots: botObjectId } },
+        );
+      }
+
+      // 2. Add to ALL admin users' assignedBots so they always have explicit access
+      await User.updateMany(
+        { isAdmin: true },
+        { $addToSet: { assignedBots: botObjectId } },
+      );
+    } catch (assignErr) {
+      console.warn('[BOT_CREATE] Auto-assign failed:', assignErr.message);
+    }
+
     AuditService.log({
       req, category: 'bot', action: 'BOT_CREATE',
       targetId: newBot._id, targetName: newBot.name,
@@ -543,8 +687,15 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
       // ✅ botApiKey tidak bisa diubah lewat sini — pakai POST /regenerate-key
       wahaConfig: wahaConfigUpdate,
       smartsheetConfig: {
-        enabled: smartsheetConfig?.enabled || false,
-        sheetId: smartsheetConfig?.sheetId || '',
+        enabled:        smartsheetConfig?.enabled || false,
+        sheetId:        smartsheetConfig?.sheetId || '',
+        primarySheetId: smartsheetConfig?.primarySheetId || '',
+        sheetIds:       Array.isArray(smartsheetConfig?.sheetIds)
+          ? smartsheetConfig.sheetIds.filter(Boolean)
+          : (existing.smartsheetConfig?.sheetIds || []),
+        sheetLabels:    Array.isArray(smartsheetConfig?.sheetLabels)
+          ? smartsheetConfig.sheetLabels
+          : (existing.smartsheetConfig?.sheetLabels || []),
         apiKey: smartsheetConfig?.apiKey === '***'
           ? existing.smartsheetConfig?.apiKey
           : (smartsheetConfig?.apiKey || ''),

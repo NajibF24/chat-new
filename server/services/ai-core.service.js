@@ -1159,6 +1159,16 @@ class AICoreService {
 
     const aiResponse = result.text;
 
+    // ✅ Extract token usage from AI response
+    const usage = normalizeUsage(result.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
+    const tokenUsage = {
+      promptTokens:     usage?.prompt_tokens     || 0,
+      completionTokens: usage?.completion_tokens || 0,
+      totalTokens:      usage?.total_tokens      || 0,
+      provider:         bot.aiProvider?.provider || 'openai',
+      model:            bot.aiProvider?.model    || '',
+    };
+
     let savedAttachments = [];
     if (attachedFile) {
       savedAttachments.push({
@@ -1171,8 +1181,30 @@ class AICoreService {
     }
 
     await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
-    await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse }).save();
+    await new Chat({ userId, botId, threadId, role: 'assistant', content: aiResponse, tokenUsage }).save();
     await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+    // ✅ Log token usage to AuditLog for monitoring
+    if (tokenUsage.totalTokens > 0) {
+      try {
+        const AuditService = (await import('./audit.service.js')).default;
+        await AuditService.log({
+          userId,
+          username: undefined, // will be resolved from session if req available
+          category: 'chat',
+          action:   'AI_RESPONSE',
+          targetId:   String(botId),
+          targetName: bot.name,
+          detail: {
+            tokenUsage,
+            messageLength: (message || '').length,
+            responseLength: aiResponse.length,
+          },
+        });
+      } catch (auditErr) {
+        console.warn('[AICoreService] Token audit log failed:', auditErr.message);
+      }
+    }
 
     return { response: aiResponse, threadId, attachedFiles: savedAttachments };
   }

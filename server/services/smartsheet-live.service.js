@@ -117,7 +117,16 @@ class SmartsheetLiveService {
               typeof rawVal === 'boolean'
             );
 
-            flat[title] = useDisplay ? displayVal : (rawVal ?? displayVal ?? null);
+            let cellValue = useDisplay ? displayVal : (rawVal ?? displayVal ?? null);
+
+            // ✅ FIX: Strip HTML from string values at source.
+            // Smartsheet stores rich-text (Issues, Remarks, etc.) as HTML with <br>, <b>, etc.
+            // We clean it here so ALL downstream consumers get plain text automatically.
+            if (typeof cellValue === 'string') {
+              cellValue = this.stripHtml(cellValue);
+            }
+
+            flat[title] = cellValue;
           }
         });
         return flat;
@@ -314,7 +323,8 @@ class SmartsheetLiveService {
 
     if (singleMatch) {
       // Tampilkan detail lengkap satu project — Issues PENUH tanpa truncate
-      const issueRaw    = this.resolveField(singleMatch, 'issues') || '-';
+      // ✅ FIX: stripHtml() removes <br>, <b>, etc. from Smartsheet rich-text fields
+      const issueRaw    = this.stripHtml(this.resolveField(singleMatch, 'issues') || '-');
       const projectName = this.resolveField(singleMatch, 'projectName') || '-';
       const pm          = this.resolveField(singleMatch, 'pm') || '-';
       const status      = this.resolveField(singleMatch, 'status') || '-';
@@ -324,22 +334,32 @@ class SmartsheetLiveService {
       const targetEnd   = this.formatDate(this.resolveField(singleMatch, 'targetEnd')) || '-';
       const dept        = this.resolveField(singleMatch, 'department') || '-';
       const vendor      = this.resolveField(singleMatch, 'vendor') || '-';
-      const remarks     = this.resolveField(singleMatch, 'remarks') || '-';
+      const remarks     = this.stripHtml(this.resolveField(singleMatch, 'remarks') || '-');
       const healthEmoji = health === 'Green' ? '🟢' : health === 'Yellow' ? '🟡' : health === 'Red' ? '🔴' : '⚪';
       const daysOverdue = singleMatch._daysOverdue ? `${singleMatch._daysOverdue} hari` : '-';
 
+      const lastModifiedRaw  = this.resolveField(singleMatch, 'lastModified');
+      const lastModified     = lastModifiedRaw ? this.formatDate(lastModifiedRaw) : '-';
+      const daysSinceRaw     = this.resolveField(singleMatch, 'daysSinceUpdate');
+      const daysSinceNum     = parseFloat(daysSinceRaw);
+      const daysSince        = !isNaN(daysSinceNum)
+        ? `${Math.round(daysSinceNum)} hari${daysSinceNum > 30 ? ' ⚠️' : ''}`
+        : '-';
+
       context += `--- DETAIL PROYEK: ${projectName} ---\n`;
-      context += `Project Name  : ${projectName}\n`;
-      context += `PM            : ${pm}\n`;
-      context += `Department    : ${dept}\n`;
-      context += `Status        : ${status}\n`;
-      context += `Progress      : ${progressPct}%\n`;
-      context += `Health        : ${healthEmoji} ${health}\n`;
-      context += `Target End    : ${targetEnd}\n`;
-      context += `Days Overdue  : ${daysOverdue}\n`;
-      context += `Vendor        : ${vendor}\n`;
-      context += `Remarks       : ${remarks}\n`;
-      context += `Issues        :\n${issueRaw}\n`;
+      context += `Project Name        : ${projectName}\n`;
+      context += `PM                  : ${pm}\n`;
+      context += `Department          : ${dept}\n`;
+      context += `Status              : ${status}\n`;
+      context += `Progress            : ${progressPct}%\n`;
+      context += `Health              : ${healthEmoji} ${health}\n`;
+      context += `Target End          : ${targetEnd}\n`;
+      context += `Days Overdue        : ${daysOverdue}\n`;
+      context += `Last Modified       : ${lastModified}\n`;
+      context += `Days Since Update   : ${daysSince}\n`;
+      context += `Vendor              : ${vendor}\n`;
+      context += `Remarks             : ${remarks}\n`;
+      context += `Issues              :\n${issueRaw}\n`;
       return context;
     }
 
@@ -432,15 +452,16 @@ class SmartsheetLiveService {
     if (!rows.length) return 'Tidak ada data.\n\n';
 
     const headers = ['Project Name'];
-    if (cols.pm)         headers.push('PM');
-    if (cols.department) headers.push('Dept');
+    if (cols.pm)              headers.push('PM');
+    if (cols.department)      headers.push('Dept');
     headers.push('Status');
-    if (cols.progress)   headers.push('Progress');
-    if (cols.targetEnd)  headers.push('Target End');
-    if (cols.health)     headers.push('Health');
-    if (showDaysOverdue) headers.push('Days Overdue');
-    if (cols.issues)     headers.push('Issues');
+    if (cols.progress)        headers.push('Progress');
+    if (cols.targetEnd)       headers.push('Target End');
+    if (cols.health)          headers.push('Health');
+    if (showDaysOverdue)      headers.push('Days Overdue');
+    if (cols.lastModified)    headers.push('Last Modified');
     if (cols.daysSinceUpdate) headers.push('Days Since Update');
+    if (cols.issues)          headers.push('Issues');
 
     let table = `| ${headers.join(' | ')} |\n`;
     table    += `| ${headers.map(h => {
@@ -467,31 +488,34 @@ class SmartsheetLiveService {
       const targetEnd    = targetEndRaw ? this.formatDate(targetEndRaw) : '-';
       const daysOverdue  = row._daysOverdue ? `${row._daysOverdue} hari` : '-';
 
-      const issueRaw    = this.resolveField(row, 'issues') || '';
-      // ✅ FIX v1.1.0: Naikkan limit Issues dari 150 → 600 char agar konten detail
-      // (multi-line roadmap, milestone list, dll) tidak terpotong di tengah.
-      // \n diganti <br> agar lebih readable di tabel, bukan dihapus.
+      const issueRaw    = this.stripHtml(this.resolveField(row, 'issues') || '');
+      // ✅ FIX: stripHtml() removes <br>/<b>/etc. from Smartsheet rich-text.
+      // Then collapse newlines to ' | ' for compact table display.
       const issues      = (!issueRaw || issueRaw === '-' || issueRaw.toLowerCase() === 'no issue')
                           ? '-'
                           : this.truncate(issueRaw.replace(/\r?\n/g, ' | '), 600);
 
+      const lastModifiedRaw = this.resolveField(row, 'lastModified');
+      const lastModified    = lastModifiedRaw ? this.formatDate(lastModifiedRaw) : '-';
+
       const values = [name];
-      if (cols.pm)         values.push(pm);
-      if (cols.department) values.push(dept);
+      if (cols.pm)              values.push(pm);
+      if (cols.department)      values.push(dept);
       values.push(status);
-      if (cols.progress)   values.push(progress);
-      if (cols.targetEnd)  values.push(targetEnd);
-      if (cols.health)     values.push(`${healthEmoji} ${health}`);
-      if (showDaysOverdue) values.push(daysOverdue);
-      if (cols.issues)     values.push(issues);
+      if (cols.progress)        values.push(progress);
+      if (cols.targetEnd)       values.push(targetEnd);
+      if (cols.health)          values.push(`${healthEmoji} ${health}`);
+      if (showDaysOverdue)      values.push(daysOverdue);
+      if (cols.lastModified)    values.push(lastModified);
       if (cols.daysSinceUpdate) {
-        const days = this.resolveField(row, 'daysSinceUpdate');
+        const days    = this.resolveField(row, 'daysSinceUpdate');
         const daysNum = parseFloat(days);
         const daysStr = !isNaN(daysNum)
           ? `${Math.round(daysNum)}d ${daysNum > 30 ? '⚠️' : ''}`
           : '-';
         values.push(daysStr);
       }
+      if (cols.issues)          values.push(issues);
 
       table += `| ${values.join(' | ')} |\n`;
     });
@@ -845,6 +869,49 @@ class SmartsheetLiveService {
     if (!str) return '-';
     str = String(str).replace(/\n/g, ' ').trim();
     return str.length > maxLen ? str.substring(0, maxLen - 3) + '...' : str;
+  }
+
+  /**
+   * Strip HTML tags from Smartsheet rich-text values.
+   * Smartsheet stores multi-line text as HTML (<br>, <b>, <ul><li>…</li></ul>).
+   * Converts structural tags to plain-text equivalents so the AI sees clean text.
+   *
+   *   <br>, <br/>, <br />  → \n
+   *   <p>, </p>            → \n
+   *   <li>                 → \n•
+   *   All other tags       → stripped
+   *   &amp; &lt; &gt; &nbsp; → decoded
+   */
+  stripHtml(str) {
+    if (!str || typeof str !== 'string') return str;
+    // Quick exit — no HTML present
+    if (!str.includes('<') && !str.includes('&')) return str;
+
+    return str
+      // <br> variants → newline
+      .replace(/<br\s*\/?>/gi, '\n')
+      // </p> → newline, <p …> → nothing
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<p[^>]*>/gi, '')
+      // <li> → bullet point
+      .replace(/<li[^>]*>/gi, '\n• ')
+      .replace(/<\/li>/gi, '')
+      // list containers
+      .replace(/<\/?[uo]l[^>]*>/gi, '')
+      // inline formatting — strip tags, keep text
+      .replace(/<\/?(b|strong|i|em|u|s|span|div|h[1-6])[^>]*>/gi, '')
+      // any remaining tags
+      .replace(/<[^>]+>/g, '')
+      // HTML entities
+      .replace(/&amp;/gi,  '&')
+      .replace(/&lt;/gi,   '<')
+      .replace(/&gt;/gi,   '>')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi,  "'")
+      // collapse 3+ consecutive newlines → 2
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 }
 
