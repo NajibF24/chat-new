@@ -575,7 +575,15 @@ const Chat = ({ user, handleLogout }) => {
             <div className={`mx-auto transition-all duration-300 ${isSidebarOpen ? 'max-w-4xl' : 'max-w-5xl'}`}>
               {selectedFile && (
                 <div className="flex items-center gap-2 mb-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2 w-fit text-xs text-primary-dark font-medium">
-                  <svg className="w-3.5 h-3.5 flex-shrink-0 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                  {selectedFile.type?.startsWith('image/') ? (
+                    <img
+                      src={URL.createObjectURL(selectedFile)}
+                      alt={selectedFile.name}
+                      className="w-10 h-10 object-cover rounded-lg border border-primary/20 flex-shrink-0"
+                    />
+                  ) : (
+                    <svg className="w-3.5 h-3.5 flex-shrink-0 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                  )}
                   <span className="truncate max-w-[200px]">{selectedFile.name}</span>
                   <button onClick={() => setSelectedFile(null)} className="ml-0.5 text-gray-400 hover:text-red-500 transition-colors">
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -583,7 +591,13 @@ const Chat = ({ user, handleLogout }) => {
                 </div>
               )}
               <div className="flex items-end gap-2 bg-white border border-gray-200 rounded-2xl shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 focus-within:shadow-md transition-all px-3 py-2.5">
-                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept="image/*,.pdf,.docx,.xlsx,.xls,.txt,.csv,.pptx"
+                />
                 <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach file"
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-primary-dark hover:bg-gray-100 transition-colors mb-0.5">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>

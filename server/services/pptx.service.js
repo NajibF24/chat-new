@@ -129,9 +129,10 @@ async function extractTemplateTheme(pptxFilePath) {
   try {
     if (!pptxFilePath || !fs.existsSync(pptxFilePath)) return theme;
 
-    const data   = fs.readFileSync(pptxFilePath);
-    const zip    = await JSZip.loadAsync(data);
+    const data = fs.readFileSync(pptxFilePath);
+    const zip  = await JSZip.loadAsync(data);
 
+    // Extract accent colors and fonts from theme XML
     const themeFiles = Object.keys(zip.files).filter(f =>
       f.match(/ppt\/theme\/theme\d*\.xml$/)
     );
@@ -155,24 +156,12 @@ async function extractTemplateTheme(pptxFilePath) {
       const lt1Match = themeXml.match(/<a:lt1>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
       if (dk1Match) theme.darkText = dk1Match[1].toUpperCase();
       if (lt1Match) theme.white    = lt1Match[1].toUpperCase();
-    }
 
-    const themeXml2 = themeFiles.length > 0
-      ? await zip.files[themeFiles[0]].async('string')
-      : '';
-    const fontMatch = themeXml2.match(/<a:latin\s+typeface="([^"]+)"/);
-    if (fontMatch) {
-      theme.fontTitle = fontMatch[1];
-      theme.fontBody  = fontMatch[1];
-    }
-
-    const layoutFiles = Object.keys(zip.files).filter(f =>
-      f.match(/ppt\/slideLayouts\/slideLayout\d+\.xml$/)
-    );
-    if (layoutFiles.length > 0) {
-      const layoutXml = await zip.files[layoutFiles[0]].async('string');
-      const bgMatch   = layoutXml.match(/<p:bg>[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/);
-      if (bgMatch) theme.offWhite = bgMatch[1].toUpperCase();
+      const fontMatch = themeXml.match(/<a:latin\s+typeface="([^"]+)"/);
+      if (fontMatch) {
+        theme.fontTitle = fontMatch[1];
+        theme.fontBody  = fontMatch[1];
+      }
     }
 
     console.log(`[PPT Template] Extracted theme — primary: #${theme.teal}, font: ${theme.fontTitle}`);
@@ -1624,6 +1613,7 @@ const PptxService = {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
+    // ── Extract theme colors/fonts from template (for content rendering) ──
     const GYS = templatePath
       ? await extractTemplateTheme(templatePath)
       : { ...GYS_DEFAULTS };
@@ -1646,10 +1636,9 @@ const PptxService = {
 
       slidesWithImages.forEach((sd, idx) => {
         const slide     = pptx.addSlide();
+        const layout    = (sd.layout || "CONTENT").toUpperCase();
         const pageLabel = `${idx + 1} / ${total}`;
         slideCount++;
-
-        const layout = (sd.layout || "CONTENT").toUpperCase();
 
         switch (layout) {
           case "TITLE":        renderTitle(pptx, slide, sd, GYS, pageLabel);       break;

@@ -976,7 +976,11 @@ class AICoreService {
   }
 
   async extractFileContent(attachedFile) {
-    const physicalPath = attachedFile.serverPath || attachedFile.path;
+    let physicalPath = attachedFile.serverPath || attachedFile.path;
+    // Resolve relative paths (multer returns relative paths like "data/files/...")
+    if (physicalPath && !path.isAbsolute(physicalPath)) {
+      physicalPath = path.join(process.cwd(), physicalPath);
+    }
     if (!physicalPath || !fs.existsSync(physicalPath)) return '';
     const originalName = attachedFile.originalname || '';
     const ext = path.extname(originalName).toLowerCase();
@@ -1013,7 +1017,8 @@ class AICoreService {
     }
 
     // ── ✅ NEW: Image Generation Handler ───────────────────────
-    if (isImageGenerationRequest(message)) {
+    // Skip if user attached a file — they want to analyze it, not generate a new image
+    if (isImageGenerationRequest(message) && !attachedFile) {
       return this._handleImageGenerationCommand({ userId, botId, bot, message, threadId });
     }
 
@@ -1103,13 +1108,62 @@ class AICoreService {
     if (message) userContent.push({ type: 'text', text: message });
 
     if (attachedFile) {
-      if (attachedFile.mimetype?.startsWith('image/') && bot.aiProvider?.provider === 'openai') {
-        const imgBuffer = fs.readFileSync(attachedFile.path);
-        userContent.push({
-          type: 'image_url',
-          image_url: { url: `data:${attachedFile.mimetype};base64,${imgBuffer.toString('base64')}` },
-        });
+      const provider  = bot.aiProvider?.provider || 'openai';
+      const isImage   = attachedFile.mimetype?.startsWith('image/');
+      const isPdf     = attachedFile.mimetype === 'application/pdf' ||
+                        (attachedFile.originalname || '').toLowerCase().endsWith('.pdf');
+
+      // ── Vision-capable providers: OpenAI, Anthropic, Google ──
+      const visionProviders = new Set(['openai', 'anthropic', 'google']);
+      const supportsVision  = visionProviders.has(provider);
+
+      if (isImage && supportsVision) {
+        // Send image directly to vision model
+        // attachedFile.path is the disk path returned by multer (e.g. "data/files/123---img.png")
+        // Resolve to absolute path in case it's relative
+        let filePath = attachedFile.serverPath || attachedFile.path;
+        if (filePath && !path.isAbsolute(filePath)) {
+          filePath = path.join(process.cwd(), filePath);
+        }
+        console.log(`[AICoreService] Reading image from: ${filePath}`);
+        if (!filePath || !fs.existsSync(filePath)) {
+          console.warn(`[AICoreService] Image file not found: ${filePath}`);
+          userContent.push({ type: 'text', text: `[User attached an image: ${attachedFile.originalname}, but the file could not be read from disk]` });
+        } else {
+          const imgBuffer = fs.readFileSync(filePath);
+          const b64       = imgBuffer.toString('base64');
+          const mime      = attachedFile.mimetype;
+
+          if (provider === 'anthropic') {
+            // Anthropic uses a different image format
+            userContent.push({
+              type:   'image',
+              source: { type: 'base64', media_type: mime, data: b64 },
+            });
+          } else {
+            // OpenAI and Google (Gemini) use image_url with data URI
+            userContent.push({
+              type:      'image_url',
+              image_url: { url: `data:${mime};base64,${b64}` },
+            });
+          }
+          console.log(`[AICoreService] Image attached (${provider}): ${attachedFile.originalname}`);
+        }
+
+      } else if (isPdf && supportsVision) {
+        // Try text extraction first; fall back to vision if text is empty (scanned PDF)
+        const text = await this.extractFileContent(attachedFile);
+        if (text && text.trim().length > 50) {
+          userContent.push({ type: 'text', text });
+        } else {
+          // Scanned/image-based PDF — inform the user we can't read it via vision
+          userContent.push({
+            type: 'text',
+            text: `\n\n[FILE: ${attachedFile.originalname}]\nThis PDF appears to be image-based (scanned). Text extraction returned no content. Please describe what you need from this document.\n[END FILE]\n`,
+          });
+        }
       } else {
+        // All other file types: extract text content
         const text = await this.extractFileContent(attachedFile);
         if (text) userContent.push({ type: 'text', text });
       }
@@ -1160,7 +1214,39 @@ class AICoreService {
       capabilities:    bot.capabilities || {},
     });
 
-    const aiResponse = result.text;
+    // ✅ FIX: Strip HTML tags from AI response for Smartsheet bots.
+    // Some AI models (especially when given HTML-rich context) output <br>, <b>, etc.
+    // in their responses. We strip these to plain text before saving/returning.
+    // Only applied when Smartsheet is enabled to avoid breaking other bots
+    // that may legitimately return HTML (e.g. code generation bots).
+    let aiResponse = result.text;
+    if (bot.smartsheetConfig?.enabled && aiResponse) {
+      aiResponse = aiResponse
+        // <br> variants → newline
+        .replace(/<br\s*\/?>/gi, '\n')
+        // </p> → newline, <p> → nothing
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<p[^>]*>/gi, '')
+        // <li> → bullet
+        .replace(/<li[^>]*>/gi, '\n• ')
+        .replace(/<\/li>/gi, '')
+        // list containers
+        .replace(/<\/?[uo]l[^>]*>/gi, '')
+        // inline formatting — strip tags, keep text
+        .replace(/<\/?(b|strong|i|em|u|s|span|div|h[1-6])[^>]*>/gi, '')
+        // any remaining tags
+        .replace(/<[^>]+>/g, '')
+        // HTML entities
+        .replace(/&amp;/gi,  '&')
+        .replace(/&lt;/gi,   '<')
+        .replace(/&gt;/gi,   '>')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi,  "'")
+        // collapse 3+ consecutive newlines → 2
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
 
     // ✅ Extract token usage from AI response
     const usage = normalizeUsage(result.usage, bot.aiProvider?.provider || 'openai', bot.aiProvider?.model || '');
