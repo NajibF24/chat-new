@@ -976,7 +976,11 @@ class AICoreService {
   }
 
   async extractFileContent(attachedFile) {
-    const physicalPath = attachedFile.serverPath || attachedFile.path;
+    let physicalPath = attachedFile.serverPath || attachedFile.path;
+    // Resolve relative paths (multer returns relative paths like "data/files/...")
+    if (physicalPath && !path.isAbsolute(physicalPath)) {
+      physicalPath = path.join(process.cwd(), physicalPath);
+    }
     if (!physicalPath || !fs.existsSync(physicalPath)) return '';
     const originalName = attachedFile.originalname || '';
     const ext = path.extname(originalName).toLowerCase();
@@ -1013,7 +1017,8 @@ class AICoreService {
     }
 
     // ── ✅ NEW: Image Generation Handler ───────────────────────
-    if (isImageGenerationRequest(message)) {
+    // Skip if user attached a file — they want to analyze it, not generate a new image
+    if (isImageGenerationRequest(message) && !attachedFile) {
       return this._handleImageGenerationCommand({ userId, botId, bot, message, threadId });
     }
 
@@ -1114,25 +1119,36 @@ class AICoreService {
 
       if (isImage && supportsVision) {
         // Send image directly to vision model
-        const filePath  = attachedFile.serverPath || attachedFile.path;
-        const imgBuffer = fs.readFileSync(filePath);
-        const b64       = imgBuffer.toString('base64');
-        const mime      = attachedFile.mimetype;
-
-        if (provider === 'anthropic') {
-          // Anthropic uses a different image format
-          userContent.push({
-            type:   'image',
-            source: { type: 'base64', media_type: mime, data: b64 },
-          });
-        } else {
-          // OpenAI and Google (Gemini) use image_url with data URI
-          userContent.push({
-            type:      'image_url',
-            image_url: { url: `data:${mime};base64,${b64}` },
-          });
+        // attachedFile.path is the disk path returned by multer (e.g. "data/files/123---img.png")
+        // Resolve to absolute path in case it's relative
+        let filePath = attachedFile.serverPath || attachedFile.path;
+        if (filePath && !path.isAbsolute(filePath)) {
+          filePath = path.join(process.cwd(), filePath);
         }
-        console.log(`[AICoreService] Image attached (${provider}): ${attachedFile.originalname}`);
+        console.log(`[AICoreService] Reading image from: ${filePath}`);
+        if (!filePath || !fs.existsSync(filePath)) {
+          console.warn(`[AICoreService] Image file not found: ${filePath}`);
+          userContent.push({ type: 'text', text: `[User attached an image: ${attachedFile.originalname}, but the file could not be read from disk]` });
+        } else {
+          const imgBuffer = fs.readFileSync(filePath);
+          const b64       = imgBuffer.toString('base64');
+          const mime      = attachedFile.mimetype;
+
+          if (provider === 'anthropic') {
+            // Anthropic uses a different image format
+            userContent.push({
+              type:   'image',
+              source: { type: 'base64', media_type: mime, data: b64 },
+            });
+          } else {
+            // OpenAI and Google (Gemini) use image_url with data URI
+            userContent.push({
+              type:      'image_url',
+              image_url: { url: `data:${mime};base64,${b64}` },
+            });
+          }
+          console.log(`[AICoreService] Image attached (${provider}): ${attachedFile.originalname}`);
+        }
 
       } else if (isPdf && supportsVision) {
         // Try text extraction first; fall back to vision if text is empty (scanned PDF)
