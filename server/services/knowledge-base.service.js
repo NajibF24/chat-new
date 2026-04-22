@@ -4,18 +4,19 @@
 import fs      from 'fs';
 import path    from 'path';
 import pdf     from 'pdf-parse';
-import mammoth from 'mammoth';
-import XLSX    from 'xlsx';
+import mammoth  from 'mammoth';
+import ExcelJS  from 'exceljs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 // ── Optional PPT parser ───────────────────────────────────────
-let officeparserParsePptx = null;
+// officeparser v6+ uses promise-based API: parseOfficeAsync(filePath)
+let officeparserModule = null;
 try {
   const op = await import('officeparser');
-  officeparserParsePptx = op.parseOffice || op.default?.parseOffice || null;
+  officeparserModule = op.default || op;
 } catch {
   // officeparser not available
 }
@@ -69,11 +70,15 @@ class KnowledgeBaseService {
         mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
         mimetype === 'application/vnd.ms-excel'
       ) {
-        const workbook = XLSX.readFile(filePath);
-        const parts    = workbook.SheetNames.map(sheetName => {
-          const sheet = workbook.Sheets[sheetName];
-          const csv   = XLSX.utils.sheet_to_csv(sheet);
-          return `=== Sheet: ${sheetName} ===\n${csv}`;
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const parts = [];
+        workbook.eachSheet(sheet => {
+          const rows = [];
+          sheet.eachRow(row => {
+            rows.push(row.values.slice(1).map(v => (v == null ? '' : String(v))).join(','));
+          });
+          parts.push(`=== Sheet: ${sheet.name} ===\n${rows.join('\n')}`);
         });
         content = parts.join('\n\n');
 
@@ -231,24 +236,37 @@ class KnowledgeBaseService {
 
   // ── PPT text extraction ───────────────────────────────────
   async _extractPptContent(filePath, originalName) {
-    if (officeparserParsePptx) {
+    // officeparser v6+: promise-based parseOfficeAsync
+    if (officeparserModule) {
       try {
-        return await new Promise((resolve, reject) => {
-          officeparserParsePptx(filePath, (data, err) => {
-            if (err) reject(err);
-            else resolve(data || '');
-          });
-        });
+        const parseFn = officeparserModule.parseOfficeAsync || officeparserModule.parseOffice;
+        if (typeof parseFn === 'function') {
+          // v6+ async API
+          const data = await parseFn(filePath);
+          if (data) return data;
+        }
       } catch (e) {
-        console.warn('officeparser PPT failed, trying XLSX fallback:', e.message);
+        console.warn('officeparser PPT failed, trying JSZip fallback:', e.message);
       }
     }
 
+    // JSZip fallback — extract text from slide XML directly
     try {
-      const workbook = XLSX.readFile(filePath, { type: 'file', raw: false });
-      if (workbook.SheetNames.length > 0) {
-        const parts = workbook.SheetNames.map(n => XLSX.utils.sheet_to_txt(workbook.Sheets[n]));
-        return `[Konten PowerPoint: ${originalName}]\n\n` + parts.join('\n\n');
+      const JSZipFallback = (await import('jszip')).default;
+      const zipData = fs.readFileSync(filePath);
+      const zip2    = await JSZipFallback.loadAsync(zipData);
+      const slides  = Object.keys(zip2.files)
+        .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+        .sort((a, b) => parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]));
+      const slideTexts = [];
+      for (const sf of slides) {
+        const xml     = await zip2.files[sf].async('string');
+        const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
+        const text    = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').trim();
+        if (text) slideTexts.push(`[Slide ${slideTexts.length + 1}]\n${text}`);
+      }
+      if (slideTexts.length > 0) {
+        return `[Konten PowerPoint: ${originalName}]\n\n` + slideTexts.join('\n\n');
       }
     } catch { /* ignore */ }
 

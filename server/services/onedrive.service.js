@@ -227,12 +227,18 @@ class OneDriveService {
       }
 
       if (ext === 'xlsx' || ext === 'xls') {
-        const { default: XLSX } = await import('xlsx');
-        const wb   = XLSX.read(buffer, { type: 'buffer' });
-        const text = wb.SheetNames
-          .map(n => `[Sheet: ${n}]\n` + XLSX.utils.sheet_to_csv(wb.Sheets[n]))
-          .join('\n');
-        return text.substring(0, 15_000);
+        const { default: ExcelJSDyn } = await import('exceljs');
+        const wb = new ExcelJSDyn.Workbook();
+        await wb.xlsx.load(buffer);
+        const parts = [];
+        wb.eachSheet(sheet => {
+          const rows = [];
+          sheet.eachRow(row => {
+            rows.push(row.values.slice(1).map(v => (v == null ? '' : String(v))).join(','));
+          });
+          parts.push(`[Sheet: ${sheet.name}]\n${rows.join('\n')}`);
+        });
+        return parts.join('\n').substring(0, 15_000);
       }
 
       if (ext === 'pptx' || ext === 'ppt') {
