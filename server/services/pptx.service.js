@@ -1724,9 +1724,6 @@ const PptxService = {
       ? await extractTemplateTheme(templatePath)
       : { ...GYS_DEFAULTS };
 
-    // ── Load template PPTX as base (preserves slide masters, theme, layouts) ──
-    // PptxGenJS pptx.load() sets the slide master from the template file.
-    // Slides added after load() inherit the template's theme automatically.
     const pptx = new PptxGenJS();
     pptx.layout  = "LAYOUT_16x9";
     pptx.author  = "GYS Portal AI";
@@ -1734,15 +1731,11 @@ const PptxService = {
     pptx.subject = title || "Presentation";
     pptx.title   = title || "Presentation";
 
-    if (templatePath && fs.existsSync(templatePath)) {
-      try {
-        const templateData = fs.readFileSync(templatePath);
-        await pptx.load(templateData.toString('base64'));
-        console.log(`[PPT Template] Loaded template: ${path.basename(templatePath)}`);
-      } catch (loadErr) {
-        console.warn(`[PPT Template] Failed to load template (${loadErr.message}), using default theme`);
-      }
-    }
+    // Note: PptxGenJS 3.x does not support pptx.load().
+    // Template theming is applied via:
+    //   1. extractTemplateTheme() — extracts colors, fonts, background from the PPTX file
+    //   2. applyTemplateBackground() — applies background image/color to each slide
+    //   3. All render functions use GYS theme tokens (colors, fonts) from the template
 
     let slideCount   = 0;
     let usedFallback = false;
