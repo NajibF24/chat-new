@@ -417,11 +417,18 @@ function AdminDashboard({ user, handleLogout }) {
   const [stats, setStats]           = useState(null);
   const [users, setUsers]           = useState([]);
   const [bots,  setBots]            = useState([]);
-  const [chatLogs, setChatLogs]     = useState([]);
-  const [logPage, setLogPage]       = useState(1);
+  const [chatLogs, setChatLogs]         = useState([]);
+  const [logPage, setLogPage]           = useState(1);
   const [logTotalPages, setLogTotalPages] = useState(1);
-  const [loading, setLoading]       = useState(false);
+  const [logTotal, setLogTotal]         = useState(0);
+  const [loading, setLoading]           = useState(false);
   const [exportFilter, setExportFilter] = useState('');
+  // Chat Logs search/filter state
+  const [chatSearch, setChatSearch]     = useState('');
+  const [chatRole, setChatRole]         = useState('');
+  const [chatDateFrom, setChatDateFrom] = useState('');
+  const [chatDateTo, setChatDateTo]     = useState('');
+  const [chatBotFilter, setChatBotFilter] = useState('');
 
   const [showBotModal, setShowBotModal] = useState(false);
   const [editingBot,   setEditingBot]   = useState(null);
@@ -461,7 +468,7 @@ function AdminDashboard({ user, handleLogout }) {
   const [tokenDateTo,       setTokenDateTo]        = useState('');
 
   useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage, chatSearch, chatRole, chatDateFrom, chatDateTo, chatBotFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'audit' && user?.isAdmin) fetchAuditLogs(); }, [activeTab, auditPage, auditCategory]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'tokens' && user?.isAdmin) fetchTokenStats(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -471,8 +478,23 @@ function AdminDashboard({ user, handleLogout }) {
   const fetchChatLogs = async () => {
     if (!user?.isAdmin) return;
     setLoading(true);
-    try { const r = await axios.get(`/api/admin/chat-logs?page=${logPage}&limit=20`); setChatLogs(r.data.chats || []); setLogTotalPages(r.data.totalPages || 1); }
-    finally { setLoading(false); }
+    try {
+      const p = new URLSearchParams({ page: logPage, limit: 20 });
+      if (chatSearch)    p.set('search',   chatSearch);
+      if (chatRole)      p.set('role',     chatRole);
+      if (chatDateFrom)  p.set('dateFrom', chatDateFrom);
+      if (chatDateTo)    p.set('dateTo',   chatDateTo);
+      if (chatBotFilter) p.set('botId',    chatBotFilter);
+      const r = await axios.get(`/api/admin/chat-logs?${p}`);
+      setChatLogs(r.data.chats || []);
+      setLogTotalPages(r.data.totalPages || 1);
+      setLogTotal(r.data.totalLogs || 0);
+    } finally { setLoading(false); }
+  };
+
+  const handleChatSearchReset = () => {
+    setChatSearch(''); setChatRole(''); setChatDateFrom(''); setChatDateTo(''); setChatBotFilter('');
+    setLogPage(1);
   };
 
   const fetchAuditLogs = async () => {
@@ -1020,11 +1042,14 @@ function AdminDashboard({ user, handleLogout }) {
 
         {/* CHAT LOGS */}
         {activeTab === 'chats' && user?.isAdmin && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[700px]">
-            <div className="px-6 py-5 border-b border-gray-50 flex justify-between items-center flex-shrink-0">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col" style={{ height: '780px' }}>
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-50 flex justify-between items-center flex-shrink-0">
               <div>
                 <h2 className="font-bold text-gray-800">Chat Logs</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Monitor all conversations</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {logTotal > 0 ? `${logTotal.toLocaleString()} messages found` : 'Monitor all conversations'}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <input type="month" value={exportFilter} onChange={e => setExportFilter(e.target.value)} className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40" />
@@ -1034,11 +1059,90 @@ function AdminDashboard({ user, handleLogout }) {
                 </button>
               </div>
             </div>
+
+            {/* Search & Filter Bar */}
+            <div className="px-6 py-3 border-b border-gray-50 bg-gray-50/40 flex flex-wrap gap-2 items-center flex-shrink-0">
+              {/* Text search */}
+              <div className="relative flex-1 min-w-[180px]">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search message, user, or bot…"
+                  value={chatSearch}
+                  onChange={e => { setChatSearch(e.target.value); setLogPage(1); }}
+                  className="w-full pl-8 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                />
+              </div>
+
+              {/* Bot filter */}
+              <select
+                value={chatBotFilter}
+                onChange={e => { setChatBotFilter(e.target.value); setLogPage(1); }}
+                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40 min-w-[130px]"
+              >
+                <option value="">All Bots</option>
+                {bots.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
+              </select>
+
+              {/* Role filter */}
+              <select
+                value={chatRole}
+                onChange={e => { setChatRole(e.target.value); setLogPage(1); }}
+                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
+              >
+                <option value="">All Roles</option>
+                <option value="user">User</option>
+                <option value="assistant">Assistant</option>
+              </select>
+
+              {/* Date from */}
+              <input
+                type="date"
+                value={chatDateFrom}
+                onChange={e => { setChatDateFrom(e.target.value); setLogPage(1); }}
+                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
+                title="From date"
+              />
+              <span className="text-gray-300 text-xs">→</span>
+              {/* Date to */}
+              <input
+                type="date"
+                value={chatDateTo}
+                onChange={e => { setChatDateTo(e.target.value); setLogPage(1); }}
+                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
+                title="To date"
+              />
+
+              {/* Reset */}
+              {(chatSearch || chatRole || chatDateFrom || chatDateTo || chatBotFilter) && (
+                <button
+                  onClick={handleChatSearchReset}
+                  className="px-3 py-2 text-xs text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors font-medium"
+                >
+                  ✕ Reset
+                </button>
+              )}
+            </div>
+
+            {/* Table */}
             <div className="flex-1 overflow-auto">
+              {loading ? (
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm gap-2">
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  Loading…
+                </div>
+              ) : chatLogs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
+                  <svg className="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.77 9.77 0 01-4-.83L3 20l1.09-3.27A7.93 7.93 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                  <span className="text-xs">No messages found</span>
+                </div>
+              ) : (
               <table className="w-full text-xs">
-                <thead className="bg-gray-50/80 text-gray-400 uppercase text-[10px] tracking-wider sticky top-0">
+                <thead className="bg-gray-50/80 text-gray-400 uppercase text-[10px] tracking-wider sticky top-0 z-10">
                   <tr>
-                    <th className="px-5 py-3 text-left font-semibold">Time</th>
+                    <th className="px-5 py-3 text-left font-semibold whitespace-nowrap">Time</th>
                     <th className="px-5 py-3 text-left font-semibold">User</th>
                     <th className="px-5 py-3 text-left font-semibold">Bot</th>
                     <th className="px-5 py-3 text-left font-semibold">Role</th>
@@ -1048,7 +1152,7 @@ function AdminDashboard({ user, handleLogout }) {
                 <tbody className="divide-y divide-gray-50">
                   {chatLogs.map(log => (
                     <tr key={log._id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="px-5 py-2.5 text-gray-400 whitespace-nowrap tabular-nums">{new Date(log.createdAt).toLocaleString('en-US')}</td>
+                      <td className="px-5 py-2.5 text-gray-400 whitespace-nowrap tabular-nums">{new Date(log.createdAt).toLocaleString('id-ID')}</td>
                       <td className="px-5 py-2.5 font-medium text-gray-700">{log.userId?.username || '—'}</td>
                       <td className="px-5 py-2.5 text-primary font-semibold">{log.botId?.name || 'System'}</td>
                       <td className="px-5 py-2.5">
@@ -1059,6 +1163,7 @@ function AdminDashboard({ user, handleLogout }) {
                   ))}
                 </tbody>
               </table>
+              )}
             </div>
             <div className="px-5 py-3.5 border-t border-gray-50 flex justify-between items-center text-xs text-gray-400 flex-shrink-0">
               <span>Page {logPage} of {logTotalPages}</span>

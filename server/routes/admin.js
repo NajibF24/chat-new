@@ -993,11 +993,74 @@ router.get('/chat-logs', requireAdmin, async (req, res) => {
     const page  = parseInt(req.query.page)  || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip  = (page - 1) * limit;
-    const total = await Chat.countDocuments({});
-    const chats = await Chat.find({})
-      .populate('userId', 'username').populate('botId', 'name')
-      .sort({ createdAt: -1 }).skip(skip).limit(limit);
-    res.json({ chats, totalPages: Math.ceil(total / limit), currentPage: page, totalLogs: total });
+
+    const { search, role, dateFrom, dateTo, botId: botIdFilter } = req.query;
+
+    // ── Build filter ──────────────────────────────────────────
+    const filter = {};
+
+    // Role filter (user | assistant)
+    if (role && ['user', 'assistant'].includes(role)) {
+      filter.role = role;
+    }
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) {
+        const end = new Date(dateTo);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
+    // Bot filter (by botId)
+    if (botIdFilter) {
+      filter.botId = botIdFilter;
+    }
+
+    // Text search: search by message content
+    // Username/bot-name search is done via post-populate filter below
+    if (search) {
+      const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.content = re;
+    }
+
+    const [total, chats] = await Promise.all([
+      Chat.countDocuments(filter),
+      Chat.find(filter)
+        .populate('userId', 'username')
+        .populate('botId', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+    ]);
+
+    // Secondary filter: if search also matches username or bot name, include those
+    // (already covered by content regex above; username/bot search needs aggregation
+    //  but for simplicity we do a second pass when search is present)
+    let result = chats;
+    if (search) {
+      const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      // Also fetch rows where username or bot name matches (without content filter)
+      const { botId: _b, content: _c, ...filterWithoutContent } = filter;
+      const extraChats = await Chat.find(filterWithoutContent)
+        .populate('userId', 'username')
+        .populate('botId', 'name')
+        .sort({ createdAt: -1 })
+        .limit(200); // reasonable cap for secondary pass
+      const extras = extraChats.filter(c =>
+        re.test(c.userId?.username || '') || re.test(c.botId?.name || '')
+      );
+      // Merge, deduplicate by _id
+      const seen = new Set(result.map(c => c._id.toString()));
+      extras.forEach(c => { if (!seen.has(c._id.toString())) result.push(c); });
+      result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      result = result.slice(0, limit);
+    }
+
+    res.json({ chats: result, totalPages: Math.ceil(total / limit), currentPage: page, totalLogs: total });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
