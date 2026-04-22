@@ -602,20 +602,22 @@ const Chat = ({ user, handleLogout }) => {
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-primary-dark hover:bg-gray-100 transition-colors mb-0.5">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                 </button>
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={e => {
-                    setInput(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
-                  }}
-                  onKeyDown={handleKeyDown}
-                  placeholder={selectedBot ? `Message ${selectedBot.name}…` : 'Select an assistant first…'}
-                  disabled={!selectedBot || loading}
-                  rows={1}
-                  className="flex-1 bg-transparent text-gray-800 text-sm py-1 resize-none overflow-hidden focus:outline-none placeholder-gray-400"
-                />
+                <div className="flex-1 max-h-52 overflow-y-auto">
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={e => {
+                      setInput(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 300)}px`;
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder={selectedBot ? `Message ${selectedBot.name}…` : 'Select an assistant first…'}
+                    disabled={!selectedBot || loading}
+                    rows={1}
+                    className="w-full bg-transparent text-gray-800 text-sm py-1 resize-none overflow-hidden focus:outline-none placeholder-gray-400"
+                  />
+                </div>
                 <button onClick={handleSubmit}
                   disabled={(!input.trim() && !selectedFile) || !selectedBot || loading}
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-primary-dark hover:bg-primary text-white rounded-xl shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95 mb-0.5">

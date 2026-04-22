@@ -62,17 +62,38 @@ ${code}
 <body>
 <div id="root"></div>
 <script type="text/babel">
-${code}
+ // CommonJS/UMD guards so "exports" references don't throw
+ window.exports = window.exports || {};
+ window.module = window.module || { exports: window.exports };
 
-// Mount the component
-const rootEl = document.getElementById('root');
-const root = ReactDOM.createRoot(rootEl);
-// Find exported component
-const exported = typeof App !== 'undefined' ? App 
-  : typeof default_1 !== 'undefined' ? default_1 
-  : null;
-if (exported) root.render(React.createElement(exported));
-else rootEl.innerHTML = '<p style="color:red;padding:16px">No default export found. Name your component "App" or add export default.</p>';
+ // User code
+ ${code}
+
+ // Mount the component
+ const rootEl = document.getElementById('root');
+ const root = ReactDOM.createRoot(rootEl);
+
+ // Resolve exported component
+ const exported = (() => {
+   try {
+     if (typeof exports !== 'undefined' && exports?.default) return exports.default;
+     if (typeof module !== 'undefined' && module?.exports?.default) return module.exports.default;
+     if (typeof module !== 'undefined' && module?.exports && module.exports !== window.exports) return module.exports;
+     if (typeof App !== 'undefined') return App;
+     if (typeof default_1 !== 'undefined') return default_1;
+     return null;
+   } catch (err) {
+     console.error('Failed to resolve export:', err);
+     return null;
+   }
+ })();
+
+ if (exported) {
+   if (React.isValidElement(exported)) root.render(exported);
+   else root.render(React.createElement(exported));
+ } else {
+   rootEl.innerHTML = '<p style="color:red;padding:16px">No default export found. Name your component "App" or add export default.</p>';
+ }
 </script>
 </body>
 </html>`;

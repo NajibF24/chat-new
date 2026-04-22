@@ -297,7 +297,11 @@ class AIProviderService {
     const openai = new OpenAI(clientConfig);
 
     // ── Route to Responses API when web search is enabled ─────
-    if (capabilities.webSearch) {
+    // ✅ FIX: Skip web search when image is attached — the Responses API does not support
+    // vision (image_url) input. Fall through to standard Chat Completions which handles
+    // both vision and text correctly.
+    const hasImageContent = Array.isArray(userContent) && userContent.some(b => b.type === 'image_url' || b.type === 'image');
+    if (capabilities.webSearch && !hasImageContent) {
       return this._callOpenAIWithWebSearch({ openai, model, maxTok, systemPrompt, messages, userContent });
     }
 

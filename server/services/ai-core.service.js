@@ -988,15 +988,43 @@ class AICoreService {
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
         return `\n\n[ISI FILE: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
-      } else if (ext === '.docx') {
+      } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
         return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = XLSX.readFile(physicalPath);
         const content  = workbook.SheetNames.map(n => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n');
         return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
-      } else {
+      } else if (ext === '.pptx' || ext === '.ppt') {
+        // ✅ FIX: Extract text from PPTX slides using JSZip (same as deepReadDocument)
+        // Previously fell through to utf8 read which returned corrupted binary content.
+        try {
+          const JSZip = (await import('jszip')).default;
+          const data  = fs.readFileSync(physicalPath);
+          const zip   = await JSZip.loadAsync(data);
+          const slides = Object.keys(zip.files)
+            .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+            .sort((a, b) => parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]));
+
+          const slideTexts = [];
+          for (const sf of slides) {
+            const xml     = await zip.files[sf].async('string');
+            const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
+            const text    = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').trim();
+            if (text) slideTexts.push(`[Slide ${slideTexts.length + 1}]\n${text}`);
+          }
+          const content = slideTexts.join('\n\n');
+          if (!content) return '';
+          return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+        } catch (e) {
+          console.warn(`[AICoreService] PPTX extraction failed for "${originalName}":`, e.message);
+          return '';
+        }
+      } else if (['.txt', '.md', '.csv'].includes(ext)) {
         return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
+      } else {
+        // Unknown binary format — skip rather than returning garbage
+        return '';
       }
     } catch { return ''; }
   }
@@ -1113,8 +1141,8 @@ class AICoreService {
       const isPdf     = attachedFile.mimetype === 'application/pdf' ||
                         (attachedFile.originalname || '').toLowerCase().endsWith('.pdf');
 
-      // ── Vision-capable providers: OpenAI, Anthropic, Google ──
-      const visionProviders = new Set(['openai', 'anthropic', 'google']);
+      // ── Vision-capable providers: OpenAI, Anthropic, Google, Custom (Azure OpenAI) ──
+      const visionProviders = new Set(['openai', 'anthropic', 'google', 'custom']);
       const supportsVision  = visionProviders.has(provider);
 
       if (isImage && supportsVision) {
@@ -1141,7 +1169,7 @@ class AICoreService {
               source: { type: 'base64', media_type: mime, data: b64 },
             });
           } else {
-            // OpenAI and Google (Gemini) use image_url with data URI
+            // OpenAI, Google (Gemini), and Custom (Azure OpenAI) use image_url with data URI
             userContent.push({
               type:      'image_url',
               image_url: { url: `data:${mime};base64,${b64}` },
@@ -1167,6 +1195,31 @@ class AICoreService {
         const text = await this.extractFileContent(attachedFile);
         if (text) userContent.push({ type: 'text', text });
       }
+    }
+
+    // ── Ensure a vision-capable model is used when an image is attached ──
+    const hasImageAttachment = userContent.some(c => c?.type === 'image' || c?.type === 'image_url');
+    // ✅ FIX: Do NOT fall back to { provider: 'openai' } — use whatever the bot actually has.
+    // Falling back to 'openai' when the bot uses 'custom' (Azure) or another provider
+    // causes a "API Key not found for openai" error even though the bot has a valid key.
+    const providerConfig = { ...(bot.aiProvider || {}) };
+    if (!providerConfig.provider) {
+      // Only set openai as default if bot truly has no provider configured at all
+      providerConfig.provider = 'openai';
+      providerConfig.model    = providerConfig.model || 'gpt-4o-mini';
+    }
+    if (hasImageAttachment) {
+      const p = providerConfig.provider || 'openai';
+      const m = (providerConfig.model || '').toLowerCase();
+      const isOpenAIVision    = /gpt-4o|gpt-4-vision|gpt-4-turbo-vision|gpt-4\.1|gpt-5/.test(m);
+      const isAnthropicVision = /claude-3|sonnet|haiku|opus/.test(m);
+      const isGoogleVision    = /gemini|1\.5|vision/.test(m);
+      // For custom (Azure OpenAI): trust the configured model — Azure vision models
+      // are deployment-specific and the admin sets the correct model name.
+      if (p === 'openai' && !isOpenAIVision) providerConfig.model = 'gpt-4o-mini';
+      if (p === 'anthropic' && !isAnthropicVision) providerConfig.model = 'claude-3-haiku-20240307';
+      if (p === 'google' && !isGoogleVision) providerConfig.model = 'gemini-1.5-flash';
+      // 'custom' provider: keep the configured model as-is (admin knows their deployment)
     }
 
     const today = new Date().toLocaleDateString('en-US', {
@@ -1203,7 +1256,7 @@ class AICoreService {
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
     const result = await AIProviderService.generateCompletion({
-      providerConfig:  bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      providerConfig,
       systemPrompt,
       messages:        messagesForAI,
       userContent:     userContent.length === 1 && userContent[0].type === 'text'
