@@ -1047,15 +1047,44 @@ class AICoreService {
 
     if (bot.smartsheetConfig?.enabled && this.isDataQuery(message)) {
       try {
-        const apiKey  = bot.smartsheetConfig.apiKey || process.env.SMARTSHEET_API_KEY;
-        const sheetId = bot.smartsheetConfig.sheetId || bot.smartsheetConfig.primarySheetId || process.env.SMARTSHEET_PRIMARY_SHEET_ID;
-        if (apiKey && sheetId) {
+        const apiKey = bot.smartsheetConfig.apiKey || process.env.SMARTSHEET_API_KEY;
+
+        // ✅ Build the full list of sheet IDs to query:
+        //    1. New multi-sheet array (sheetIds)
+        //    2. Legacy single sheetId / primarySheetId fields
+        //    3. Environment variable fallback
+        const sheetIdsFromConfig = [
+          ...(bot.smartsheetConfig.sheetIds || []),
+          bot.smartsheetConfig.sheetId        || '',
+          bot.smartsheetConfig.primarySheetId || '',
+          process.env.SMARTSHEET_PRIMARY_SHEET_ID || '',
+        ].map(id => String(id || '').trim()).filter(Boolean);
+
+        // Deduplicate
+        const uniqueSheetIds = [...new Set(sheetIdsFromConfig)];
+
+        if (apiKey && uniqueSheetIds.length > 0) {
           const smartsheet = new SmartsheetLiveService(apiKey);
-          const sheet      = await smartsheet.fetchSheet(sheetId);
-          const flatRows   = smartsheet.processToFlatRows(sheet);
-          if (flatRows.length > 0) {
-            contextData += `\n\n${smartsheet.buildAIContext(flatRows, message, sheet.name)}\n`;
+
+          if (uniqueSheetIds.length === 1) {
+            // Single sheet — original fast path
+            const sheet    = await smartsheet.fetchSheet(uniqueSheetIds[0]);
+            const flatRows = smartsheet.processToFlatRows(sheet);
+            if (flatRows.length > 0) {
+              contextData += `\n\n${smartsheet.buildAIContext(flatRows, message, sheet.name)}\n`;
+            }
+          } else {
+            // ✅ Multi-sheet — fetch all and search across all sheets
+            console.log(`📊 [AICoreService] Multi-sheet Smartsheet query: ${uniqueSheetIds.length} sheets`);
+            const multiContext = await smartsheet.buildMultiSheetContext(uniqueSheetIds, message);
+            if (multiContext) {
+              contextData += `\n\n${multiContext}\n`;
+            }
           }
+        } else if (!apiKey) {
+          console.warn('[AICoreService] Smartsheet enabled but no API key configured');
+        } else {
+          console.warn('[AICoreService] Smartsheet enabled but no sheet IDs configured');
         }
       } catch (e) {
         console.error('Smartsheet Error:', e.message);

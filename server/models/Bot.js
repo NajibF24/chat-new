@@ -160,8 +160,10 @@ const botSchema = new mongoose.Schema({
   smartsheetConfig:  {
     enabled:        { type: Boolean, default: false },
     apiKey:         { type: String, default: '' },
-    sheetId:        { type: String, default: '' },
-    primarySheetId: { type: String, default: '' },
+    sheetId:        { type: String, default: '' },       // legacy single sheet (kept for compat)
+    primarySheetId: { type: String, default: '' },       // legacy alias
+    sheetIds:       { type: [String], default: [] },     // ✅ NEW: multiple sheet IDs
+    sheetLabels:    { type: [String], default: [] },     // ✅ NEW: optional labels per sheet
   },
   kouventaConfig: {
     enabled:  { type: Boolean, default: false },
