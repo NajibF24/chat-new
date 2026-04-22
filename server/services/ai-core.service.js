@@ -1169,6 +1169,20 @@ class AICoreService {
       }
     }
 
+    // ── Ensure a vision-capable model is used when an image is attached ──
+    const hasImageAttachment = userContent.some(c => c?.type === 'image' || c?.type === 'image_url');
+    const providerConfig = { ...(bot.aiProvider || { provider: 'openai', model: 'gpt-4o-mini' }) };
+    if (hasImageAttachment) {
+      const p = providerConfig.provider || 'openai';
+      const m = (providerConfig.model || '').toLowerCase();
+      const isOpenAIVision = /gpt-4o|gpt-4-vision|gpt-4-turbo-vision/.test(m);
+      const isAnthropicVision = /claude-3|sonnet|haiku|opus/.test(m);
+      const isGoogleVision = /gemini|1\.5|vision/.test(m);
+      if (p === 'openai' && !isOpenAIVision) providerConfig.model = 'gpt-4o-mini';
+      if (p === 'anthropic' && !isAnthropicVision) providerConfig.model = 'claude-3-haiku-20240307';
+      if (p === 'google' && !isGoogleVision) providerConfig.model = 'gemini-1.5-flash';
+    }
+
     const today = new Date().toLocaleDateString('en-US', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
@@ -1203,7 +1217,7 @@ class AICoreService {
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
     const result = await AIProviderService.generateCompletion({
-      providerConfig:  bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      providerConfig,
       systemPrompt,
       messages:        messagesForAI,
       userContent:     userContent.length === 1 && userContent[0].type === 'text'
