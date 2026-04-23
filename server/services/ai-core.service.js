@@ -982,6 +982,11 @@ class AICoreService {
       'overdue','delay','terlambat','laporan','report','health','red',
       'merah','kritis','critical','budget','biaya','cost','anggaran',
       'statistik','stats','count','jumlah','pm','manager','department',
+      // ✅ FIX: date/deadline query keywords
+      'due','deadline','jatuh tempo','this month','bulan ini','next month',
+      'bulan depan','this week','minggu ini','this year','tahun ini',
+      'what project','which project','apa project','proyek apa','proyek mana',
+      'schedule','jadwal','upcoming','akan datang','soon','segera',
     ];
     return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
