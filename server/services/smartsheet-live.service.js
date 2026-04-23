@@ -38,6 +38,15 @@ const COLUMN_ALIASES = {
   fileName:     ['File Name', 'FileName', 'Document Name', 'Doc Name', 'Nama File'],
   activityTime: ['Activity Time', 'ActivityTime', 'Timestamp', 'Time', 'Date Time', 'DateTime'],
   docLink:      ['Documents Link', 'Document Link', 'Link of the document', 'Link', 'URL', 'Doc Link'],
+  // ── Extended Doc Tracking columns (Documentation Tracking sheet) ──
+  refId:          ['Ref ID', 'RefID', 'Reference ID', 'Ref'],
+  documentTitle:  ['Document Title', 'Title', 'Doc Title'],
+  workstream:     ['Workstream', 'Work Stream', 'WorkStream', 'Stream'],
+  category:       ['Category', 'Kategori', 'Cat'],
+  folderLocation: ['Folder Location', 'FolderLocation', 'Folder Path', 'Path'],
+  folder:         ['Folder'],
+  email:          ['Email', 'Email Address', 'User Email'],
+  originFolder:   ['Origin Folder Location', 'Origin Folder', 'Source Folder'],
 };
 
 class SmartsheetLiveService {
@@ -190,6 +199,15 @@ class SmartsheetLiveService {
       fileName:     has('fileName'),
       activityTime: has('activityTime'),
       docLink:      has('docLink'),
+      // Extended doc tracking
+      refId:          has('refId'),
+      documentTitle:  has('documentTitle'),
+      workstream:     has('workstream'),
+      category:       has('category'),
+      folderLocation: has('folderLocation'),
+      folder:         has('folder'),
+      email:          has('email'),
+      originFolder:   has('originFolder'),
       budgetCols:   allKeys.filter(k => k.toLowerCase().includes('budget') || k.toLowerCase().includes('afe') || k.toLowerCase().includes('cost')),
       allColumns:   allKeys,
     };
@@ -220,7 +238,12 @@ class SmartsheetLiveService {
 
     const hasProjectCols = cols.status || cols.progress || cols.targetEnd || cols.health;
 
-    const isDocSheet = hasActivityCols && !hasProjectCols;
+    // ✅ FIX: Also detect Documentation Tracking sheet which has Workstream/Category/Document Title
+    // but no project-management columns
+    const hasDocTrackingCols = (cols.workstream || cols.documentTitle || cols.refId || cols.category)
+      && !hasProjectCols;
+
+    const isDocSheet = (hasActivityCols && !hasProjectCols) || hasDocTrackingCols;
 
     if (isDocSheet) {
       return this.buildDocContext(flatRows, msg, today, context, cols);
@@ -380,8 +403,14 @@ class SmartsheetLiveService {
       context += `--- PROYEK ACTIVE (${categorized.active.length}) ---\n`;
       context += this.rowsToTable(categorized.active, today, cols, false);
     } else if (/budget|biaya|cost|anggaran/i.test(msg)) {
-      context += `--- DATA BUDGET PROYEK ---\n`;
-      context += this.rowsToTableWithBudget(flatRows, cols);
+      const groupByDept = /group.*department|department.*group|per.?dept|by.?dept|per.?department|by.?department|kelompok.*departemen|departemen.*kelompok/i.test(msg);
+      if (groupByDept && cols.department) {
+        context += `--- BUDGET PER DEPARTMENT ---\n`;
+        context += this.rowsToTableBudgetByDepartment(flatRows, cols);
+      } else {
+        context += `--- DATA BUDGET PROYEK ---\n`;
+        context += this.rowsToTableWithBudget(flatRows, cols);
+      }
     } else if (/issue|masalah|kendala|risk|problem/i.test(msg)) {
       const withIssues = flatRows.filter(row => {
         const issue = this.resolveField(row, 'issues');
@@ -557,15 +586,82 @@ class SmartsheetLiveService {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // BUDGET GROUPED BY DEPARTMENT
+  // ─────────────────────────────────────────────────────────────
+  rowsToTableBudgetByDepartment(rows, cols) {
+    if (!rows.length) return 'Tidak ada data.\n\n';
+
+    const allCols    = cols.allColumns;
+    const budgetCols = allCols.filter(k => {
+      const lower = k.toLowerCase();
+      return (lower.includes('budget') || lower.includes('afe') || lower.includes('cost'))
+        && !lower.includes('migrated') && !lower.includes('before') && !lower.includes('num');
+    }).slice(0, 4);
+
+    const groups = {};
+    rows.forEach(row => {
+      const dept = this.truncate(this.resolveField(row, 'department') || 'Unknown', 30);
+      if (!groups[dept]) groups[dept] = [];
+      groups[dept].push(row);
+    });
+
+    const deptNames = Object.keys(groups).sort();
+    let result = '';
+
+    const summaryHeaders = ['Department', 'Total Projects', ...budgetCols];
+    result += `| ${summaryHeaders.join(' | ')} |\n`;
+    result += `| ${summaryHeaders.map((_, i) => i === 0 ? ':---' : '---:').join(' | ')} |\n`;
+
+    const grandTotals = Object.fromEntries(budgetCols.map(c => [c, 0]));
+    deptNames.forEach(dept => {
+      const deptRows = groups[dept];
+      const deptTotals = {};
+      budgetCols.forEach(col => {
+        const sum = deptRows.reduce((acc, row) => {
+          const val = parseFloat(row[col]);
+          return acc + (isNaN(val) ? 0 : val);
+        }, 0);
+        deptTotals[col] = sum;
+        grandTotals[col] += sum;
+      });
+      const values = [dept, String(deptRows.length), ...budgetCols.map(c => this.formatNumber(deptTotals[c]))];
+      result += `| ${values.join(' | ')} |\n`;
+    });
+
+    const grandValues = ['**TOTAL**', `**${rows.length}**`, ...budgetCols.map(c => `**${this.formatNumber(grandTotals[c])}**`)];
+    result += `| ${grandValues.join(' | ')} |\n\n`;
+
+    deptNames.forEach(dept => {
+      const deptRows = groups[dept];
+      result += `\n**${dept}** (${deptRows.length} proyek)\n`;
+      const headers = ['Project Name', 'PM', 'Status', ...budgetCols];
+      result += `| ${headers.join(' | ')} |\n`;
+      result += `| ${headers.map((_, i) => i >= 3 ? '---:' : ':---').join(' | ')} |\n`;
+      deptRows.forEach(row => {
+        const name   = this.truncate(this.resolveField(row, 'projectName') || '-', 35);
+        const pm     = this.truncate(this.resolveField(row, 'pm') || '-', 20);
+        const status = this.resolveField(row, 'status') || '-';
+        const vals   = budgetCols.map(col => {
+          const val = parseFloat(row[col]);
+          return isNaN(val) ? '-' : this.formatNumber(val);
+        });
+        result += `| ${[name, pm, status, ...vals].join(' | ')} |\n`;
+      });
+    });
+
+    return result + '\n';
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // CONTEXT: DOCUMENTATION TRACKING SHEET
-  // ── FIXED: Tampilkan 6 kolom yang diminta:
-  //    File Date | File Name | Activity | User | Activity Time | Document Link
+  // ── Supports both old (6-col) and new Documentation Tracking
+  //    schema with: Ref ID, Document Title, Workstream, Category,
+  //    Folder Location, Folder, Email, Origin Folder Location
   // ─────────────────────────────────────────────────────────────
   buildDocContext(flatRows, msg, today, context, cols) {
     // ── Normalize baris: pastikan semua alias activityTime terbaca dengan key standar
     const normalizedRows = flatRows.map(row => {
       const norm = { ...row };
-      // Normalize 'Activity Time' (spasi) → juga bisa diakses via resolveField('activityTime')
       if (!norm['ActivityTime'] && norm['Activity Time']) {
         norm['ActivityTime'] = norm['Activity Time'];
       }
@@ -601,6 +697,48 @@ class SmartsheetLiveService {
       });
     }
 
+    // ── Filter berdasarkan Workstream (kolom baru)
+    if (cols.workstream) {
+      const wsPatterns = [
+        /workstream[:\s]+([a-z0-9_\-\s]+)/i,
+        /(?:dari|at|in|di|untuk|folder)\s+([A-Z]{2,10})\b/,
+      ];
+      let wsFilter = null;
+      for (const p of wsPatterns) {
+        const m = msg.match(p);
+        if (m) { wsFilter = m[1].trim(); break; }
+      }
+      // Juga cek kata-kata pendek yang kemungkinan besar adalah kode workstream (misal: RHF, GEN, BDM, TRM)
+      const wsKeywords = msg.match(/\b([A-Z]{2,6})\b/g) || [];
+      const knownWorkstreams = [...new Set(normalizedRows
+        .map(r => this.resolveField(r, 'workstream'))
+        .filter(Boolean)
+        .map(w => String(w).toUpperCase())
+      )];
+      for (const kw of wsKeywords) {
+        if (knownWorkstreams.includes(kw)) { wsFilter = kw; break; }
+      }
+      if (wsFilter) {
+        const ws = wsFilter.toUpperCase();
+        filtered = filtered.filter(r => {
+          const rowWs = String(this.resolveField(r, 'workstream') || '').toUpperCase();
+          return rowWs.includes(ws);
+        });
+      }
+    }
+
+    // ── Filter berdasarkan Category (kolom baru: GEN, RHF, BDM, TRM, dll.)
+    if (cols.category) {
+      const catMatch = msg.match(/category[:\s]+([a-z0-9\s]+)/i);
+      if (catMatch) {
+        const cat = catMatch[1].trim().toUpperCase();
+        filtered = filtered.filter(r => {
+          const rowCat = String(this.resolveField(r, 'category') || '').toUpperCase();
+          return rowCat.includes(cat);
+        });
+      }
+    }
+
     // ── Filter berdasarkan nama user (jika disebut di pesan)
     const userMatch = msg.match(/(?:dari|by|oleh|user)\s+([a-z]+(?:\s+[a-z]+)?)/i);
     if (userMatch) {
@@ -608,6 +746,16 @@ class SmartsheetLiveService {
       filtered = filtered.filter(r => {
         const user = String(this.resolveField(r, 'user') || '').toLowerCase();
         return user.includes(searchName);
+      });
+    }
+
+    // ── Filter berdasarkan Document Title / File Name keyword
+    const docKeyMatch = msg.match(/(?:dokumen|document|file|titled?|nama)\s+"?([^"]+)"?/i);
+    if (docKeyMatch) {
+      const kw = docKeyMatch[1].toLowerCase().trim();
+      filtered = filtered.filter(r => {
+        const title = String(this.resolveField(r, 'documentTitle') || this.resolveField(r, 'fileName') || '').toLowerCase();
+        return title.includes(kw);
       });
     }
 
@@ -621,15 +769,31 @@ class SmartsheetLiveService {
     const limited   = filtered.slice(0, 50);
     const truncated = filtered.length > 50;
 
-    // ── Hitung statistik
+    // ── Hitung statistik aktivitas
     const addCount    = normalizedRows.filter(r => String(r['Activity'] || '').toLowerCase() === 'add').length;
     const editCount   = normalizedRows.filter(r => String(r['Activity'] || '').toLowerCase() === 'edit').length;
     const deleteCount = normalizedRows.filter(r => String(r['Activity'] || '').toLowerCase() === 'delete').length;
 
-    // ── Ringkasan
-    context += `--- RINGKASAN AKTIVITAS ---\n`;
-    context += `📥 Add: ${addCount} | ✏️ Edit: ${editCount} | 🗑️ Delete: ${deleteCount}\n`;
-    context += `👥 Total Records: ${normalizedRows.length}\n\n`;
+    // ── Statistik per Workstream (jika kolom ada)
+    if (cols.workstream) {
+      const wsCounts = {};
+      normalizedRows.forEach(r => {
+        const ws = String(this.resolveField(r, 'workstream') || 'Unknown').toUpperCase();
+        wsCounts[ws] = (wsCounts[ws] || 0) + 1;
+      });
+      const wsSum = Object.entries(wsCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(' | ');
+      context += `--- RINGKASAN AKTIVITAS ---\n`;
+      context += `📥 Add: ${addCount} | ✏️ Edit: ${editCount} | 🗑️ Delete: ${deleteCount}\n`;
+      context += `👥 Total Records: ${normalizedRows.length}\n`;
+      context += `📂 Per Workstream: ${wsSum}\n\n`;
+    } else {
+      context += `--- RINGKASAN AKTIVITAS ---\n`;
+      context += `📥 Add: ${addCount} | ✏️ Edit: ${editCount} | 🗑️ Delete: ${deleteCount}\n`;
+      context += `👥 Total Records: ${normalizedRows.length}\n\n`;
+    }
 
     if (limited.length === 0) {
       context += `Tidak ada data yang cocok dengan filter.\n`;
@@ -638,41 +802,57 @@ class SmartsheetLiveService {
 
     context += `--- DOKUMEN (${limited.length}${truncated ? ` dari ${filtered.length}` : ''}) ---\n`;
 
-    // ── Tabel dengan 6 kolom yang diminta: File Date | File Name | Activity | User | Activity Time | Document Link
-    context += `| File Date | File Name | Activity | User | Activity Time | Document Link |\n`;
-    context += `| :--- | :--- | :---: | :--- | :--- | :--- |\n`;
+    // ── Deteksi apakah ini skema Documentation Tracking yang extended
+    const isExtendedSchema = cols.workstream || cols.documentTitle || cols.refId;
 
-    limited.forEach(row => {
-      // File Date — bisa kosong, fallback '-'
-      const fileDate    = this.formatDate(this.resolveField(row, 'fileDate')) || '-';
+    if (isExtendedSchema) {
+      // ── Tabel extended: Ref ID | Document Title | Workstream | Category | Activity | User | Activity Time | Document Link
+      context += `| Ref ID | Document Title | WS | Cat | Activity | User | Activity Time | Link |\n`;
+      context += `| :--- | :--- | :---: | :---: | :---: | :--- | :--- | :--- |\n`;
 
-      // File Name — truncate panjang
-      const fileNameRaw = this.resolveField(row, 'fileName') || '-';
-      const fileName    = this.truncate(String(fileNameRaw), 50);
+      limited.forEach(row => {
+        const refId    = this.truncate(String(this.resolveField(row, 'refId') || '-'), 15);
+        const docTitle = this.truncate(String(this.resolveField(row, 'documentTitle') || this.resolveField(row, 'fileName') || '-'), 45);
+        const ws       = String(this.resolveField(row, 'workstream') || '-').toUpperCase();
+        const cat      = String(this.resolveField(row, 'category') || '-');
+        const actRaw   = row['Activity'] || '-';
+        const actEmoji = actRaw.toLowerCase() === 'add'    ? '📥 Add'
+                       : actRaw.toLowerCase() === 'edit'   ? '✏️ Edit'
+                       : actRaw.toLowerCase() === 'delete' ? '🗑️ Del'
+                       : actRaw;
+        const user     = this.truncate(String(this.resolveField(row, 'user') || '-'), 25);
+        const actTime  = this.formatDateTime(this.resolveField(row, 'activityTime')) || '-';
+        const linkRaw  = this.resolveField(row, 'docLink');
+        const docLink  = linkRaw ? `[🔗](${linkRaw})` : '-';
 
-      // Activity — Add / Edit / Delete
-      const activityRaw = row['Activity'] || '-';
-      const actEmoji    = activityRaw.toLowerCase() === 'add'    ? '📥 Add'
-                        : activityRaw.toLowerCase() === 'edit'   ? '✏️ Edit'
-                        : activityRaw.toLowerCase() === 'delete' ? '🗑️ Delete'
-                        : activityRaw;
+        context += `| ${refId} | ${docTitle} | ${ws} | ${cat} | ${actEmoji} | ${user} | ${actTime} | ${docLink} |\n`;
+      });
+    } else {
+      // ── Tabel lama: File Date | File Name | Activity | User | Activity Time | Document Link
+      context += `| File Date | File Name | Activity | User | Activity Time | Document Link |\n`;
+      context += `| :--- | :--- | :---: | :--- | :--- | :--- |\n`;
 
-      // User — FIX: sebelumnya kosong karena alias tidak terdaftar
-      const user        = this.truncate(String(this.resolveField(row, 'user') || '-'), 30);
+      limited.forEach(row => {
+        const fileDate    = this.formatDate(this.resolveField(row, 'fileDate')) || '-';
+        const fileNameRaw = this.resolveField(row, 'fileName') || '-';
+        const fileName    = this.truncate(String(fileNameRaw), 50);
+        const activityRaw = row['Activity'] || '-';
+        const actEmoji    = activityRaw.toLowerCase() === 'add'    ? '📥 Add'
+                          : activityRaw.toLowerCase() === 'edit'   ? '✏️ Edit'
+                          : activityRaw.toLowerCase() === 'delete' ? '🗑️ Delete'
+                          : activityRaw;
+        const user        = this.truncate(String(this.resolveField(row, 'user') || '-'), 30);
+        const actTimeRaw  = this.resolveField(row, 'activityTime');
+        const actTime     = this.formatDateTime(actTimeRaw) || '-';
+        const linkRaw     = this.resolveField(row, 'docLink');
+        const docLink     = linkRaw ? `[🔗 Buka](${linkRaw})` : '-';
 
-      // Activity Time — format tanggal + jam
-      const actTimeRaw  = this.resolveField(row, 'activityTime');
-      const actTime     = this.formatDateTime(actTimeRaw) || '-';
-
-      // Document Link — buat markdown link jika ada
-      const linkRaw     = this.resolveField(row, 'docLink');
-      const docLink     = linkRaw ? `[🔗 Buka](${linkRaw})` : '-';
-
-      context += `| ${fileDate} | ${fileName} | ${actEmoji} | ${user} | ${actTime} | ${docLink} |\n`;
-    });
+        context += `| ${fileDate} | ${fileName} | ${actEmoji} | ${user} | ${actTime} | ${docLink} |\n`;
+      });
+    }
 
     if (truncated) {
-      context += `\n⚠️ Menampilkan 50 dari ${filtered.length} hasil. Gunakan filter lebih spesifik (contoh: "edit minggu ini", "add oleh Felix").\n`;
+      context += `\n⚠️ Menampilkan 50 dari ${filtered.length} hasil. Gunakan filter lebih spesifik (contoh: \"edit minggu ini\", \"add oleh Felix\", \"workstream RHF\").\n`;
     }
 
     return context;
