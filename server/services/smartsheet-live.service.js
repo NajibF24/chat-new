@@ -373,78 +373,6 @@ class SmartsheetLiveService {
     if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
       context += `--- PROYEK OVERDUE (${categorized.overdue.length}) ---\n`;
       context += this.rowsToTable(categorized.overdue, today, cols, true);
-
-    // ✅ FIX: Due date queries — "due this month", "due this week", "due next month", etc.
-    } else if (/due\s+this\s+month|bulan\s+ini|jatuh\s+tempo\s+bulan|deadline\s+bulan/i.test(msg)) {
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      const monthEnd   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      const dueThisMonth = flatRows.filter(row => {
-        const status = String(this.resolveField(row, 'status') || '').toLowerCase();
-        if (status === 'complete' || status === 'completed' || status === 'canceled' || status === 'cancelled') return false;
-        const end = this.parseDate(this.resolveField(row, 'targetEnd'));
-        return end && end >= monthStart && end <= monthEnd;
-      });
-      const monthLabel = today.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-      context += `--- PROYEK DUE BULAN INI (${monthLabel}) — ${dueThisMonth.length} proyek ---\n`;
-      if (dueThisMonth.length === 0) {
-        context += `Tidak ada proyek yang deadline-nya jatuh bulan ${monthLabel}.\n`;
-      } else {
-        context += this.rowsToTable(dueThisMonth, today, cols, false);
-      }
-
-    } else if (/due\s+this\s+week|minggu\s+ini|jatuh\s+tempo\s+minggu|deadline\s+minggu/i.test(msg)) {
-      const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
-      const weekEnd   = new Date(today); weekEnd.setDate(today.getDate() + (6 - today.getDay()));
-      const dueThisWeek = flatRows.filter(row => {
-        const status = String(this.resolveField(row, 'status') || '').toLowerCase();
-        if (status === 'complete' || status === 'completed' || status === 'canceled' || status === 'cancelled') return false;
-        const end = this.parseDate(this.resolveField(row, 'targetEnd'));
-        return end && end >= weekStart && end <= weekEnd;
-      });
-      context += `--- PROYEK DUE MINGGU INI — ${dueThisWeek.length} proyek ---\n`;
-      if (dueThisWeek.length === 0) {
-        context += `Tidak ada proyek yang deadline-nya minggu ini.\n`;
-      } else {
-        context += this.rowsToTable(dueThisWeek, today, cols, false);
-      }
-
-    } else if (/due\s+next\s+month|bulan\s+depan|jatuh\s+tempo\s+bulan\s+depan/i.test(msg)) {
-      const nmStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-      const nmEnd   = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-      const dueNext = flatRows.filter(row => {
-        const status = String(this.resolveField(row, 'status') || '').toLowerCase();
-        if (status === 'complete' || status === 'completed' || status === 'canceled' || status === 'cancelled') return false;
-        const end = this.parseDate(this.resolveField(row, 'targetEnd'));
-        return end && end >= nmStart && end <= nmEnd;
-      });
-      const nmLabel = nmStart.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-      context += `--- PROYEK DUE BULAN DEPAN (${nmLabel}) — ${dueNext.length} proyek ---\n`;
-      if (dueNext.length === 0) {
-        context += `Tidak ada proyek yang deadline-nya bulan ${nmLabel}.\n`;
-      } else {
-        context += this.rowsToTable(dueNext, today, cols, false);
-      }
-
-    } else if (/upcoming|soon|segera|akan\s+datang|next\s+30|30\s+hari/i.test(msg)) {
-      const soon = new Date(today); soon.setDate(today.getDate() + 30);
-      const upcoming = flatRows.filter(row => {
-        const status = String(this.resolveField(row, 'status') || '').toLowerCase();
-        if (status === 'complete' || status === 'completed' || status === 'canceled' || status === 'cancelled') return false;
-        const end = this.parseDate(this.resolveField(row, 'targetEnd'));
-        return end && end >= today && end <= soon;
-      });
-      upcoming.sort((a, b) => {
-        const da = this.parseDate(this.resolveField(a, 'targetEnd')) || new Date(9999, 0);
-        const db = this.parseDate(this.resolveField(b, 'targetEnd')) || new Date(9999, 0);
-        return da - db;
-      });
-      context += `--- PROYEK UPCOMING (30 HARI KE DEPAN) — ${upcoming.length} proyek ---\n`;
-      if (upcoming.length === 0) {
-        context += `Tidak ada proyek yang deadline-nya dalam 30 hari ke depan.\n`;
-      } else {
-        context += this.rowsToTable(upcoming, today, cols, false);
-      }
-
     } else if (/selesai|complete|done|finish/i.test(msg)) {
       context += `--- PROYEK COMPLETED (${categorized.completed.length}) ---\n`;
       context += this.rowsToTable(categorized.completed, today, cols, false);
@@ -452,8 +380,19 @@ class SmartsheetLiveService {
       context += `--- PROYEK ACTIVE (${categorized.active.length}) ---\n`;
       context += this.rowsToTable(categorized.active, today, cols, false);
     } else if (/budget|biaya|cost|anggaran/i.test(msg)) {
-      context += `--- DATA BUDGET PROYEK ---\n`;
-      context += this.rowsToTableWithBudget(flatRows, cols);
+      // ✅ FIX: Filter out header/label rows that got mixed into data
+      const budgetRows = flatRows.filter(row => {
+        const name = String(this.resolveField(row, 'projectName') || '');
+        return name && name !== 'Project Name' && name !== '-';
+      });
+      const groupByDept = /group.*dept|dept.*group|by\s+dept|per\s+dept|group.*department|department.*group|by\s+department|per\s+department/i.test(msg);
+      if (groupByDept) {
+        context += `--- BUDGET GROUPED BY DEPARTMENT ---\n`;
+        context += this.rowsToTableBudgetByDepartment(budgetRows, cols);
+      } else {
+        context += `--- PROJECT BUDGET DATA ---\n`;
+        context += this.rowsToTableWithBudget(budgetRows, cols);
+      }
     } else if (/issue|masalah|kendala|risk|problem/i.test(msg)) {
       const withIssues = flatRows.filter(row => {
         const issue = this.resolveField(row, 'issues');
@@ -599,33 +538,147 @@ class SmartsheetLiveService {
   // BUDGET TABLE
   // ─────────────────────────────────────────────────────────────
   rowsToTableWithBudget(rows, cols) {
-    if (!rows.length) return 'Tidak ada data.\n\n';
+    if (!rows.length) return 'No data.\n\n';
 
-    const allCols   = cols.allColumns;
-    const budgetCols = allCols.filter(k => {
+    const allCols = cols.allColumns;
+
+    // ✅ FIX: Prioritize "Total" columns first (Budget Plan Total, Budget Actual Total, etc.)
+    const totalCols = allCols.filter(k => {
       const lower = k.toLowerCase();
-      return (lower.includes('budget') || lower.includes('afe') || lower.includes('cost'))
+      return lower.includes('budget') && lower.includes('total')
         && !lower.includes('migrated') && !lower.includes('before') && !lower.includes('num');
-    }).slice(0, 5);
+    });
+    const budgetCols = totalCols.length > 0
+      ? totalCols.slice(0, 4)
+      : allCols.filter(k => {
+          const lower = k.toLowerCase();
+          return (lower.includes('budget') || lower.includes('afe'))
+            && !lower.includes('migrated') && !lower.includes('before') && !lower.includes('num');
+        }).slice(0, 4);
 
-    const headers = ['Project Name', 'PM', 'Currency', ...budgetCols];
+    const headers = ['Project Name', 'PM', 'Dept', 'Currency', ...budgetCols];
     let table = `| ${headers.join(' | ')} |\n`;
-    table    += `| ${headers.map((_, i) => i < 2 ? ':---' : '---:').join(' | ')} |\n`;
+    table    += `| ${headers.map((_, i) => i < 3 ? ':---' : '---:').join(' | ')} |\n`;
 
     rows.forEach(row => {
       const name     = this.truncate(this.resolveField(row, 'projectName') || '-', 35);
       const pm       = this.truncate(this.resolveField(row, 'pm') || '-', 20);
-      const currency = row['Currency'] || 'IDR';
+      const dept     = this.truncate(this.resolveField(row, 'department') || '-', 25);
+      // ✅ FIX: Never hardcode 'IDR' — use actual Currency value from row
+      const currency = row['Currency'] && row['Currency'] !== 'Currency' ? row['Currency'] : '-';
 
       const budgetVals = budgetCols.map(col => {
-        const val = parseFloat(row[col]);
-        return isNaN(val) ? '-' : this.formatNumber(val);
+        const raw = row[col];
+        if (raw === null || raw === undefined || raw === '' || raw === col) return '-';
+        const val = parseFloat(String(raw).replace(/,/g, ''));
+        return isNaN(val) || val === 0 ? '-' : this.formatNumber(val);
       });
 
-      table += `| ${[name, pm, currency, ...budgetVals].join(' | ')} |\n`;
+      table += `| ${[name, pm, dept, currency, ...budgetVals].join(' | ')} |\n`;
     });
 
     return table + '\n';
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // BUDGET GROUPED BY DEPARTMENT
+  // ─────────────────────────────────────────────────────────────
+  rowsToTableBudgetByDepartment(rows, cols) {
+    if (!rows.length) return 'No data.\n\n';
+
+    const allCols = cols.allColumns;
+
+    // Prioritize "Total" columns (Budget Plan Total, Budget Actual Total, etc.)
+    const totalCols = allCols.filter(k => {
+      const lower = k.toLowerCase();
+      return lower.includes('budget') && lower.includes('total')
+        && !lower.includes('migrated') && !lower.includes('before') && !lower.includes('num');
+    });
+    const budgetCols = totalCols.length > 0
+      ? totalCols.slice(0, 3)
+      : allCols.filter(k => {
+          const lower = k.toLowerCase();
+          return lower.includes('budget') && !lower.includes('migrated')
+            && !lower.includes('before') && !lower.includes('num')
+            && !lower.includes('afe') && !lower.includes('(usd)');
+        }).slice(0, 3);
+
+    // Group rows by department — handle multi-dept rows (e.g. "HR\nGA")
+    const groups = {};
+    rows.forEach(row => {
+      const deptRaw = this.resolveField(row, 'department') || 'No Department';
+      const depts   = String(deptRaw).split('\n').map(d => d.trim()).filter(Boolean);
+      depts.forEach(dept => {
+        if (!groups[dept]) groups[dept] = [];
+        groups[dept].push(row);
+      });
+    });
+
+    const sorted = Object.keys(groups).filter(d => d !== 'No Department').sort();
+    if (groups['No Department']) sorted.push('No Department');
+
+    let result = '';
+
+    // Summary table
+    const summaryHeaders = ['Department', '# Projects', ...budgetCols];
+    result += `| ${summaryHeaders.join(' | ')} |\n`;
+    result += `| :--- | :---: | ${budgetCols.map(() => '---:').join(' | ')} |\n`;
+
+    const grand = {};
+    budgetCols.forEach(c => { grand[c] = { IDR: 0, USD: 0 }; });
+
+    sorted.forEach(dept => {
+      const deptRows = groups[dept];
+      const tots = {};
+      budgetCols.forEach(col => {
+        let idr = 0, usd = 0;
+        deptRows.forEach(row => {
+          const v = parseFloat(String(row[col] || '').replace(/,/g, ''));
+          if (!isNaN(v) && v !== 0) {
+            const cur = String(row['Currency'] || '').toUpperCase();
+            if (cur === 'USD') usd += v; else idr += v;
+          }
+        });
+        tots[col] = { idr, usd };
+        grand[col].IDR += idr;
+        grand[col].USD += usd;
+      });
+      const vals = budgetCols.map(col => {
+        const parts = [];
+        if (tots[col].idr > 0) parts.push(`IDR ${this.formatNumber(tots[col].idr)}`);
+        if (tots[col].usd > 0) parts.push(`USD ${this.formatNumber(tots[col].usd)}`);
+        return parts.length ? parts.join(' / ') : '-';
+      });
+      result += `| ${dept} | ${deptRows.length} | ${vals.join(' | ')} |\n`;
+    });
+
+    const grandVals = budgetCols.map(col => {
+      const parts = [];
+      if (grand[col].IDR > 0) parts.push(`IDR ${this.formatNumber(grand[col].IDR)}`);
+      if (grand[col].USD > 0) parts.push(`USD ${this.formatNumber(grand[col].USD)}`);
+      return parts.length ? `**${parts.join(' / ')}**` : '-';
+    });
+    result += `| **TOTAL** | **${rows.length}** | ${grandVals.join(' | ')} |\n\n`;
+
+    sorted.forEach(dept => {
+      const deptRows = groups[dept];
+      result += `\n**${dept}** (${deptRows.length} projects)\n`;
+      const hdr = ['Project Name', 'PM', 'Currency', ...budgetCols];
+      result += `| ${hdr.join(' | ')} |\n`;
+      result += `| :--- | :--- | :---: | ${budgetCols.map(() => '---:').join(' | ')} |\n`;
+      deptRows.forEach(row => {
+        const name = this.truncate(this.resolveField(row, 'projectName') || '-', 38);
+        const pm   = this.truncate(this.resolveField(row, 'pm') || '-', 20);
+        const cur  = row['Currency'] && row['Currency'] !== 'Currency' ? row['Currency'] : '-';
+        const vals = budgetCols.map(col => {
+          const v = parseFloat(String(row[col] || '').replace(/,/g, ''));
+          return isNaN(v) || v === 0 ? '-' : this.formatNumber(v);
+        });
+        result += `| ${[name, pm, cur, ...vals].join(' | ')} |\n`;
+      });
+    });
+
+    return result + '\n';
   }
 
   // ─────────────────────────────────────────────────────────────

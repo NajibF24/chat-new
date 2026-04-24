@@ -982,12 +982,10 @@ class AICoreService {
       'overdue','delay','terlambat','laporan','report','health','red',
       'merah','kritis','critical','budget','biaya','cost','anggaran',
       'statistik','stats','count','jumlah','pm','manager','department',
-      // ✅ FIX: grouping, deadline, and scheduling keywords
+      // ✅ FIX: grouping, deadline, scheduling keywords
       'group','grupkan','kelompok','by department','per department',
-      'due','deadline','jatuh tempo','this month','bulan ini',
-      'next month','bulan depan','this week','upcoming','akan datang',
-      'soon','segera','schedule','jadwal','what project','which project',
-      'apa project','proyek apa','proyek mana',
+      'due','deadline','jatuh tempo','this month','bulan ini','next month',
+      'bulan depan','upcoming','soon','segera','schedule','jadwal',
     ];
     return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
@@ -1153,9 +1151,7 @@ class AICoreService {
         }
       } catch (e) {
         console.error('Smartsheet Error:', e.message);
-        // ✅ FIX: Error message is language-neutral — AI will translate to user's language
-        // via the LANGUAGE RULE injected in systemPrompt above.
-        contextData += `\n\n=== SMARTSHEET DATA ERROR ===\n❌ Failed to load Smartsheet data: ${e.message}\nNote: Inform the user in their own language that data is temporarily unavailable.\n`;
+        contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
       }
     }
 
@@ -1278,17 +1274,22 @@ class AICoreService {
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
-      // ✅ FIX: Always match user's language — never hardcode Indonesian
-      `[LANGUAGE RULE: Always detect and match the user's language in EVERY response, including errors, warnings, and fallback messages. If the user writes in English → respond in English. Indonesian → Indonesian. Japanese → Japanese. Never default to any single language.]`,
+      // ✅ FIX: Language rule — always match the user's language, no exceptions
+      `[LANGUAGE RULE: Detect the language of the user's latest message and reply in that exact language. This applies to ALL responses including errors, warnings, table summaries, notes, and fallback messages. If the user writes in English → respond entirely in English. Indonesian → Indonesian. Japanese → Japanese. Never default to any single language.]`,
       contextData,
       groundingInstruction,
     ].filter(Boolean).join('\n\n');
 
-    // ✅ FIX: Untuk Smartsheet queries, kirim history = [] (kosong).
-    // History conversation bisa mengandung jawaban AI sebelumnya yang salah/terpotong
-    // (misal: data yang sudah di-hallusinasikan). Data fresh dari Smartsheet API
-    // harus jadi satu-satunya sumber kebenaran — bukan jawaban lama di history.
-    const isSmartsheetQuery = bot.smartsheetConfig?.enabled && contextData.includes('DATA SMARTSHEET');
+    // ✅ FIX: Broader Smartsheet detection — covers all context section headers,
+    // not just 'DATA SMARTSHEET' which won't appear for budget/group/doc queries.
+    const isSmartsheetQuery = bot.smartsheetConfig?.enabled && (
+      contextData.includes('DATA SMARTSHEET') ||
+      contextData.includes('BUDGET') ||
+      contextData.includes('PROYEK') ||
+      contextData.includes('PROJECT') ||
+      contextData.includes('DOKUMEN') ||
+      contextData.includes('DOCUMENTATION')
+    );
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
     const result = await AIProviderService.generateCompletion({
