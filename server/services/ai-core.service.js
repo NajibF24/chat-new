@@ -972,18 +972,51 @@ class AICoreService {
 
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
+
+    // ✅ PATCH v1.5.1 — Broader keyword list + natural-language pattern detection.
+    // ANY question that could refer to sheet data must return true.
     const keywords = [
+      // Action words
       'berikan','cari','list','daftar','semua','all','tampilkan','lihat',
-      'show','get','find','temukan','search','project','proyek','dokumen',
-      'document','file','tracking','status','progress','summary','analisa',
-      'data','total','berapa','latest','terbaru','recent','this week',
-      'minggu ini','today','hari ini','update','history','riwayat',
-      'modified','upload','added','deleted','edit','activity','siapa','who',
-      'overdue','delay','terlambat','laporan','report','health','red',
-      'merah','kritis','critical','budget','biaya','cost','anggaran',
-      'statistik','stats','count','jumlah','pm','manager','department',
+      'show','get','find','temukan','search','tell','give','display','fetch',
+      'check','view','see','ada','apa','mana','siapa','berapa',
+      // Entity words
+      'project','projects','proyek','dokumen','document','file','tracking','sheet','smartsheet',
+      // Status / health
+      'status','progress','summary','overview','dashboard','analisa','health',
+      'overdue','delay','terlambat','active','aktif','complete','selesai',
+      'done','finish','canceled','batal','laporan','report','red','merah',
+      'kritis','critical','at risk','on track',
+      // Data / metrics
+      'data','total','latest','terbaru','recent','update','statistik','stats',
+      'count','jumlah','number','banyak',
+      // Time-based
+      'today','hari ini','this week','minggu ini','this month','bulan ini',
+      'next month','bulan depan','upcoming','segera','schedule','jadwal',
+      'deadline','due','jatuh tempo','history','riwayat',
+      // Activity / tracking
+      'modified','upload','added','deleted','edit','activity','who',
+      // Budget / cost
+      'budget','biaya','cost','anggaran','afe','expenditure','spend',
+      // People / org
+      'pm','manager','department','dept','division','vendor','pic','team','tim',
+      // Grouping
+      'group','grupkan','kelompok','breakdown','ranking','rank',
+      // Question words (EN + ID) — any question is potentially a data query
+      'what','which','when','where','how many','how much',
+      'apa','mana','kapan','dimana','bagaimana','gimana',
     ];
-    return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
+
+    if (keywords.some(k => lowerMsg.includes(k))) return true;
+
+    // Special chars that indicate a structured query or project name
+    if (message.includes('_') || message.includes('.') || message.includes('-')) return true;
+
+    // Short messages (1-3 words) are likely direct project lookups or quick commands
+    const wordCount = lowerMsg.trim().split(/\s+/).length;
+    if (lowerMsg.trim().length >= 2 && wordCount <= 3) return true;
+
+    return false;
   }
 
   async extractFileContent(attachedFile) {
@@ -1147,7 +1180,7 @@ class AICoreService {
         }
       } catch (e) {
         console.error('Smartsheet Error:', e.message);
-        contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
+        contextData += `\n\n=== SMARTSHEET ERROR ===\n❌ Failed to load data: ${e.message}\nPlease inform the user in their language that Smartsheet data is temporarily unavailable.\n`;
       }
     }
 
@@ -1254,7 +1287,21 @@ class AICoreService {
 
     // ✅ FIX: Bedakan instruksi untuk Smartsheet vs non-Smartsheet
     // Untuk Smartsheet: tambahkan larangan eksplisit agar AI tidak menambah data dari memori/training.
-    const hasSmartsheetData = contextData.includes('DATA SMARTSHEET');
+    // ✅ v2.0: Extended detection — covers all Universal Filter Engine headers
+    const hasSmartsheetData = contextData.includes('DATA SMARTSHEET') ||
+      contextData.includes('STATUS SUMMARY') ||
+      contextData.includes('BUDGET') ||
+      contextData.includes('OVERDUE PROJECTS') ||
+      contextData.includes('ALL PROJECTS') ||
+      contextData.includes('PROJECT DETAIL') ||
+      contextData.includes('ACTIVITY SUMMARY') ||
+      contextData.includes('DOCUMENTATION') ||
+      contextData.includes('PROJECTS [Filter:') ||
+      contextData.includes('PROJECT BUDGET DATA') ||
+      contextData.includes('ACTIVE & OVERDUE') ||
+      contextData.includes('PROJECTS IN DEPARTMENT') ||
+      contextData.includes('Filter:');
+
     const groundingInstruction = hasSmartsheetData
       ? [
           'CRITICAL DATA INTEGRITY RULES:',
@@ -1262,23 +1309,70 @@ class AICoreService {
           '2. If a field (e.g. Issues, Remarks) appears incomplete or ends mid-sentence in the data above, copy it EXACTLY as-is. Do NOT continue or complete the sentence.',
           '3. Never fabricate project names, dates, progress percentages, issue descriptions, or any other values.',
           '4. If data for a specific project is not in the context above, say so — do not guess.',
+          '5. BUDGET TABLE RULE: If a budget table is provided above, reproduce it EXACTLY. Do NOT replace numeric values with N/A. Do NOT add columns (Variance, Status) that are not in the provided table. The value 0 means zero budget — display it as 0, not N/A.',
         ].join('\n')
       : contextData
         ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
         : '';
 
+    // ✅ PATCH v1.5.2 — Language enforcement & data confirmation
+    // Detect user language from their message — robust approach:
+    // Count English "signal" words vs Indonesian "signal" words.
+    // This avoids the brittle regex-on-full-string approach that failed
+    // for messages like "show me project Infrastructure and Cybersecurity"
+    // because the department name contains non-Latin chars in some locales.
+    const userMsg = (message || '').trim();
+
+    const EN_SIGNALS = [
+      'show','list','get','find','what','which','how','give','tell','display',
+      'check','all','my','the','are','is','do','can','have','project','projects',
+      'status','report','overview','summary','active','overdue','budget','issue',
+      'vendor','department','where','me','for','by','with','without','from','to',
+      'and','or','not','in','on','at','of','a','an',
+    ];
+    const ID_SIGNALS = [
+      'tampilkan','cari','lihat','semua','semua','daftar','berikan','apa','siapa',
+      'kapan','dimana','bagaimana','gimana','berapa','proyek','status','laporan',
+      'aktif','selesai','terlambat','anggaran','masalah','kendala','dari','untuk',
+      'dengan','tanpa','oleh','di','ke','dan','atau','tidak','bukan','yang','ini',
+      'itu','adalah','ada','tolong','mohon','bisa','boleh',
+    ];
+
+    const lowerUserMsg = userMsg.toLowerCase();
+    const enCount = EN_SIGNALS.filter(w => {
+      const re = new RegExp(`\\b${w}\\b`, 'i');
+      return re.test(lowerUserMsg);
+    }).length;
+    const idCount = ID_SIGNALS.filter(w => lowerUserMsg.includes(w)).length;
+
+    // If significantly more EN signals than ID signals, treat as English.
+    // Threshold: at least 1 EN signal AND more EN than ID (or tied).
+    const isEnglishMsg = enCount >= 1 && enCount >= idCount;
+
+    const langRule = isEnglishMsg
+      ? `[LANGUAGE: The user is writing in ENGLISH. You MUST respond entirely in English. Do NOT use Indonesian, Malay, or any other language. Every word of your response must be English — including table headers, notes, summaries, and error messages.]`
+      : `[BAHASA: Deteksi bahasa pesan terakhir user dan balas dengan bahasa yang SAMA PERSIS. Jika user nulis Bahasa Indonesia → balas Indonesia. Jika English → balas English. JANGAN campur bahasa.]`;
+
+    // ✅ Data confirmation block — injected when Smartsheet data is present
+    // Prevents AI from falsely claiming "data tidak tersedia" when data IS provided
+    const dataConfirmation = contextData
+      ? `[DATA CONFIRMATION: Smartsheet data has been successfully fetched and is provided above. The data IS available. You MUST use this data to answer the user's question. Do NOT say "data tidak tersedia" or "data is not available" — that would be incorrect. The data is present in this prompt.]`
+      : ``;
+
     const systemPrompt = [
+      // Language rule FIRST — before bot's own system prompt so it cannot be overridden
+      langRule,
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
       contextData,
+      dataConfirmation,
       groundingInstruction,
     ].filter(Boolean).join('\n\n');
 
-    // ✅ FIX: Untuk Smartsheet queries, kirim history = [] (kosong).
-    // History conversation bisa mengandung jawaban AI sebelumnya yang salah/terpotong
-    // (misal: data yang sudah di-hallusinasikan). Data fresh dari Smartsheet API
-    // harus jadi satu-satunya sumber kebenaran — bukan jawaban lama di history.
-    const isSmartsheetQuery = bot.smartsheetConfig?.enabled && contextData.includes('DATA SMARTSHEET');
+    // ✅ FIX: Broader Smartsheet detection — covers all context section headers,
+    // not just 'DATA SMARTSHEET' which won't appear for budget/group/doc queries.
+    // ✅ v2.0: Synced with hasSmartsheetData detection
+    const isSmartsheetQuery = bot.smartsheetConfig?.enabled && hasSmartsheetData;
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
     const result = await AIProviderService.generateCompletion({
