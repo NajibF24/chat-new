@@ -370,7 +370,29 @@ class SmartsheetLiveService {
     context += `🟢 Active    : ${categorized.active.length}\n`;
     context += `⛔ Canceled  : ${categorized.canceled.length}\n\n`;
 
-    if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
+    // ✅ PATCH v1.5.1 — "show project / list project / all project / project IT division"
+    // Any generic project-listing query that doesn't match a specific filter
+    // MUST return ALL projects (overdue + active + completed + canceled).
+    // This prevents the AI from saying "data tidak tersedia" when data IS available.
+    const isGenericProjectQuery = (
+      // "show project", "list project", "show me project", "my projects"
+      /^\s*(show|list|display|get|fetch|give|tell|check|view|see)\s+(me\s+)?(all\s+)?projects?\s*$/i.test(msg) ||
+      // "project" alone or with 1-2 words
+      /^\s*projects?\s*$/i.test(msg) ||
+      // "apa project saya / proyekku / proyek apa"
+      /^\s*(apa|mana|ada)\s+(project|proyek)/i.test(msg) ||
+      /\b(my\s+projects?|proyekku|proyek\s+saya)\b/i.test(msg) ||
+      // "show me all" without specific filter
+      (/\b(show|list|display|tampilkan|lihat)\b/i.test(msg) &&
+       /\b(all|semua)\b/i.test(msg) &&
+       !/overdue|terlambat|complete|selesai|active|aktif|budget|issue|masalah/i.test(msg))
+    );
+
+    if (isGenericProjectQuery) {
+      const allProjects = [...categorized.overdue, ...categorized.active, ...categorized.completed, ...categorized.canceled];
+      context += `--- ALL PROJECTS (${allProjects.length}) ---\n`;
+      context += this.rowsToTable(allProjects, today, cols, false);
+    } else if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
       context += `--- OVERDUE PROJECTS (${categorized.overdue.length}) ---\n`;
       context += this.rowsToTable(categorized.overdue, today, cols, true);
     } else if (/selesai|complete|done|finish/i.test(msg)) {
@@ -416,11 +438,27 @@ class SmartsheetLiveService {
         }
       }
     } else {
-      const relevant = [...categorized.overdue, ...categorized.active];
-      context += `--- ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
-      context += this.rowsToTable(relevant, today, cols, true);
-      if (categorized.completed.length > 0) {
-        context += `\n(${categorized.completed.length} completed projects not shown.)\n`;
+      // ✅ PATCH v1.5.1: Check for department/division filter in default branch
+      const deptMatch = msg.match(/\b(?:dept|department|division|divisi)\s+([a-z][a-z0-9\s]{1,30}?)(?:\s*$|\s+(?:project|proyek))/i) ||
+                        msg.match(/(?:project|proyek)\s+(?:di\s+)?(?:dept|department|division|divisi)?\s+([a-z][a-z0-9\s]{1,30}?)\s*$/i);
+      if (deptMatch && cols.department) {
+        const deptKeyword = deptMatch[1].trim().toLowerCase();
+        const filtered = [...categorized.overdue, ...categorized.active, ...categorized.completed].filter(row => {
+          const dept = String(this.resolveField(row, 'department') || '').toLowerCase();
+          return dept.includes(deptKeyword);
+        });
+        context += `--- PROJECTS IN "${deptKeyword.toUpperCase()}" (${filtered.length}) ---\n`;
+        context += filtered.length > 0
+          ? this.rowsToTable(filtered, today, cols, false)
+          : `No projects found matching department "${deptKeyword}".\n`;
+      } else {
+        // Default: show active + overdue (most relevant for a PM)
+        const relevant = [...categorized.overdue, ...categorized.active];
+        context += `--- ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
+        context += this.rowsToTable(relevant, today, cols, true);
+        if (categorized.completed.length > 0) {
+          context += `\n(${categorized.completed.length} completed projects not shown. Ask "show all projects" to see them.)\n`;
+        }
       }
     }
 

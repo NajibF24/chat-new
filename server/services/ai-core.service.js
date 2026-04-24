@@ -972,22 +972,51 @@ class AICoreService {
 
   isDataQuery(message) {
     const lowerMsg = (message || '').toLowerCase();
+
+    // ✅ PATCH v1.5.1 — Broader keyword list + natural-language pattern detection.
+    // ANY question that could refer to sheet data must return true.
     const keywords = [
+      // Action words
       'berikan','cari','list','daftar','semua','all','tampilkan','lihat',
-      'show','get','find','temukan','search','project','proyek','dokumen',
-      'document','file','tracking','status','progress','summary','analisa',
-      'data','total','berapa','latest','terbaru','recent','this week',
-      'minggu ini','today','hari ini','update','history','riwayat',
-      'modified','upload','added','deleted','edit','activity','siapa','who',
-      'overdue','delay','terlambat','laporan','report','health','red',
-      'merah','kritis','critical','budget','biaya','cost','anggaran',
-      'statistik','stats','count','jumlah','pm','manager','department',
-      // ✅ FIX: grouping, deadline, scheduling keywords
-      'group','grupkan','kelompok','by department','per department',
-      'due','deadline','jatuh tempo','this month','bulan ini','next month',
-      'bulan depan','upcoming','soon','segera','schedule','jadwal',
+      'show','get','find','temukan','search','tell','give','display','fetch',
+      'check','view','see','ada','apa','mana','siapa','berapa',
+      // Entity words
+      'project','projects','proyek','dokumen','document','file','tracking','sheet','smartsheet',
+      // Status / health
+      'status','progress','summary','overview','dashboard','analisa','health',
+      'overdue','delay','terlambat','active','aktif','complete','selesai',
+      'done','finish','canceled','batal','laporan','report','red','merah',
+      'kritis','critical','at risk','on track',
+      // Data / metrics
+      'data','total','latest','terbaru','recent','update','statistik','stats',
+      'count','jumlah','number','banyak',
+      // Time-based
+      'today','hari ini','this week','minggu ini','this month','bulan ini',
+      'next month','bulan depan','upcoming','segera','schedule','jadwal',
+      'deadline','due','jatuh tempo','history','riwayat',
+      // Activity / tracking
+      'modified','upload','added','deleted','edit','activity','who',
+      // Budget / cost
+      'budget','biaya','cost','anggaran','afe','expenditure','spend',
+      // People / org
+      'pm','manager','department','dept','division','vendor','pic','team','tim',
+      // Grouping
+      'group','grupkan','kelompok','breakdown','ranking','rank',
+      // Question words (EN + ID) — any question is potentially a data query
+      'what','which','when','where','how many','how much',
+      'apa','mana','kapan','dimana','bagaimana','gimana',
     ];
-    return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
+
+    if (keywords.some(k => lowerMsg.includes(k))) return true;
+
+    // Special chars that indicate a structured query or project name
+    if (message.includes('_') || message.includes('.') || message.includes('-')) return true;
+
+    // Short messages (1-3 words) are likely direct project lookups or quick commands
+    const wordCount = lowerMsg.trim().split(/\s+/).length;
+    if (lowerMsg.trim().length >= 2 && wordCount <= 3) return true;
+
+    return false;
   }
 
   async extractFileContent(attachedFile) {
@@ -1278,12 +1307,30 @@ class AICoreService {
         ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
         : '';
 
+    // ✅ PATCH v1.5.1 — Language enforcement & data confirmation
+    // Detect user language from their message
+    const userMsg = (message || '').trim();
+    const isEnglishMsg = /^[a-zA-Z0-9\s\p{P}]+$/u.test(userMsg) &&
+      !/[\u00C0-\u024F\u0080-\u009F]/.test(userMsg) &&
+      /\b(show|list|get|find|what|which|how|give|tell|display|check|all|my|the|are|is|do|can|have|project|projects|status|report|overview|summary|active|overdue|budget|issue|vendor|department)\b/i.test(userMsg);
+
+    const langRule = isEnglishMsg
+      ? `[LANGUAGE: The user is writing in ENGLISH. You MUST respond entirely in English. Do NOT use Indonesian, Malay, or any other language. Every word of your response must be English — including table headers, notes, summaries, and error messages.]`
+      : `[BAHASA: Deteksi bahasa pesan terakhir user dan balas dengan bahasa yang SAMA PERSIS. Jika user nulis Bahasa Indonesia → balas Indonesia. Jika English → balas English. JANGAN campur bahasa.]`;
+
+    // ✅ Data confirmation block — injected when Smartsheet data is present
+    // Prevents AI from falsely claiming "data tidak tersedia" when data IS provided
+    const dataConfirmation = contextData
+      ? `[DATA CONFIRMATION: Smartsheet data has been successfully fetched and is provided above. The data IS available. You MUST use this data to answer the user's question. Do NOT say "data tidak tersedia" or "data is not available" — that would be incorrect. The data is present in this prompt.]`
+      : ``;
+
     const systemPrompt = [
+      // Language rule FIRST — before bot's own system prompt so it cannot be overridden
+      langRule,
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
-      // ✅ FIX: Language rule — always match the user's language, no exceptions
-      `[LANGUAGE RULE: Detect the language of the user's latest message and reply in that exact language. This applies to ALL responses including errors, warnings, table summaries, notes, and fallback messages. If the user writes in English → respond entirely in English. Indonesian → Indonesian. Japanese → Japanese. Never default to any single language.]`,
       contextData,
+      dataConfirmation,
       groundingInstruction,
     ].filter(Boolean).join('\n\n');
 
