@@ -50,6 +50,8 @@ services:
       - MONGODB_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-admin123}@mongo:27017/internal-chat?authSource=admin&retryWrites=true&w=majority
       - SESSION_SECRET=${SESSION_SECRET:-change-this-in-production}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - SMARTSHEET_API_KEY=${SMARTSHEET_API_KEY}
       - SMARTSHEET_PRIMARY_SHEET_ID=${SMARTSHEET_PRIMARY_SHEET_ID:-7472905240661892}
       - LDAP_ENABLED=${LDAP_ENABLED:-false}

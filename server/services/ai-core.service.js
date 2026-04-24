@@ -1375,6 +1375,23 @@ class AICoreService {
     const isSmartsheetQuery = bot.smartsheetConfig?.enabled && hasSmartsheetData;
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
+    // ✅ FIX: Strip capabilities that are not supported by the current provider.
+    // This prevents stale DB data (e.g. webSearch=true saved when provider was openai,
+    // but provider has since been changed to anthropic/google) from routing to the wrong
+    // API path (e.g. _callOpenAIWithWebSearch when provider is now anthropic).
+    const PROVIDER_CAPABILITIES = {
+      openai:    ['webSearch', 'codeInterpreter', 'imageGeneration', 'canvas', 'fileSearch'],
+      anthropic: ['fileSearch'],
+      google:    [],
+      custom:    [],
+    };
+    const currentProvider = providerConfig.provider || 'openai';
+    const allowedCaps     = PROVIDER_CAPABILITIES[currentProvider] || [];
+    const rawCaps         = bot.capabilities || {};
+    const filteredCaps    = Object.fromEntries(
+      Object.entries(rawCaps).map(([k, v]) => [k, allowedCaps.includes(k) ? v : false])
+    );
+
     const result = await AIProviderService.generateCompletion({
       providerConfig,
       systemPrompt,
@@ -1382,9 +1399,9 @@ class AICoreService {
       userContent:     userContent.length === 1 && userContent[0].type === 'text'
         ? userContent[0].text
         : userContent,
-      // ✅ FIX: Pass bot capabilities so web search / code interpreter tools are actually enabled.
-      // Previously buildTools() was never given capabilities, so tools were never sent to OpenAI.
-      capabilities:    bot.capabilities || {},
+      // ✅ FIX: Pass filtered capabilities — only capabilities valid for the current provider.
+      // Prevents stale DB capabilities from routing to the wrong provider API path.
+      capabilities:    filteredCaps,
     });
 
     // ✅ FIX: Strip HTML tags from AI response for Smartsheet bots.
