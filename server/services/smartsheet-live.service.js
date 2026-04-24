@@ -247,6 +247,51 @@ class SmartsheetLiveService {
   // CONTEXT: PROJECT SHEET (dinamis)
   // ─────────────────────────────────────────────────────────────
   buildProjectContext(flatRows, msg, today, context, cols) {
+    // ✅ FIX v1.5.2: Department filter — detect queries like:
+    //   "show project Infrastructure and Cybersecurity"
+    //   "show me project where Department is Infrastructure and Cybersecurity"
+    //   "list projects from department GA"
+    // Extract the department search term and filter rows BEFORE anything else.
+    // This must run before singleMatch so that department-name tokens (e.g.
+    // "infrastructure", "cybersecurity") are not mistakenly matched against project names.
+    const deptQueryPatterns = [
+      /(?:department|dept|divisi|division)\s+(?:is\s+|=\s*|:\s*|dari\s+|from\s+|is\s*=\s*)?([a-zA-Z0-9 &()]+?)(?:\s*$|\s+and|\s+or|\s+project|\s+with)/i,
+      /project(?:s)?\s+(?:where|with|yang|dari)\s+(?:department|dept|divisi)\s+(?:is\s+|=\s*)?([a-zA-Z0-9 &()]+?)(?:\s*$)/i,
+    ];
+    let deptSearch = null;
+    for (const pat of deptQueryPatterns) {
+      const m = msg.match(pat);
+      if (m && m[1] && m[1].trim().length >= 2) {
+        deptSearch = m[1].trim();
+        break;
+      }
+    }
+    if (deptSearch) {
+      const deptLower = deptSearch.toLowerCase();
+      const deptFiltered = flatRows.filter(row => {
+        const dept = String(this.resolveField(row, 'department') || '').toLowerCase();
+        // Match if dept contains the search term or search term contains dept (partial name)
+        return dept.includes(deptLower) ||
+          deptLower.split('(')[0].trim().split('\n').some(part =>
+            dept.includes(part.trim())
+          );
+      });
+      context += `--- PROJECTS IN DEPARTMENT: ${deptSearch} (${deptFiltered.length} found) ---
+`;
+      if (deptFiltered.length === 0) {
+        context += `No projects found for department ${deptSearch}.
+
+`;
+        // Show available departments to help user
+        const allDepts = [...new Set(flatRows.map(r => String(this.resolveField(r, 'department') || '').trim()).filter(Boolean))];
+        context += `Available departments: ${allDepts.join(', ')}
+`;
+      } else {
+        context += this.rowsToTable(deptFiltered, today, cols, false);
+      }
+      return context;
+    }
+
     const categorized = this.categorizeRows(flatRows, today, cols);
 
     // ✅ FIX v1.3.0: Deteksi single-project query PERTAMA, sebelum branch lainnya.

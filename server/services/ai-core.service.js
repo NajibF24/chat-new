@@ -1307,12 +1307,39 @@ class AICoreService {
         ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
         : '';
 
-    // ✅ PATCH v1.5.1 — Language enforcement & data confirmation
-    // Detect user language from their message
+    // ✅ PATCH v1.5.2 — Language enforcement & data confirmation
+    // Detect user language from their message — robust approach:
+    // Count English "signal" words vs Indonesian "signal" words.
+    // This avoids the brittle regex-on-full-string approach that failed
+    // for messages like "show me project Infrastructure and Cybersecurity"
+    // because the department name contains non-Latin chars in some locales.
     const userMsg = (message || '').trim();
-    const isEnglishMsg = /^[a-zA-Z0-9\s\p{P}]+$/u.test(userMsg) &&
-      !/[\u00C0-\u024F\u0080-\u009F]/.test(userMsg) &&
-      /\b(show|list|get|find|what|which|how|give|tell|display|check|all|my|the|are|is|do|can|have|project|projects|status|report|overview|summary|active|overdue|budget|issue|vendor|department)\b/i.test(userMsg);
+
+    const EN_SIGNALS = [
+      'show','list','get','find','what','which','how','give','tell','display',
+      'check','all','my','the','are','is','do','can','have','project','projects',
+      'status','report','overview','summary','active','overdue','budget','issue',
+      'vendor','department','where','me','for','by','with','without','from','to',
+      'and','or','not','in','on','at','of','a','an',
+    ];
+    const ID_SIGNALS = [
+      'tampilkan','cari','lihat','semua','semua','daftar','berikan','apa','siapa',
+      'kapan','dimana','bagaimana','gimana','berapa','proyek','status','laporan',
+      'aktif','selesai','terlambat','anggaran','masalah','kendala','dari','untuk',
+      'dengan','tanpa','oleh','di','ke','dan','atau','tidak','bukan','yang','ini',
+      'itu','adalah','ada','tolong','mohon','bisa','boleh',
+    ];
+
+    const lowerUserMsg = userMsg.toLowerCase();
+    const enCount = EN_SIGNALS.filter(w => {
+      const re = new RegExp(`\\b${w}\\b`, 'i');
+      return re.test(lowerUserMsg);
+    }).length;
+    const idCount = ID_SIGNALS.filter(w => lowerUserMsg.includes(w)).length;
+
+    // If significantly more EN signals than ID signals, treat as English.
+    // Threshold: at least 1 EN signal AND more EN than ID (or tied).
+    const isEnglishMsg = enCount >= 1 && enCount >= idCount;
 
     const langRule = isEnglishMsg
       ? `[LANGUAGE: The user is writing in ENGLISH. You MUST respond entirely in English. Do NOT use Indonesian, Malay, or any other language. Every word of your response must be English — including table headers, notes, summaries, and error messages.]`
