@@ -1287,6 +1287,7 @@ class AICoreService {
 
     // ✅ FIX: Bedakan instruksi untuk Smartsheet vs non-Smartsheet
     // Untuk Smartsheet: tambahkan larangan eksplisit agar AI tidak menambah data dari memori/training.
+    // ✅ v2.0: Extended detection — covers all Universal Filter Engine headers
     const hasSmartsheetData = contextData.includes('DATA SMARTSHEET') ||
       contextData.includes('STATUS SUMMARY') ||
       contextData.includes('BUDGET') ||
@@ -1294,7 +1295,13 @@ class AICoreService {
       contextData.includes('ALL PROJECTS') ||
       contextData.includes('PROJECT DETAIL') ||
       contextData.includes('ACTIVITY SUMMARY') ||
-      contextData.includes('DOCUMENTATION');
+      contextData.includes('DOCUMENTATION') ||
+      contextData.includes('PROJECTS [Filter:') ||
+      contextData.includes('PROJECT BUDGET DATA') ||
+      contextData.includes('ACTIVE & OVERDUE') ||
+      contextData.includes('PROJECTS IN DEPARTMENT') ||
+      contextData.includes('Filter:');
+
     const groundingInstruction = hasSmartsheetData
       ? [
           'CRITICAL DATA INTEGRITY RULES:',
@@ -1302,6 +1309,7 @@ class AICoreService {
           '2. If a field (e.g. Issues, Remarks) appears incomplete or ends mid-sentence in the data above, copy it EXACTLY as-is. Do NOT continue or complete the sentence.',
           '3. Never fabricate project names, dates, progress percentages, issue descriptions, or any other values.',
           '4. If data for a specific project is not in the context above, say so — do not guess.',
+          '5. BUDGET TABLE RULE: If a budget table is provided above, reproduce it EXACTLY. Do NOT replace numeric values with N/A. Do NOT add columns (Variance, Status) that are not in the provided table. The value 0 means zero budget — display it as 0, not N/A.',
         ].join('\n')
       : contextData
         ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
@@ -1363,14 +1371,8 @@ class AICoreService {
 
     // ✅ FIX: Broader Smartsheet detection — covers all context section headers,
     // not just 'DATA SMARTSHEET' which won't appear for budget/group/doc queries.
-    const isSmartsheetQuery = bot.smartsheetConfig?.enabled && (
-      contextData.includes('DATA SMARTSHEET') ||
-      contextData.includes('BUDGET') ||
-      contextData.includes('PROYEK') ||
-      contextData.includes('PROJECT') ||
-      contextData.includes('DOKUMEN') ||
-      contextData.includes('DOCUMENTATION')
-    );
+    // ✅ v2.0: Synced with hasSmartsheetData detection
+    const isSmartsheetQuery = bot.smartsheetConfig?.enabled && hasSmartsheetData;
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
     const result = await AIProviderService.generateCompletion({

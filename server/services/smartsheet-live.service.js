@@ -247,274 +247,355 @@ class SmartsheetLiveService {
   // CONTEXT: PROJECT SHEET (dinamis)
   // ─────────────────────────────────────────────────────────────
   buildProjectContext(flatRows, msg, today, context, cols) {
-    // ✅ FIX v1.5.2: Department filter — detect queries like:
-    //   "show project Infrastructure and Cybersecurity"
-    //   "show me project where Department is Infrastructure and Cybersecurity"
-    //   "list projects from department GA"
-    // Extract the department search term and filter rows BEFORE anything else.
-    // This must run before singleMatch so that department-name tokens (e.g.
-    // "infrastructure", "cybersecurity") are not mistakenly matched against project names.
-    const deptQueryPatterns = [
-      /(?:department|dept|divisi|division)\s+(?:is\s+|=\s*|:\s*|dari\s+|from\s+|is\s*=\s*)?([a-zA-Z0-9 &()]+?)(?:\s*$|\s+and|\s+or|\s+project|\s+with)/i,
-      /project(?:s)?\s+(?:where|with|yang|dari)\s+(?:department|dept|divisi)\s+(?:is\s+|=\s*)?([a-zA-Z0-9 &()]+?)(?:\s*$)/i,
+    // ═══════════════════════════════════════════════════════════
+    // ✅ v2.0 — UNIVERSAL FILTER ENGINE
+    // Supports ANY combination of filters extracted from natural language:
+    //   • Department / Dept / Divisi
+    //   • PM / Project Manager / PIC
+    //   • Status (active, complete, overdue, canceled, not started, in progress)
+    //   • Schedule Health (red, yellow, green)
+    //   • Target End Date / deadline range (before/after/in month/year)
+    //   • Budget (show budget columns, filter has-budget, group by dept)
+    //   • Vendor
+    //   • Classification (strategic, operational, essential)
+    //   • Issues (projects with issues)
+    //   • Single project name (detail view)
+    //   • Free-text fallback (active+overdue default)
+    // Filters are applied in combination — e.g. "budget project by Rizal in dept IT"
+    // ═══════════════════════════════════════════════════════════
+
+    const allRows = flatRows.filter(row => {
+      const name = String(this.resolveField(row, 'projectName') || '');
+      return name && name !== 'Project Name' && name !== '-';
+    });
+
+    // ── STEP 1: Extract all active filters from message ──────────────────────
+
+    // 1a. Department filter
+    const deptPatterns = [
+      /(?:department|dept|divisi|division)\s+(?:is\s+|=\s*|:\s*|dari\s+|from\s+)?([a-zA-Z0-9 &()\/]+?)(?:\s*$|\s+(?:and|or|by|with|where|yang|project|status|pm|budget|vendor)\b)/i,
+      /(?:project[s]?\s+(?:where|with|yang|dari)\s+)?(?:department|dept|divisi)\s*[=:]\s*([a-zA-Z0-9 &()\/]+?)(?:\s*$|\s+(?:and|or|by|with)\b)/i,
     ];
-    let deptSearch = null;
-    for (const pat of deptQueryPatterns) {
+    let deptFilter = null;
+    for (const pat of deptPatterns) {
       const m = msg.match(pat);
       if (m && m[1] && m[1].trim().length >= 2) {
-        deptSearch = m[1].trim();
+        deptFilter = m[1].trim();
         break;
       }
     }
-    if (deptSearch) {
-      const deptLower = deptSearch.toLowerCase();
-      const deptFiltered = flatRows.filter(row => {
-        const dept = String(this.resolveField(row, 'department') || '').toLowerCase();
-        // Match if dept contains the search term or search term contains dept (partial name)
-        return dept.includes(deptLower) ||
-          deptLower.split('(')[0].trim().split('\n').some(part =>
-            dept.includes(part.trim())
-          );
-      });
-      context += `--- PROJECTS IN DEPARTMENT: ${deptSearch} (${deptFiltered.length} found) ---
-`;
-      if (deptFiltered.length === 0) {
-        context += `No projects found for department ${deptSearch}.
 
-`;
-        // Show available departments to help user
-        const allDepts = [...new Set(flatRows.map(r => String(this.resolveField(r, 'department') || '').trim()).filter(Boolean))];
-        context += `Available departments: ${allDepts.join(', ')}
-`;
-      } else {
-        context += this.rowsToTable(deptFiltered, today, cols, false);
+    // 1b. PM filter
+    const pmPatterns = [
+      /(?:pm|project\s*manager|pic|manager|handled\s*by|managed\s*by|by\s+pm|oleh\s+pm|oleh)\s+([A-Za-z][a-zA-Z\s\/&]+?)(?:\s*$|\s+(?:and|or|in|at|with|where|department|dept|status|budget)\b)/i,
+      /(?:project[s]?\s+(?:by|from|milik|managed\s*by))\s+([A-Za-z][a-zA-Z\s\/&]+?)(?:\s*$|\s+(?:and|or|in|at|with|where|department|dept|status|budget)\b)/i,
+    ];
+    let pmFilter = null;
+    for (const pat of pmPatterns) {
+      const m = msg.match(pat);
+      if (m && m[1] && m[1].trim().length >= 2) {
+        pmFilter = m[1].trim();
+        break;
       }
-      return context;
     }
 
-    const categorized = this.categorizeRows(flatRows, today, cols);
+    // 1c. Status filter (explicit keyword)
+    let statusFilter = null;
+    if (/\b(in[\s-]?progress|berjalan|aktif|active|on[\s-]?track)\b/i.test(msg)) statusFilter = 'active';
+    else if (/\b(complete[d]?|selesai|done|finish(?:ed)?)\b/i.test(msg)) statusFilter = 'complete';
+    else if (/\b(overdue|terlambat|delay(?:ed)?|melewati|lewat)\b/i.test(msg)) statusFilter = 'overdue';
+    else if (/\b(cancel(?:ed|led)?|dibatal(?:kan)?)\b/i.test(msg)) statusFilter = 'canceled';
+    else if (/\b(not[\s-]?started|belum\s*dimulai|belum\s*mulai)\b/i.test(msg)) statusFilter = 'not_started';
 
-    // ✅ FIX v1.3.0: Deteksi single-project query PERTAMA, sebelum branch lainnya.
-    // Query seperti "status project e-asset" atau "show me e-asset" harus langsung
-    // menampilkan detail satu project dengan Issues PENUH — tidak masuk rowsToTable.
-    const allRows   = [...categorized.completed, ...categorized.overdue, ...categorized.active, ...categorized.canceled];
-    // ✅ FIX v1.4.1: Extended stopWords — tambahkan query-type words agar tidak
-    // salah dicocokkan ke nama project (misal: "all" → "EV BYD Sealion" via "al").
-    const stopWords = new Set([
-      'give','show','status','project','proyek','please','what','the','and',
-      'for','dari','me','is','are','how','ada','apa','yang','dengan','ini',
-      'nya','saya','get','tell','find','tampilkan','cari','lihat','bagaimana',
-      'gimana','update','latest','terbaru','info','informasi','detail','about',
-      'tentang','mengenai','regarding','current','terkini','sekarang','progress',
-      // ✅ NEW: query-type words that must never be treated as project name tokens
-      'all','semua','overdue','delay','terlambat','active','aktif','complete',
-      'selesai','done','finish','dashboard','summary','overview','statistik',
-      'report','laporan','issue','masalah','kendala','risk','budget','biaya',
-      'cost','anggaran','health','red','merah','kritis','critical','today',
-      'hari','minggu','bulan','week','month','year','tahun','list','daftar',
-    ]);
-    const words       = msg.replace(/[^a-z0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 3);
-    const searchWords = words.filter(w => !stopWords.has(w.toLowerCase()));
+    // 1d. Health / RAG filter
+    let healthFilter = null;
+    if (/\b(red|merah|kritis|critical|at[\s-]?risk)\b/i.test(msg)) healthFilter = 'Red';
+    else if (/\b(yellow|kuning|warning|waspada)\b/i.test(msg)) healthFilter = 'Yellow';
+    else if (/\b(green|hijau|on[\s-]?track)\b/i.test(msg)) healthFilter = 'Green';
 
-    // ✅ FIX v1.4.1: normalizeStr — split hyphenated words BEFORE alias mapping
-    // so "e-aset" → ["e","aset"] → ["e","asset"] → "easset" (correct)
-    // instead of "e-aset" → "easet" → no alias match (wrong).
-    const idToEnMap = {
-      'aset': 'asset', 'sistem': 'system', 'jaringan': 'network',
-      'gudang': 'warehouse', 'keuangan': 'finance', 'pembelian': 'procurement',
-      'penjualan': 'sales', 'sdm': 'hr', 'kepegawaian': 'hr',
-    };
-    const normalizeStr = (s) => {
-      // Split on hyphens/spaces first, map each token through alias, then join
-      const tokens = String(s || '').toLowerCase()
-        .split(/[-\s]+/)
-        .map(t => t.replace(/[^a-z0-9]/g, ''))
-        .filter(Boolean)
-        .map(t => idToEnMap[t] || t);
-      return tokens.join('');
-    };
+    // 1e. Date filter — target end date
+    //   "due before March 2026", "ending in April", "deadline this month", "overdue since Jan"
+    let dateFilter = null;
+    const monthNames = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+      januari:0,februari:1,maret:2,april:3,mei:4,juni:5,juli:6,agustus:7,september:8,oktober:9,november:10,desember:11 };
+    const dateMatch = msg.match(/(?:before|sebelum|by|due|deadline|ending|berakhir|end)\s+(?:in\s+)?([a-z]+)\s*(\d{4})?/i)
+      || msg.match(/(?:in|pada|bulan)\s+([a-z]+)\s*(\d{4})?/i)
+      || msg.match(/(?:this\s+month|bulan\s+ini)/i);
+    if (dateMatch) {
+      if (/this\s+month|bulan\s+ini/i.test(msg)) {
+        dateFilter = { month: today.getMonth(), year: today.getFullYear(), type: 'month' };
+      } else {
+        const mName = (dateMatch[1] || '').toLowerCase().substring(0, 3);
+        const mIdx = monthNames[mName] ?? monthNames[Object.keys(monthNames).find(k => k.startsWith(mName))] ?? null;
+        const yr = dateMatch[2] ? parseInt(dateMatch[2]) : today.getFullYear();
+        if (mIdx !== null) {
+          const isBefore = /before|sebelum|by\s/i.test(msg);
+          const isAfter  = /after|setelah|since/i.test(msg);
+          dateFilter = { month: mIdx, year: yr, type: isBefore ? 'before' : isAfter ? 'after' : 'month' };
+        }
+      }
+    }
 
-    // Kata generik yang sering muncul di banyak nama project — bobot lebih rendah
-    const genericProjectWords = new Set([
-      'implementation','system','project','management','monitoring','improvement',
-      'development','integration','upgrade','migration','installation','deployment',
-      'aplikasi','sistem','proyek','manajemen','pengembangan','implementasi','new',
-    ]);
+    // 1f. Vendor filter
+    const vendorMatch = msg.match(/(?:vendor|contractor|kontraktor)\s+(?:is\s+|=\s*|:\s*|dari\s+|from\s+)?([A-Za-z][a-zA-Z0-9\s.&]+?)(?:\s*$|\s+(?:and|or|in|with|where|department|status|budget)\b)/i);
+    let vendorFilter = vendorMatch ? vendorMatch[1].trim() : null;
 
-    let singleMatch = null;
-    if (searchWords.length > 0) {
-      let bestScore = 0;
+    // 1g. Classification filter
+    let classFilter = null;
+    if (/\b(strategic|growth|strategis)\b/i.test(msg)) classFilter = 'strategic';
+    else if (/\b(operational|efficiency|operasional|efisiensi)\b/i.test(msg)) classFilter = 'operational';
+    else if (/\b(essential|compliance|esensial|kepatuhan)\b/i.test(msg)) classFilter = 'essential';
 
-      for (const row of allRows) {
-        const rawName   = String(this.resolveField(row, 'projectName') || '');
-        const normName  = normalizeStr(rawName);
-        // nameParts: each word of the project name, normalized individually
-        const nameParts = rawName.toLowerCase().replace(/-/g, ' ').split(/\s+/)
-          .filter(p => p.length >= 2)
-          .map(p => normalizeStr(p));
+    // 1h. Budget mode & issues mode
+    const isBudgetQuery  = /\b(budget|biaya|cost|anggaran|afe|expenditure|spend)\b/i.test(msg);
+    const isIssueQuery   = /\b(issue|masalah|kendala|risk|problem|blocker)\b/i.test(msg);
+    const isShowAll      = /\b(all|semua)\b/i.test(msg) && !deptFilter && !pmFilter && !statusFilter;
+    const isSummaryQuery = /\b(summary|overview|dashboard|statistik|rekap)\b/i.test(msg);
+    const groupByDept    = /group.*dept|dept.*group|by\s+dept|per\s+dept|per\s+department|by\s+department/i.test(msg);
 
-        let score = 0;
-        for (const w of searchWords) {
-          const normW = normalizeStr(w);
-          if (!normW || normW.length < 2) continue;
-          // Kata spesifik (tidak generik) diberi bobot 3, kata generik bobot 1
-          const weight = genericProjectWords.has(normW) ? 1 : 3;
-          // ✅ FIX v1.4.1: ONE-DIRECTIONAL match only.
-          // normName/namePart must CONTAIN the search word — NOT the reverse.
-          // Old: normW.includes(p) caused "ev" (from "EV BYD") to match inside "devsecops".
-          if (normName.includes(normW)) {
-            score += weight;
-          } else if (nameParts.some(p => p.includes(normW))) {
-            score += weight;
+    // ── STEP 2: Check for single-project name match ──────────────────────────
+    // Only run if no strong structural filters present
+    const hasStructuralFilter = deptFilter || pmFilter || statusFilter || healthFilter || dateFilter || vendorFilter || classFilter || isBudgetQuery || isIssueQuery || isShowAll || isSummaryQuery;
+
+    if (!hasStructuralFilter) {
+      const stopWords = new Set([
+        'give','show','status','project','proyek','please','what','the','and',
+        'for','dari','me','is','are','how','ada','apa','yang','dengan','ini',
+        'nya','saya','get','tell','find','tampilkan','cari','lihat','bagaimana',
+        'gimana','update','latest','terbaru','info','informasi','detail','about',
+        'tentang','mengenai','regarding','current','terkini','sekarang','progress',
+        'all','semua','overdue','delay','terlambat','active','aktif','complete',
+        'selesai','done','finish','dashboard','summary','overview','statistik',
+        'report','laporan','issue','masalah','kendala','risk','budget','biaya',
+        'cost','anggaran','health','red','merah','kritis','critical','today',
+        'hari','minggu','bulan','week','month','year','tahun','list','daftar',
+      ]);
+      const idToEnMap = { 'aset':'asset','sistem':'system','jaringan':'network','gudang':'warehouse','keuangan':'finance','pembelian':'procurement','penjualan':'sales','sdm':'hr','kepegawaian':'hr' };
+      const normalizeStr = (s) => String(s||'').toLowerCase().split(/[-\s]+/).map(t=>t.replace(/[^a-z0-9]/g,'')).filter(Boolean).map(t=>idToEnMap[t]||t).join('');
+      const genericWords = new Set(['implementation','system','project','management','monitoring','improvement','development','integration','upgrade','migration','installation','deployment','aplikasi','sistem','proyek','manajemen','pengembangan','implementasi','new']);
+      const words = msg.replace(/[^a-z0-9\s]/gi,' ').split(/\s+/).filter(w=>w.length>=3);
+      const searchWords = words.filter(w=>!stopWords.has(w.toLowerCase()));
+
+      let bestScore = 0, singleMatch = null;
+      if (searchWords.length > 0) {
+        for (const row of allRows) {
+          const rawName  = String(this.resolveField(row,'projectName')||'');
+          const normName = normalizeStr(rawName);
+          const nameParts = rawName.toLowerCase().replace(/-/g,' ').split(/\s+/).filter(p=>p.length>=2).map(p=>normalizeStr(p));
+          let score = 0;
+          for (const w of searchWords) {
+            const normW = normalizeStr(w);
+            if (!normW||normW.length<2) continue;
+            const weight = genericWords.has(normW)?1:3;
+            if (normName.includes(normW)||nameParts.some(p=>p.includes(normW))) score+=weight;
           }
+          if (score>bestScore){ bestScore=score; singleMatch=row; }
         }
-
-        if (score > bestScore) {
-          bestScore   = score;
-          singleMatch = row;
-        }
+        if (bestScore<2) singleMatch=null;
       }
 
-      // Threshold: minimal score 2 (1 kata spesifik, atau 2 kata generik)
-      // Tanpa threshold, kata tunggal generik seperti "system" bisa salah match
-      if (bestScore < 2) singleMatch = null;
+      if (singleMatch) {
+        const safeNum = (v) => { if(v===null||v===undefined||v==='')return null; const n=typeof v==='number'?v:parseFloat(String(v).replace(/[^0-9.-]/g,'')); return isNaN(n)?null:n; };
+        const issueRaw    = this.stripHtml(this.resolveField(singleMatch,'issues')||'-');
+        const projectName = this.resolveField(singleMatch,'projectName')||'-';
+        const pm          = this.resolveField(singleMatch,'pm')||'-';
+        const status      = this.resolveField(singleMatch,'status')||'-';
+        const progressRaw = parseFloat(this.resolveField(singleMatch,'progress')||0)||0;
+        const progressPct = progressRaw>1?Math.round(progressRaw):Math.round(progressRaw*100);
+        const health      = this.resolveField(singleMatch,'health')||'-';
+        const targetEnd   = this.formatDate(this.resolveField(singleMatch,'targetEnd'))||'-';
+        const dept        = this.resolveField(singleMatch,'department')||'-';
+        const vendor      = this.resolveField(singleMatch,'vendor')||'-';
+        const remarks     = this.stripHtml(this.resolveField(singleMatch,'remarks')||'-');
+        const healthEmoji = health==='Green'?'🟢':health==='Yellow'?'🟡':health==='Red'?'🔴':'⚪';
+        const daysOverdue = singleMatch._daysOverdue?`${singleMatch._daysOverdue} hari`:'-';
+        const lastModified = this.formatDate(this.resolveField(singleMatch,'lastModified'))||'-';
+        const daysSinceRaw = this.resolveField(singleMatch,'daysSinceUpdate');
+        const daysSinceNum = parseFloat(daysSinceRaw);
+        const daysSince    = !isNaN(daysSinceNum)?`${Math.round(daysSinceNum)} hari${daysSinceNum>30?' ⚠️':''}`:'-';
+        const currency     = singleMatch['Currency']||null;
+        const planNum      = safeNum(singleMatch['Budget Plan Total']);
+        const commitNum    = safeNum(singleMatch['Budget Commitment Total']);
+        const actualNum    = safeNum(singleMatch['Budget Actual Total']);
+        const cur          = currency||'IDR';
+        const hasBudget    = planNum!==null&&planNum>0||actualNum!==null&&actualNum>0;
+        const fmtMoney     = (n)=>n===null?'N/A':`${cur} ${this.formatNumber(n)}`;
+        const varianceNum  = (planNum!==null&&actualNum!==null)?planNum-actualNum:null;
+        const varianceFmt  = varianceNum===null?'N/A':`${cur} ${this.formatNumber(varianceNum)}${varianceNum<0?' 🔴 OVER BUDGET':' ✅'}`;
+        context+=`--- PROJECT DETAIL: ${projectName} ---\n`;
+        context+=`Project Name        : ${projectName}\n`;
+        context+=`PM                  : ${pm}\n`;
+        context+=`Department          : ${dept}\n`;
+        context+=`Status              : ${status}\n`;
+        context+=`Progress            : ${progressPct}%\n`;
+        context+=`Health              : ${healthEmoji} ${health}\n`;
+        context+=`Target End          : ${targetEnd}\n`;
+        context+=`Days Overdue        : ${daysOverdue}\n`;
+        context+=`Last Modified       : ${lastModified}\n`;
+        context+=`Days Since Update   : ${daysSince}\n`;
+        context+=`Vendor              : ${vendor}\n`;
+        if (hasBudget) {
+          context+=`\n--- BUDGET ---\n`;
+          context+=`Currency            : ${cur}\n`;
+          context+=`Budget Plan Total   : ${fmtMoney(planNum)}\n`;
+          context+=`Budget Commitment   : ${fmtMoney(commitNum)}\n`;
+          context+=`Budget Actual Total : ${fmtMoney(actualNum)}\n`;
+          context+=`Variance (Plan-Act) : ${varianceFmt}\n`;
+        } else {
+          context+=`Budget              : No budget data entered\n`;
+        }
+        context+=`\n--- ISSUES & REMARKS ---\n`;
+        context+=`Remarks             : ${remarks}\n`;
+        context+=`Issues              :\n${issueRaw}\n`;
+        return context;
+      }
     }
 
-    if (singleMatch) {
-      // Tampilkan detail lengkap satu project — Issues PENUH tanpa truncate
-      // ✅ FIX: stripHtml() removes <br>, <b>, etc. from Smartsheet rich-text fields
-      const issueRaw    = this.stripHtml(this.resolveField(singleMatch, 'issues') || '-');
-      const projectName = this.resolveField(singleMatch, 'projectName') || '-';
-      const pm          = this.resolveField(singleMatch, 'pm') || '-';
-      const status      = this.resolveField(singleMatch, 'status') || '-';
-      const progressRaw = parseFloat(this.resolveField(singleMatch, 'progress') || 0) || 0;
-      const progressPct = progressRaw > 1 ? Math.round(progressRaw) : Math.round(progressRaw * 100);
-      const health      = this.resolveField(singleMatch, 'health') || '-';
-      const targetEnd   = this.formatDate(this.resolveField(singleMatch, 'targetEnd')) || '-';
-      const dept        = this.resolveField(singleMatch, 'department') || '-';
-      const vendor      = this.resolveField(singleMatch, 'vendor') || '-';
-      const remarks     = this.stripHtml(this.resolveField(singleMatch, 'remarks') || '-');
-      const healthEmoji = health === 'Green' ? '🟢' : health === 'Yellow' ? '🟡' : health === 'Red' ? '🔴' : '⚪';
-      const daysOverdue = singleMatch._daysOverdue ? `${singleMatch._daysOverdue} hari` : '-';
+    // ── STEP 3: Apply all filters to get the working row set ─────────────────
+    let filtered = [...allRows];
+    const activeFilters = [];
 
-      const lastModifiedRaw  = this.resolveField(singleMatch, 'lastModified');
-      const lastModified     = lastModifiedRaw ? this.formatDate(lastModifiedRaw) : '-';
-      const daysSinceRaw     = this.resolveField(singleMatch, 'daysSinceUpdate');
-      const daysSinceNum     = parseFloat(daysSinceRaw);
-      const daysSince        = !isNaN(daysSinceNum)
-        ? `${Math.round(daysSinceNum)} hari${daysSinceNum > 30 ? ' ⚠️' : ''}`
-        : '-';
+    if (deptFilter) {
+      const dl = deptFilter.toLowerCase();
+      filtered = filtered.filter(row => {
+        const dept = String(this.resolveField(row,'department')||'').toLowerCase();
+        return dept.includes(dl) || dl.split('(')[0].trim().split(/\s+/).every(w => dept.includes(w));
+      });
+      activeFilters.push(`Department: "${deptFilter}"`);
+    }
 
-      // ✅ PATCH v1.5.3: Budget fields for single project detail
-      // Use raw numeric values from the row — never displayValue (locale-corrupted)
-      const safeNum = (v) => {
-        if (v === null || v === undefined || v === '') return null;
-        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
-        return isNaN(n) ? null : n;
-      };
+    // Guard: if pmFilter accidentally captured "department X", discard it
+    if (pmFilter && /^(?:department|dept|divisi|division|status|budget|vendor)/i.test(pmFilter)) {
+      pmFilter = null;
+    }
+    if (pmFilter) {
+      const pl = pmFilter.toLowerCase();
+      filtered = filtered.filter(row => {
+        const pm = String(this.resolveField(row,'pm')||'').toLowerCase();
+        return pm.includes(pl) || pl.split(/\s+/).some(w => w.length>=3 && pm.includes(w));
+      });
+      activeFilters.push(`PM: "${pmFilter}"`);
+    }
 
-      const currency         = singleMatch['Currency'] || null;
-      const planNum          = safeNum(singleMatch['Budget Plan Total']);
-      const commitNum        = safeNum(singleMatch['Budget Commitment Total']);
-      const actualNum        = safeNum(singleMatch['Budget Actual Total']);
-      const cur              = currency || 'IDR';
-      const hasBudget        = planNum !== null || actualNum !== null;
-      const fmtMoney         = (n) => n === null ? 'N/A' : `${cur} ${this.formatNumber(n)}`;
-      const varianceNum      = (planNum !== null && actualNum !== null) ? planNum - actualNum : null;
-      const varianceFmt      = varianceNum === null ? 'N/A'
-        : `${cur} ${this.formatNumber(varianceNum)}${varianceNum < 0 ? ' 🔴 OVER BUDGET' : ' ✅'}`;
+    if (statusFilter) {
+      const categorized = this.categorizeRows(filtered, today, cols);
+      if      (statusFilter==='active')      filtered = categorized.active;
+      else if (statusFilter==='complete')    filtered = categorized.completed;
+      else if (statusFilter==='overdue')     filtered = categorized.overdue;
+      else if (statusFilter==='canceled')    filtered = categorized.canceled;
+      else if (statusFilter==='not_started') filtered = filtered.filter(r=>String(this.resolveField(r,'status')||'').toLowerCase().includes('not started'));
+      activeFilters.push(`Status: "${statusFilter}"`);
+    }
 
-      context += `--- PROJECT DETAIL: ${projectName} ---\n`;
-      context += `Project Name        : ${projectName}\n`;
-      context += `PM                  : ${pm}\n`;
-      context += `Department          : ${dept}\n`;
-      context += `Status              : ${status}\n`;
-      context += `Progress            : ${progressPct}%\n`;
-      context += `Health              : ${healthEmoji} ${health}\n`;
-      context += `Target End          : ${targetEnd}\n`;
-      context += `Days Overdue        : ${daysOverdue}\n`;
-      context += `Last Modified       : ${lastModified}\n`;
-      context += `Days Since Update   : ${daysSince}\n`;
-      context += `Vendor              : ${vendor}\n`;
-      if (hasBudget) {
-        context += `\n--- BUDGET ---\n`;
-        context += `Currency            : ${cur}\n`;
-        context += `Budget Plan Total   : ${fmtMoney(planNum)}\n`;
-        context += `Budget Commitment   : ${fmtMoney(commitNum)}\n`;
-        context += `Budget Actual Total : ${fmtMoney(actualNum)}\n`;
-        context += `Variance (Plan-Act) : ${varianceFmt}\n`;
-      } else {
-        context += `Budget              : N/A (no budget data entered)\n`;
+    if (healthFilter) {
+      filtered = filtered.filter(row => {
+        const h = String(this.resolveField(row,'health')||'');
+        return h.toLowerCase()===healthFilter.toLowerCase();
+      });
+      activeFilters.push(`Health: "${healthFilter}"`);
+    }
+
+    if (dateFilter) {
+      filtered = filtered.filter(row => {
+        const d = this.parseDate(this.resolveField(row,'targetEnd'));
+        if (!d) return false;
+        if (dateFilter.type==='month') return d.getMonth()===dateFilter.month && d.getFullYear()===dateFilter.year;
+        if (dateFilter.type==='before') return d<=new Date(dateFilter.year,dateFilter.month+1,0);
+        if (dateFilter.type==='after')  return d>=new Date(dateFilter.year,dateFilter.month,1);
+        return true;
+      });
+      const mNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      activeFilters.push(`Target End ${dateFilter.type}: "${mNames[dateFilter.month]} ${dateFilter.year}"`);
+    }
+
+    if (vendorFilter) {
+      const vl = vendorFilter.toLowerCase();
+      filtered = filtered.filter(row => {
+        const v = String(this.resolveField(row,'vendor')||'').toLowerCase();
+        return v.includes(vl);
+      });
+      activeFilters.push(`Vendor: "${vendorFilter}"`);
+    }
+
+    if (classFilter) {
+      filtered = filtered.filter(row => {
+        const cl = String(row['Classification']||'').toLowerCase();
+        return cl.includes(classFilter);
+      });
+      activeFilters.push(`Classification: "${classFilter}"`);
+    }
+
+    if (isIssueQuery && !statusFilter) {
+      filtered = filtered.filter(row => {
+        const issue = this.resolveField(row,'issues');
+        return issue && issue!=='-' && issue.toLowerCase()!=='no issue' && String(issue).trim()!=='';
+      });
+      activeFilters.push('Has Issues');
+    }
+
+    // ── STEP 4: Build context header ─────────────────────────────────────────
+    const filterLabel = activeFilters.length>0 ? ` [Filter: ${activeFilters.join(' | ')}]` : '';
+
+    // Status summary (always show)
+    if (!statusFilter && !dateFilter) {
+      const cat = this.categorizeRows(filtered, today, cols);
+      context += `--- STATUS SUMMARY${filterLabel} ---\n`;
+      context += `✅ Completed : ${cat.completed.length}\n`;
+      context += `🔴 Overdue   : ${cat.overdue.length}\n`;
+      context += `🟢 Active    : ${cat.active.length}\n`;
+      context += `⛔ Canceled  : ${cat.canceled.length}\n\n`;
+    }
+
+    // ── STEP 5: Render table in the right mode ───────────────────────────────
+    if (filtered.length===0) {
+      context += `No projects found matching your filter.\n`;
+      if (activeFilters.length>0) {
+        // Suggest available values for the filter used
+        if (deptFilter) {
+          const depts = [...new Set(allRows.map(r=>String(this.resolveField(r,'department')||'').trim()).filter(Boolean))].sort();
+          context += `\nAvailable departments:\n${depts.map(d=>`  • ${d}`).join('\n')}\n`;
+        }
+        if (pmFilter) {
+          const pms = [...new Set(allRows.map(r=>String(this.resolveField(r,'pm')||'').trim()).filter(Boolean))].sort();
+          context += `\nAvailable PMs:\n${pms.map(p=>`  • ${p}`).join('\n')}\n`;
+        }
       }
-      context += `\n--- ISSUES & REMARKS ---\n`;
-      context += `Remarks             : ${remarks}\n`;
-      context += `Issues              :\n${issueRaw}\n`;
       return context;
     }
 
-    // Bukan single-project query — lanjut ke branch generik
-    context += `--- STATUS SUMMARY ---\n`;
-    context += `✅ Completed : ${categorized.completed.length}\n`;
-    context += `🔴 Overdue   : ${categorized.overdue.length}\n`;
-    context += `🟢 Active    : ${categorized.active.length}\n`;
-    context += `⛔ Canceled  : ${categorized.canceled.length}\n\n`;
-
-    if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
-      context += `--- OVERDUE PROJECTS (${categorized.overdue.length}) ---\n`;
-      context += this.rowsToTable(categorized.overdue, today, cols, true);
-    } else if (/selesai|complete|done|finish/i.test(msg)) {
-      context += `--- COMPLETED PROJECTS (${categorized.completed.length}) ---\n`;
-      context += this.rowsToTable(categorized.completed, today, cols, false);
-    } else if (/aktif|active|on.?track|berjalan|in.?progress/i.test(msg)) {
-      context += `--- ACTIVE PROJECTS (${categorized.active.length}) ---\n`;
-      context += this.rowsToTable(categorized.active, today, cols, false);
-    } else if (/budget|biaya|cost|anggaran/i.test(msg)) {
-      // ✅ FIX: Filter out header/label rows that got mixed into data
-      const budgetRows = flatRows.filter(row => {
-        const name = String(this.resolveField(row, 'projectName') || '');
-        return name && name !== 'Project Name' && name !== '-';
-      });
-      const groupByDept = /group.*dept|dept.*group|by\s+dept|per\s+dept|group.*department|department.*group|by\s+department|per\s+department/i.test(msg);
+    if (isBudgetQuery) {
+      context += `--- PROJECT BUDGET DATA${filterLabel} (${filtered.length} projects) ---\n`;
+      context += `NOTE: Display the table below exactly. Numeric values are the actual budget amounts. Value 0 means no spending yet (not missing data).\n\n`;
       if (groupByDept) {
-        context += `--- BUDGET GROUPED BY DEPARTMENT ---\n`;
-        context += this.rowsToTableBudgetByDepartment(budgetRows, cols);
+        context += this.rowsToTableBudgetByDepartment(filtered, cols);
       } else {
-        context += `--- PROJECT BUDGET DATA ---\n`;
-        context += this.rowsToTableWithBudget(budgetRows, cols);
+        context += this.rowsToTableWithBudget(filtered, cols);
       }
-    } else if (/issue|masalah|kendala|risk|problem/i.test(msg)) {
-      const withIssues = flatRows.filter(row => {
-        const issue = this.resolveField(row, 'issues');
-        return issue && issue !== '-' && issue.toLowerCase() !== 'no issue' && issue.trim() !== '';
-      });
-      context += `--- PROJECTS WITH ISSUES (${withIssues.length}) ---\n`;
-      context += this.rowsToTable(withIssues, today, cols, false);
-    } else if (/summary|overview|dashboard|semua|all|statistik/i.test(msg)) {
-      // ✅ FIX: "show all / semua" → include ALL projects (overdue + active + completed + canceled)
-      const showAll = /\ball\b|semua|all project/i.test(msg);
-      if (showAll) {
-        const allProjects = [...categorized.overdue, ...categorized.active, ...categorized.completed, ...categorized.canceled];
-        context += `--- ALL PROJECTS (${allProjects.length}) ---\n`;
-        context += this.rowsToTable(allProjects, today, cols, false);
-      } else {
-        const relevant = [...categorized.overdue, ...categorized.active];
-        context += `--- ALL ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
-        context += this.rowsToTable(relevant, today, cols, true);
-        if (categorized.completed.length > 0) {
-          context += `\n(${categorized.completed.length} completed projects not shown for brevity.)\n`;
-        }
-      }
+    } else if (isShowAll) {
+      context += `--- ALL PROJECTS${filterLabel} (${filtered.length}) ---\n`;
+      context += this.rowsToTable(filtered, today, cols, false);
+    } else if (isSummaryQuery) {
+      const cat = this.categorizeRows(filtered, today, cols);
+      const relevant = [...cat.overdue, ...cat.active];
+      context += `--- ACTIVE & OVERDUE PROJECTS${filterLabel} (${relevant.length}) ---\n`;
+      context += this.rowsToTable(relevant, today, cols, true);
+      if (cat.completed.length>0) context += `\n(${cat.completed.length} completed projects not shown for brevity.)\n`;
+    } else if (statusFilter || healthFilter || dateFilter || vendorFilter || classFilter || deptFilter || pmFilter || isIssueQuery) {
+      // Any filter active — show all matching rows
+      context += `--- PROJECTS${filterLabel} (${filtered.length} found) ---\n`;
+      context += this.rowsToTable(filtered, today, cols, statusFilter==='overdue');
     } else {
-      const relevant = [...categorized.overdue, ...categorized.active];
+      // Default: show active + overdue
+      const cat = this.categorizeRows(filtered, today, cols);
+      const relevant = [...cat.overdue, ...cat.active];
       context += `--- ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
       context += this.rowsToTable(relevant, today, cols, true);
-      if (categorized.completed.length > 0) {
-        context += `\n(${categorized.completed.length} completed projects not shown.)\n`;
-      }
+      if (cat.completed.length>0) context += `\n(${cat.completed.length} completed projects not shown.)\n`;
     }
 
     return context;
   }
+
 
   // ─────────────────────────────────────────────────────────────
   // KATEGORISASI ROWS
