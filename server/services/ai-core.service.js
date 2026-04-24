@@ -1261,7 +1261,13 @@ class AICoreService {
     // ✅ FIX: Do NOT fall back to { provider: 'openai' } — use whatever the bot actually has.
     // Falling back to 'openai' when the bot uses 'custom' (Azure) or another provider
     // causes a "API Key not found for openai" error even though the bot has a valid key.
-    const providerConfig = { ...(bot.aiProvider || {}) };
+    const providerConfig = { ...(bot.aiProvider?.toObject?.() || bot.aiProvider || {}) };
+    // ✅ DEBUG: Log what provider/model is actually read from DB
+    console.log(`[AI DEBUG] Bot "${bot.name}" aiProvider from DB:`, JSON.stringify({
+      provider: providerConfig.provider,
+      model:    providerConfig.model,
+      hasApiKey: !!providerConfig.apiKey,
+    }));
     if (!providerConfig.provider) {
       // Only set openai as default if bot truly has no provider configured at all
       providerConfig.provider = 'openai';
