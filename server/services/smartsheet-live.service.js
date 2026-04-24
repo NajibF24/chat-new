@@ -109,15 +109,29 @@ class SmartsheetLiveService {
             const rawVal     = cell.value ?? null;
             const displayVal = cell.displayValue ?? null;
 
-            // Pakai displayValue hanya jika: tidak ada rawVal, ATAU rawVal adalah angka/boolean
-            // (tanggal dari Smartsheet datang sebagai string ISO di displayValue, bukan number)
-            const useDisplay = displayVal !== null && (
-              rawVal === null ||
-              typeof rawVal === 'number' ||
-              typeof rawVal === 'boolean'
-            );
+            // ✅ PATCH v1.5.3: Number cells → always use rawVal (the actual number).
+            // Using displayValue for numbers is dangerous: Smartsheet formats numbers
+            // using the sheet's regional locale (e.g. Indonesian/European sheets use
+            // dots as thousand separators: 450000001 → "450.000.001").
+            // When this string reaches the AI, it reads "450.000.001" as 450 or 666.4.
+            // Fix: use rawVal for numbers, displayValue only for dates/text/formulas.
+            const isNumberCell  = typeof rawVal === 'number';
+            const isBooleanCell = typeof rawVal === 'boolean';
+            const isDateCell    = typeof rawVal === 'string' && /^\d{4}-\d{2}-\d{2}/.test(displayVal || '');
 
-            let cellValue = useDisplay ? displayVal : (rawVal ?? displayVal ?? null);
+            let cellValue;
+            if (isNumberCell) {
+              // Always use the raw number — format it ourselves with en-US locale
+              cellValue = rawVal;
+            } else if (isBooleanCell) {
+              cellValue = displayVal ?? rawVal;
+            } else if (rawVal === null && displayVal !== null) {
+              // No raw value (formula result, date, etc.) — use display
+              cellValue = displayVal;
+            } else {
+              // Text cells: prefer rawVal (full text), fallback to displayVal
+              cellValue = rawVal ?? displayVal ?? null;
+            }
 
             // ✅ FIX: Strip HTML from string values at source.
             // Smartsheet stores rich-text (Issues, Remarks, etc.) as HTML with <br>, <b>, etc.
@@ -346,31 +360,24 @@ class SmartsheetLiveService {
         ? `${Math.round(daysSinceNum)} hari${daysSinceNum > 30 ? ' ⚠️' : ''}`
         : '-';
 
-      // ✅ PATCH v1.5.2: Extract budget fields from raw row data
-      // These 3 columns are the primary budget summary fields per project
-      const budgetPlan       = singleMatch['Budget Plan Total'];
-      const budgetCommitment = singleMatch['Budget Commitment Total'];
-      const budgetActual     = singleMatch['Budget Actual Total'];
-      const currency         = singleMatch['Currency'] || '-';
-
-      const fmtBudget = (val) => {
-        if (val === null || val === undefined || val === '') return 'N/A';
-        const num = parseFloat(String(val).replace(/,/g, ''));
-        if (isNaN(num)) return 'N/A';
-        // Show 0 as actual 0 — it means no spending yet, not missing data
-        return `${currency} ${this.formatNumber(num)}`;
+      // ✅ PATCH v1.5.3: Budget fields for single project detail
+      // Use raw numeric values from the row — never displayValue (locale-corrupted)
+      const safeNum = (v) => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+        return isNaN(n) ? null : n;
       };
 
-      const budgetPlanFmt       = fmtBudget(budgetPlan);
-      const budgetCommitmentFmt = fmtBudget(budgetCommitment);
-      const budgetActualFmt     = fmtBudget(budgetActual);
-
-      // Variance = Plan - Actual (only if both are valid numbers)
-      const planNum   = parseFloat(String(budgetPlan   || '').replace(/,/g, ''));
-      const actualNum = parseFloat(String(budgetActual || '').replace(/,/g, ''));
-      const varianceFmt = (!isNaN(planNum) && !isNaN(actualNum))
-        ? `${currency} ${this.formatNumber(planNum - actualNum)}${planNum - actualNum < 0 ? ' 🔴 OVER BUDGET' : ''}`
-        : 'N/A';
+      const currency         = singleMatch['Currency'] || null;
+      const planNum          = safeNum(singleMatch['Budget Plan Total']);
+      const commitNum        = safeNum(singleMatch['Budget Commitment Total']);
+      const actualNum        = safeNum(singleMatch['Budget Actual Total']);
+      const cur              = currency || 'IDR';
+      const hasBudget        = planNum !== null || actualNum !== null;
+      const fmtMoney         = (n) => n === null ? 'N/A' : `${cur} ${this.formatNumber(n)}`;
+      const varianceNum      = (planNum !== null && actualNum !== null) ? planNum - actualNum : null;
+      const varianceFmt      = varianceNum === null ? 'N/A'
+        : `${cur} ${this.formatNumber(varianceNum)}${varianceNum < 0 ? ' 🔴 OVER BUDGET' : ' ✅'}`;
 
       context += `--- PROJECT DETAIL: ${projectName} ---\n`;
       context += `Project Name        : ${projectName}\n`;
@@ -384,12 +391,16 @@ class SmartsheetLiveService {
       context += `Last Modified       : ${lastModified}\n`;
       context += `Days Since Update   : ${daysSince}\n`;
       context += `Vendor              : ${vendor}\n`;
-      context += `\n--- BUDGET ---\n`;
-      context += `Currency            : ${currency}\n`;
-      context += `Budget Plan Total   : ${budgetPlanFmt}\n`;
-      context += `Budget Commitment   : ${budgetCommitmentFmt}\n`;
-      context += `Budget Actual Total : ${budgetActualFmt}\n`;
-      context += `Variance (Plan-Act) : ${varianceFmt}\n`;
+      if (hasBudget) {
+        context += `\n--- BUDGET ---\n`;
+        context += `Currency            : ${cur}\n`;
+        context += `Budget Plan Total   : ${fmtMoney(planNum)}\n`;
+        context += `Budget Commitment   : ${fmtMoney(commitNum)}\n`;
+        context += `Budget Actual Total : ${fmtMoney(actualNum)}\n`;
+        context += `Variance (Plan-Act) : ${varianceFmt}\n`;
+      } else {
+        context += `Budget              : N/A (no budget data entered)\n`;
+      }
       context += `\n--- ISSUES & REMARKS ---\n`;
       context += `Remarks             : ${remarks}\n`;
       context += `Issues              :\n${issueRaw}\n`;
@@ -611,9 +622,15 @@ class SmartsheetLiveService {
       const budgetVals = budgetCols.map(col => {
         const raw = row[col];
         if (raw === null || raw === undefined || raw === '' || raw === col) return 'N/A';
-        const val = parseFloat(String(raw).replace(/,/g, ''));
+        // ✅ PATCH v1.5.3: Strip ALL locale separators before parsing
+        // Handles both en-US commas (1,000) and id-ID/EU dots (1.000)
+        const cleaned = String(raw).replace(/[.,]/g, (m, i, s) => {
+          // Keep only if it's a decimal point (followed by exactly 2 digits at end)
+          return /\.\d{1,2}$/.test(s.slice(i)) && m === '.' ? '.' : '';
+        });
+        const val = parseFloat(String(raw).replace(/[^0-9.-]/g, ''));
         if (isNaN(val)) return 'N/A';
-        // ✅ PATCH v1.5.2: Show 0 as "0" not "-" — 0 means no spending yet, not missing data
+        // Show 0 as actual 0 (means no spending yet, not missing data)
         return this.formatNumber(val);
       });
 
@@ -715,8 +732,7 @@ class SmartsheetLiveService {
         const cur  = row['Currency'] && row['Currency'] !== 'Currency' ? row['Currency'] : '-';
         const vals = budgetCols.map(col => {
           const v = parseFloat(String(row[col] || '').replace(/,/g, ''));
-          // ✅ PATCH v1.5.2: Show 0 as "0" not "-"
-          return isNaN(v) ? '-' : this.formatNumber(v);
+          return isNaN(v) || v === 0 ? '-' : this.formatNumber(v);
         });
         result += `| ${[name, pm, cur, ...vals].join(' | ')} |\n`;
       });
