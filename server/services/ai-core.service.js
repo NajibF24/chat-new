@@ -982,11 +982,12 @@ class AICoreService {
       'overdue','delay','terlambat','laporan','report','health','red',
       'merah','kritis','critical','budget','biaya','cost','anggaran',
       'statistik','stats','count','jumlah','pm','manager','department',
-      // ✅ FIX: date/deadline query keywords
-      'due','deadline','jatuh tempo','this month','bulan ini','next month',
-      'bulan depan','this week','minggu ini','this year','tahun ini',
-      'what project','which project','apa project','proyek apa','proyek mana',
-      'schedule','jadwal','upcoming','akan datang','soon','segera',
+      // ✅ FIX: grouping, deadline, and scheduling keywords
+      'group','grupkan','kelompok','by department','per department',
+      'due','deadline','jatuh tempo','this month','bulan ini',
+      'next month','bulan depan','this week','upcoming','akan datang',
+      'soon','segera','schedule','jadwal','what project','which project',
+      'apa project','proyek apa','proyek mana',
     ];
     return keywords.some(k => lowerMsg.includes(k)) || message.includes('_') || message.includes('.');
   }
@@ -1152,7 +1153,9 @@ class AICoreService {
         }
       } catch (e) {
         console.error('Smartsheet Error:', e.message);
-        contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
+        // ✅ FIX: Error message is language-neutral — AI will translate to user's language
+        // via the LANGUAGE RULE injected in systemPrompt above.
+        contextData += `\n\n=== SMARTSHEET DATA ERROR ===\n❌ Failed to load Smartsheet data: ${e.message}\nNote: Inform the user in their own language that data is temporarily unavailable.\n`;
       }
     }
 
@@ -1275,6 +1278,8 @@ class AICoreService {
     const systemPrompt = [
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
+      // ✅ FIX: Always match user's language — never hardcode Indonesian
+      `[LANGUAGE RULE: Always detect and match the user's language in EVERY response, including errors, warnings, and fallback messages. If the user writes in English → respond in English. Indonesian → Indonesian. Japanese → Japanese. Never default to any single language.]`,
       contextData,
       groundingInstruction,
     ].filter(Boolean).join('\n\n');
