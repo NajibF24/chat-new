@@ -346,6 +346,32 @@ class SmartsheetLiveService {
         ? `${Math.round(daysSinceNum)} hari${daysSinceNum > 30 ? ' ⚠️' : ''}`
         : '-';
 
+      // ✅ PATCH v1.5.2: Extract budget fields from raw row data
+      // These 3 columns are the primary budget summary fields per project
+      const budgetPlan       = singleMatch['Budget Plan Total'];
+      const budgetCommitment = singleMatch['Budget Commitment Total'];
+      const budgetActual     = singleMatch['Budget Actual Total'];
+      const currency         = singleMatch['Currency'] || '-';
+
+      const fmtBudget = (val) => {
+        if (val === null || val === undefined || val === '') return 'N/A';
+        const num = parseFloat(String(val).replace(/,/g, ''));
+        if (isNaN(num)) return 'N/A';
+        // Show 0 as actual 0 — it means no spending yet, not missing data
+        return `${currency} ${this.formatNumber(num)}`;
+      };
+
+      const budgetPlanFmt       = fmtBudget(budgetPlan);
+      const budgetCommitmentFmt = fmtBudget(budgetCommitment);
+      const budgetActualFmt     = fmtBudget(budgetActual);
+
+      // Variance = Plan - Actual (only if both are valid numbers)
+      const planNum   = parseFloat(String(budgetPlan   || '').replace(/,/g, ''));
+      const actualNum = parseFloat(String(budgetActual || '').replace(/,/g, ''));
+      const varianceFmt = (!isNaN(planNum) && !isNaN(actualNum))
+        ? `${currency} ${this.formatNumber(planNum - actualNum)}${planNum - actualNum < 0 ? ' 🔴 OVER BUDGET' : ''}`
+        : 'N/A';
+
       context += `--- PROJECT DETAIL: ${projectName} ---\n`;
       context += `Project Name        : ${projectName}\n`;
       context += `PM                  : ${pm}\n`;
@@ -358,6 +384,13 @@ class SmartsheetLiveService {
       context += `Last Modified       : ${lastModified}\n`;
       context += `Days Since Update   : ${daysSince}\n`;
       context += `Vendor              : ${vendor}\n`;
+      context += `\n--- BUDGET ---\n`;
+      context += `Currency            : ${currency}\n`;
+      context += `Budget Plan Total   : ${budgetPlanFmt}\n`;
+      context += `Budget Commitment   : ${budgetCommitmentFmt}\n`;
+      context += `Budget Actual Total : ${budgetActualFmt}\n`;
+      context += `Variance (Plan-Act) : ${varianceFmt}\n`;
+      context += `\n--- ISSUES & REMARKS ---\n`;
       context += `Remarks             : ${remarks}\n`;
       context += `Issues              :\n${issueRaw}\n`;
       return context;
@@ -370,29 +403,7 @@ class SmartsheetLiveService {
     context += `🟢 Active    : ${categorized.active.length}\n`;
     context += `⛔ Canceled  : ${categorized.canceled.length}\n\n`;
 
-    // ✅ PATCH v1.5.1 — "show project / list project / all project / project IT division"
-    // Any generic project-listing query that doesn't match a specific filter
-    // MUST return ALL projects (overdue + active + completed + canceled).
-    // This prevents the AI from saying "data tidak tersedia" when data IS available.
-    const isGenericProjectQuery = (
-      // "show project", "list project", "show me project", "my projects"
-      /^\s*(show|list|display|get|fetch|give|tell|check|view|see)\s+(me\s+)?(all\s+)?projects?\s*$/i.test(msg) ||
-      // "project" alone or with 1-2 words
-      /^\s*projects?\s*$/i.test(msg) ||
-      // "apa project saya / proyekku / proyek apa"
-      /^\s*(apa|mana|ada)\s+(project|proyek)/i.test(msg) ||
-      /\b(my\s+projects?|proyekku|proyek\s+saya)\b/i.test(msg) ||
-      // "show me all" without specific filter
-      (/\b(show|list|display|tampilkan|lihat)\b/i.test(msg) &&
-       /\b(all|semua)\b/i.test(msg) &&
-       !/overdue|terlambat|complete|selesai|active|aktif|budget|issue|masalah/i.test(msg))
-    );
-
-    if (isGenericProjectQuery) {
-      const allProjects = [...categorized.overdue, ...categorized.active, ...categorized.completed, ...categorized.canceled];
-      context += `--- ALL PROJECTS (${allProjects.length}) ---\n`;
-      context += this.rowsToTable(allProjects, today, cols, false);
-    } else if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
+    if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
       context += `--- OVERDUE PROJECTS (${categorized.overdue.length}) ---\n`;
       context += this.rowsToTable(categorized.overdue, today, cols, true);
     } else if (/selesai|complete|done|finish/i.test(msg)) {
@@ -438,27 +449,11 @@ class SmartsheetLiveService {
         }
       }
     } else {
-      // ✅ PATCH v1.5.1: Check for department/division filter in default branch
-      const deptMatch = msg.match(/\b(?:dept|department|division|divisi)\s+([a-z][a-z0-9\s]{1,30}?)(?:\s*$|\s+(?:project|proyek))/i) ||
-                        msg.match(/(?:project|proyek)\s+(?:di\s+)?(?:dept|department|division|divisi)?\s+([a-z][a-z0-9\s]{1,30}?)\s*$/i);
-      if (deptMatch && cols.department) {
-        const deptKeyword = deptMatch[1].trim().toLowerCase();
-        const filtered = [...categorized.overdue, ...categorized.active, ...categorized.completed].filter(row => {
-          const dept = String(this.resolveField(row, 'department') || '').toLowerCase();
-          return dept.includes(deptKeyword);
-        });
-        context += `--- PROJECTS IN "${deptKeyword.toUpperCase()}" (${filtered.length}) ---\n`;
-        context += filtered.length > 0
-          ? this.rowsToTable(filtered, today, cols, false)
-          : `No projects found matching department "${deptKeyword}".\n`;
-      } else {
-        // Default: show active + overdue (most relevant for a PM)
-        const relevant = [...categorized.overdue, ...categorized.active];
-        context += `--- ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
-        context += this.rowsToTable(relevant, today, cols, true);
-        if (categorized.completed.length > 0) {
-          context += `\n(${categorized.completed.length} completed projects not shown. Ask "show all projects" to see them.)\n`;
-        }
+      const relevant = [...categorized.overdue, ...categorized.active];
+      context += `--- ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
+      context += this.rowsToTable(relevant, today, cols, true);
+      if (categorized.completed.length > 0) {
+        context += `\n(${categorized.completed.length} completed projects not shown.)\n`;
       }
     }
 
@@ -615,9 +610,11 @@ class SmartsheetLiveService {
 
       const budgetVals = budgetCols.map(col => {
         const raw = row[col];
-        if (raw === null || raw === undefined || raw === '' || raw === col) return '-';
+        if (raw === null || raw === undefined || raw === '' || raw === col) return 'N/A';
         const val = parseFloat(String(raw).replace(/,/g, ''));
-        return isNaN(val) || val === 0 ? '-' : this.formatNumber(val);
+        if (isNaN(val)) return 'N/A';
+        // ✅ PATCH v1.5.2: Show 0 as "0" not "-" — 0 means no spending yet, not missing data
+        return this.formatNumber(val);
       });
 
       table += `| ${[name, pm, dept, currency, ...budgetVals].join(' | ')} |\n`;
@@ -718,7 +715,8 @@ class SmartsheetLiveService {
         const cur  = row['Currency'] && row['Currency'] !== 'Currency' ? row['Currency'] : '-';
         const vals = budgetCols.map(col => {
           const v = parseFloat(String(row[col] || '').replace(/,/g, ''));
-          return isNaN(v) || v === 0 ? '-' : this.formatNumber(v);
+          // ✅ PATCH v1.5.2: Show 0 as "0" not "-"
+          return isNaN(v) ? '-' : this.formatNumber(v);
         });
         result += `| ${[name, pm, cur, ...vals].join(' | ')} |\n`;
       });
