@@ -1651,7 +1651,14 @@ function AdminDashboard({ user, handleLogout }) {
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">AI Provider</label>
                     <div className="grid grid-cols-2 gap-2">
                       {Object.entries(AI_PROVIDERS).map(([key, prov]) => (
-                        <button key={key} type="button" onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, provider: key, model: prov.models[0]?.id || '' } }))}
+                        <button key={key} type="button" onClick={() => setBotForm(f => {
+                          // Auto-disable capabilities not supported by the new provider
+                          const newCaps = { ...f.capabilities };
+                          ALL_CAPABILITIES.forEach(cap => {
+                            if (!cap.providers.includes(key)) newCaps[cap.id] = false;
+                          });
+                          return { ...f, aiProvider: { ...f.aiProvider, provider: key, model: prov.models[0]?.id || '' }, capabilities: newCaps };
+                        })}
                           className={`p-3.5 rounded-xl border-2 text-left transition-all ${currentProvider === key ? 'border-primary-dark bg-primary/5 shadow-sm' : 'border-gray-100 hover:border-gray-200 bg-white'}`}>
                           <div className="text-xl mb-1">{prov.icon}</div>
                           <div className="text-xs font-bold text-gray-800">{prov.label}</div>

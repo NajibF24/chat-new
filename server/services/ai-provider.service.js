@@ -416,6 +416,28 @@ class AIProviderService {
         return { text, usage };
       }
     } catch (err) {
+      // ✅ FIX: Do NOT fall back to chat completions for quota/auth errors —
+      // the fallback would hit the same OpenAI key and fail again with the same error.
+      // Throw immediately with a clear, user-friendly message instead.
+      const isQuotaError = err.code === 'insufficient_quota' || err.status === 429 ||
+        (err.message || '').toLowerCase().includes('quota') ||
+        (err.message || '').toLowerCase().includes('billing');
+      const isAuthError = err.status === 401 || err.code === 'invalid_api_key';
+
+      if (isQuotaError) {
+        throw new Error(
+          'OpenAI quota habis (insufficient_quota). ' +
+          'Silakan periksa billing di https://platform.openai.com/account/billing, ' +
+          'atau ganti provider bot ke Anthropic/Google di Admin Dashboard.'
+        );
+      }
+      if (isAuthError) {
+        throw new Error(
+          'OpenAI API Key tidak valid atau tidak ditemukan. ' +
+          'Periksa konfigurasi API Key di Admin Dashboard atau file .env.'
+        );
+      }
+
       console.error(`[WebSearch] Responses API error: ${err.message}. Falling back to chat completions.`);
       const fallback = await openai.chat.completions.create({
         model,
