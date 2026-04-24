@@ -1151,7 +1151,7 @@ class AICoreService {
         }
       } catch (e) {
         console.error('Smartsheet Error:', e.message);
-        contextData += `\n\n=== DATA SMARTSHEET ===\n❌ Gagal memuat data: ${e.message}\n`;
+        contextData += `\n\n=== SMARTSHEET ERROR ===\n❌ Failed to load data: ${e.message}\nPlease inform the user in their language that Smartsheet data is temporarily unavailable.\n`;
       }
     }
 
@@ -1258,7 +1258,14 @@ class AICoreService {
 
     // ✅ FIX: Bedakan instruksi untuk Smartsheet vs non-Smartsheet
     // Untuk Smartsheet: tambahkan larangan eksplisit agar AI tidak menambah data dari memori/training.
-    const hasSmartsheetData = contextData.includes('DATA SMARTSHEET');
+    const hasSmartsheetData = contextData.includes('DATA SMARTSHEET') ||
+      contextData.includes('STATUS SUMMARY') ||
+      contextData.includes('BUDGET') ||
+      contextData.includes('OVERDUE PROJECTS') ||
+      contextData.includes('ALL PROJECTS') ||
+      contextData.includes('PROJECT DETAIL') ||
+      contextData.includes('ACTIVITY SUMMARY') ||
+      contextData.includes('DOCUMENTATION');
     const groundingInstruction = hasSmartsheetData
       ? [
           'CRITICAL DATA INTEGRITY RULES:',

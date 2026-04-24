@@ -204,9 +204,9 @@ class SmartsheetLiveService {
     const cols  = this.detectAvailableColumns(flatRows);
 
     let context  = `=== DATA SMARTSHEET: ${sheetName} ===\n`;
-    context     += `Tanggal hari ini: ${today.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
+    context     += `Today: ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
     context     += `Total data: ${flatRows.length} rows\n`;
-    context     += `Kolom tersedia: ${cols.allColumns.join(', ')}\n\n`;
+    context     += `Available columns: ${cols.allColumns.join(', ')}\n\n`;
 
     // ✅ FIX v1.4.0: isDocSheet detection yang lebih ketat.
     // Project sheet sering punya kolom "Activity" atau "User" untuk audit trail,
@@ -346,7 +346,7 @@ class SmartsheetLiveService {
         ? `${Math.round(daysSinceNum)} hari${daysSinceNum > 30 ? ' ⚠️' : ''}`
         : '-';
 
-      context += `--- DETAIL PROYEK: ${projectName} ---\n`;
+      context += `--- PROJECT DETAIL: ${projectName} ---\n`;
       context += `Project Name        : ${projectName}\n`;
       context += `PM                  : ${pm}\n`;
       context += `Department          : ${dept}\n`;
@@ -364,20 +364,20 @@ class SmartsheetLiveService {
     }
 
     // Bukan single-project query — lanjut ke branch generik
-    context += `--- RINGKASAN STATUS ---\n`;
+    context += `--- STATUS SUMMARY ---\n`;
     context += `✅ Completed : ${categorized.completed.length}\n`;
     context += `🔴 Overdue   : ${categorized.overdue.length}\n`;
     context += `🟢 Active    : ${categorized.active.length}\n`;
     context += `⛔ Canceled  : ${categorized.canceled.length}\n\n`;
 
     if (/overdue|terlambat|delay|melewati|lewat/i.test(msg)) {
-      context += `--- PROYEK OVERDUE (${categorized.overdue.length}) ---\n`;
+      context += `--- OVERDUE PROJECTS (${categorized.overdue.length}) ---\n`;
       context += this.rowsToTable(categorized.overdue, today, cols, true);
     } else if (/selesai|complete|done|finish/i.test(msg)) {
-      context += `--- PROYEK COMPLETED (${categorized.completed.length}) ---\n`;
+      context += `--- COMPLETED PROJECTS (${categorized.completed.length}) ---\n`;
       context += this.rowsToTable(categorized.completed, today, cols, false);
     } else if (/aktif|active|on.?track|berjalan|in.?progress/i.test(msg)) {
-      context += `--- PROYEK ACTIVE (${categorized.active.length}) ---\n`;
+      context += `--- ACTIVE PROJECTS (${categorized.active.length}) ---\n`;
       context += this.rowsToTable(categorized.active, today, cols, false);
     } else if (/budget|biaya|cost|anggaran/i.test(msg)) {
       // ✅ FIX: Filter out header/label rows that got mixed into data
@@ -398,21 +398,29 @@ class SmartsheetLiveService {
         const issue = this.resolveField(row, 'issues');
         return issue && issue !== '-' && issue.toLowerCase() !== 'no issue' && issue.trim() !== '';
       });
-      context += `--- PROYEK DENGAN ISSUES (${withIssues.length}) ---\n`;
+      context += `--- PROJECTS WITH ISSUES (${withIssues.length}) ---\n`;
       context += this.rowsToTable(withIssues, today, cols, false);
     } else if (/summary|overview|dashboard|semua|all|statistik/i.test(msg)) {
-      const relevant = [...categorized.overdue, ...categorized.active];
-      context += `--- SEMUA PROYEK AKTIF & OVERDUE (${relevant.length}) ---\n`;
-      context += this.rowsToTable(relevant, today, cols, true);
-      if (categorized.completed.length > 0) {
-        context += `\n(${categorized.completed.length} proyek Completed tidak ditampilkan untuk ringkas.)\n`;
+      // ✅ FIX: "show all / semua" → include ALL projects (overdue + active + completed + canceled)
+      const showAll = /\ball\b|semua|all project/i.test(msg);
+      if (showAll) {
+        const allProjects = [...categorized.overdue, ...categorized.active, ...categorized.completed, ...categorized.canceled];
+        context += `--- ALL PROJECTS (${allProjects.length}) ---\n`;
+        context += this.rowsToTable(allProjects, today, cols, false);
+      } else {
+        const relevant = [...categorized.overdue, ...categorized.active];
+        context += `--- ALL ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
+        context += this.rowsToTable(relevant, today, cols, true);
+        if (categorized.completed.length > 0) {
+          context += `\n(${categorized.completed.length} completed projects not shown for brevity.)\n`;
+        }
       }
     } else {
       const relevant = [...categorized.overdue, ...categorized.active];
-      context += `--- PROYEK AKTIF & OVERDUE (${relevant.length}) ---\n`;
+      context += `--- ACTIVE & OVERDUE PROJECTS (${relevant.length}) ---\n`;
       context += this.rowsToTable(relevant, today, cols, true);
       if (categorized.completed.length > 0) {
-        context += `\n(${categorized.completed.length} proyek Completed tidak ditampilkan.)\n`;
+        context += `\n(${categorized.completed.length} completed projects not shown.)\n`;
       }
     }
 
@@ -460,7 +468,7 @@ class SmartsheetLiveService {
   // FORMAT TABLE — Project
   // ─────────────────────────────────────────────────────────────
   rowsToTable(rows, today, cols, showDaysOverdue = false) {
-    if (!rows.length) return 'Tidak ada data.\n\n';
+    if (!rows.length) return 'No data found.\n\n';
 
     const headers = ['Project Name'];
     if (cols.pm)              headers.push('PM');
@@ -752,7 +760,7 @@ class SmartsheetLiveService {
     const deleteCount = normalizedRows.filter(r => String(r['Activity'] || '').toLowerCase() === 'delete').length;
 
     // ── Ringkasan
-    context += `--- RINGKASAN AKTIVITAS ---\n`;
+    context += `--- ACTIVITY SUMMARY ---\n`;
     context += `📥 Add: ${addCount} | ✏️ Edit: ${editCount} | 🗑️ Delete: ${deleteCount}\n`;
     context += `👥 Total Records: ${normalizedRows.length}\n\n`;
 
@@ -945,7 +953,7 @@ class SmartsheetLiveService {
 
     for (const { sheet, flatRows } of allSheetData) {
       if (!flatRows.length) {
-        mergedContext += `\n=== SHEET: ${sheet.name} ===\n(Tidak ada data)\n`;
+        mergedContext += `\n=== SHEET: ${sheet.name} ===\n(No data)\n`;
         continue;
       }
       mergedContext += `\n${this.buildAIContext(flatRows, userMessage, sheet.name)}\n`;
@@ -953,7 +961,7 @@ class SmartsheetLiveService {
 
     const header = `=== SMARTSHEET DATA (${successfulSheets.length} sheet dimuat) ===\n` +
       `Sheet: ${successfulSheets.map(s => s.name).join(' | ')}\n` +
-      `Tanggal: ${today.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n\n`;
+      `Date: ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n\n`;
 
     return header + mergedContext;
   }
@@ -969,14 +977,14 @@ class SmartsheetLiveService {
   formatDate(str) {
     const d = this.parseDate(str);
     if (!d) return null;
-    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
   // ── NEW: format tanggal + jam untuk Activity Time
   formatDateTime(str) {
     const d = this.parseDate(str);
     if (!d) return null;
-    return d.toLocaleString('id-ID', {
+    return d.toLocaleString('en-GB', {
       day:    '2-digit',
       month:  'short',
       year:   'numeric',
@@ -987,7 +995,7 @@ class SmartsheetLiveService {
 
   formatNumber(num) {
     if (!num && num !== 0) return '-';
-    return Number(num).toLocaleString('id-ID');
+    return Number(num).toLocaleString('en-US');
   }
 
   truncate(str, maxLen) {
