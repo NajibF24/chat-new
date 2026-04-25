@@ -3,9 +3,10 @@ stages:
   - deploy
 
 variables:
-  IMAGE: harbor.gyssteel.com/portalai/client
+  IMAGE_CLIENT: harbor.gyssteel.com/portalai/client
+  IMAGE_SERVER: harbor.gyssteel.com/portalai/server
 
-build:
+build_client:
   stage: build
   tags:
     - CI-Shell
@@ -21,5 +22,24 @@ build:
       --build-arg VITE_BASE_URL="$VITE_BASE_URL"
       -t $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA client/
 
-    - docker push $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
-    - docker rmi $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
+    - docker push $IMAGE_CLIENT:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
+    - docker rmi $IMAGE_CLIENT:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
+
+build_server:
+  stage: build
+  tags:
+    - CI-Shell
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"  # Hanya jalan di branch development
+  script:
+    - >
+      docker build
+      -f server/Dockerfile
+      --build-arg VITE_APP_NAME="$VITE_APP_NAME"
+      --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL_DEV"
+      --build-arg VITE_ENV="dev"
+      --build-arg VITE_BASE_URL="$VITE_BASE_URL"
+      -t $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA client/
+
+    - docker push $IMAGE_SERVER:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
+    - docker rmi $IMAGE_SERVER:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
