@@ -33,18 +33,22 @@ variables:
 # PROD — BUILD STAGE (branch: main)
 # ==========================================================
 
-build_client:
+build:
   stage: build
   tags:
     - CI-Shell
   rules:
-    - if: $CI_COMMIT_BRANCH == "dev"
-      changes:
-        - client/**/*
-#  before_script:
-#    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+    - if: $CI_COMMIT_BRANCH == "dev"  # Hanya jalan di branch development
   script:
-    - docker build -f client/Dockerfile -t $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
+    - >
+      docker build
+      -f /client/deployment/Dockerfile
+      --build-arg VITE_APP_NAME="$VITE_APP_NAME"
+      --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL_DEV"
+      --build-arg VITE_ENV="development"
+      --build-arg VITE_BASE_URL="$VITE_BASE_URL"
+      -t $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
+      .
     - docker push $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
     - docker rmi $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
 
