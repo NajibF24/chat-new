@@ -1,46 +1,34 @@
-   1 apiVersion: apps/v1
-   2 kind: Deployment
-   3 metadata:
-   4   name: client-app
-   5   namespace: default
-   6 spec:
-   7   replicas: 1
-   8   selector:
-   9     matchLabels:
-  10       app: client-app
-  11   template:
-  12     metadata:
-  13       labels:
-  14         app: client-app
-  15     spec:
-  16       imagePullSecrets:
-  17         - name: portalai-client-registry   # secret untuk pull image dari Harbor
-  18       containers:
-  19         - name: portalai-client
-  20           image: harbor.gyssteel.com/portalai/client:IMAGE_TAG
-  21           ports:
-  22             - containerPort: 8080
-  23           envFrom:
-  24             - configMapRef:
-  25                 name: portalai-client-config
-  26             - secretRef:
-  27                 name: portalai-client-secret
-  28           resources:
-  29             requests:
-  30               cpu: "100m"
-  31               memory: "128Mi"
-  32             limits:
-  33               cpu: "256m"
-  34               memory: "256Mi"
-  35           livenessProbe:
-  36             httpGet:
-  37               path: /
-  38               port: 8080
-  39             initialDelaySeconds: 10
-  40             periodSeconds: 30
-  41           readinessProbe:
-  42             httpGet:
-  43               path: /
-  44               port: 8080
-  45             initialDelaySeconds: 5
-  46             periodSeconds: 10
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dms-app
+  namespace: dms
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: client-app
+  template:
+    metadata:
+      labels:
+        app: dms-app
+    spec:
+      imagePullSecrets:
+        - name:	client-registry   # secret untuk pull image dari Harbor
+      containers:
+        - name: php-fpm
+          image: harbor.gyssteel.com/dms/fe-be:IMAGE_TAG
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: dms-config
+            - secretRef:
+                name: dms-secret
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
