@@ -44,10 +44,7 @@ build_client:
 #  before_script:
 #    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
   script:
-    -  >
-     docker build
-     -f client/Dockerfile
-     -t $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
+    - docker build -f client/Dockerfile -t $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
     - docker push $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
     - docker rmi $IMAGE:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
 
