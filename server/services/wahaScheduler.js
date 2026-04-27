@@ -116,7 +116,7 @@ async function sendWahaImage(wahaConfig, chatId, imagePath, caption, publicImage
       // ── Attempt 3: Fallback to text + clickable URL ──────────────────
       if (publicImageUrl) {
         console.warn(`[WahaScheduler] ↩️ Falling back to text+URL for ${chatId}`);
-        const fallbackText = `${caption}\n\n🖼️ *GYS Steel Signal Newsletter:*\n${publicImageUrl}\n\n_Tip: Upgrade WAHA ke engine NOWEB agar gambar langsung terkirim._`;
+        const fallbackText = `${caption}\n\n🖼️ *GYS Steel Signal Newsletter:*\n${publicImageUrl}\n\n_Note: Image sending requires WAHA Plus. Click the link above to view the newsletter._`;
         await sendWahaMessage(wahaConfig, chatId, fallbackText);
       } else {
         console.error(`[WahaScheduler] ❌ All image send methods failed for ${chatId}:`, errMsg);
@@ -141,7 +141,7 @@ async function generateAIResponse(bot, prompt) {
       userContent:    prompt,
       capabilities,
     });
-    return result.text || 'Maaf, tidak ada respons dari AI.';
+    return result.text || 'No response from AI.';
   } catch (err) {
     console.error('[WahaScheduler] AI error:', err.message);
     return null;
@@ -173,12 +173,12 @@ async function fireSchedule(bot, schedule) {
 
       let sourceLinks = '';
       if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
-        sourceLinks = '\n\n🔗 *Sumber Referensi:*\n' + newsletterData.sourceLinks.map(l => `- ${l}`).join('\n');
+        sourceLinks = '\n\n🔗 *Sources:*\n' + newsletterData.sourceLinks.map(l => `- ${l}`).join('\n');
       }
-      formattedMsg = `🤖 *${bot.name}*\n\nBerikut adalah GYS Steel Signal terbaru Anda.${sourceLinks}`;
+      formattedMsg = `🤖 *${bot.name}*\n\nHere is your latest GYS Steel Signal.${sourceLinks}`;
     } catch (error) {
       console.error('[WahaScheduler] Newsletter generation error:', error);
-      formattedMsg = `🤖 *${bot.name}*\n\nMaaf, gagal membuat Newsletter: ${error.message}`;
+      formattedMsg = `🤖 *${bot.name}*\n\nFailed to generate Newsletter: ${error.message}`;
     }
   } else {
     // Generate Text AI response
