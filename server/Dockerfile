@@ -17,7 +17,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-# 3. Copy package files dan install dependencies 
+# 3. Copy package files dan install dependencies#
 COPY package*.json ./
 RUN npm install --production
 
