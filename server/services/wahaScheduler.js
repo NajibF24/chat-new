@@ -167,12 +167,8 @@ async function fireSchedule(bot, schedule) {
       imagePath = path.join(process.cwd(), 'data', 'files', result.fileName);
       
       // Build public URL so fallback text message has a clickable link
-      const wahaEndpoint = bot.wahaConfig?.endpoint || '';
-      // Derive server base from WAHA endpoint host, or use env, or use relative
-      const serverBase = process.env.SERVER_PUBLIC_URL 
-        || process.env.PUBLIC_URL
-        || wahaEndpoint.replace(/\/waha.*$/i, '').replace(/:\d+/, ':5000')
-        || 'http://localhost:5000';
+      // Priority: SERVER_PUBLIC_URL env var > PUBLIC_URL > default
+      const serverBase = (process.env.SERVER_PUBLIC_URL || process.env.PUBLIC_URL || 'http://172.16.31.48:8080').replace(/\/$/, '');
       publicImageUrl = `${serverBase}${result.fileUrl}`;
 
       let sourceLinks = '';
