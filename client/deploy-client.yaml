@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portalai-app
+  namespace: portalai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portalai-app
+  template:
+    metadata:
+      labels:
+        app: portalai-app
+    spec:
+      imagePullSecrets:
+        - name:	portalai-registry   # secret untuk pull image dari Harbor
+      containers:
+        - name: client
+          image: harbor.gyssteel.com/portalai/client:IMAGE_TAG
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: portalai-config
+            - secretRef:
+                name: portalai-secret
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portalai-service
+  namespace: portalai
+spec:
+  selector:
+    app: portalai-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+
