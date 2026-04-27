@@ -73,11 +73,17 @@ async function sendWahaMessage(wahaConfig, chatId, text) {
 // ── Generate AI response for a schedule prompt ────────────────
 async function generateAIResponse(bot, prompt) {
   try {
+    // ✅ FIX: Pass bot.capabilities so web search (and other tools) are active
+    // Without this, the bot ignores its capability settings and generates
+    // fabricated news from training data instead of doing a real web search.
+    const capabilities = bot.capabilities || {};
+
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
       messages:       [],
       userContent:    prompt,
+      capabilities,
     });
     return result.text || 'Maaf, tidak ada respons dari AI.';
   } catch (err) {
