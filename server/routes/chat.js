@@ -244,64 +244,69 @@ router.post('/external', async (req, res) => {
 
     console.log(`[EXTERNAL] Bot: ${bot.name} | From: ${callerUsername} | Msg: ${message.substring(0, 80)}`);
 
-    // 4. Panggil AI — pakai system prompt + knowledge base bot yang sesungguhnya
+    // 4. Derive base URL for absolute file links (e.g. newsletter images)
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+    // 5. Route through AICoreService so newsletter/PPT/Excel detection works
     const startTime = Date.now();
-    const aiResponse = await AIProviderService.generateCompletion({
-      providerConfig: bot.aiProvider,
-      systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
-      messages:       (history || []).map(m => ({ role: m.role, content: m.content })),
-      userContent:    message,
-      capabilities:   bot.capabilities,
-      knowledgeFiles: bot.knowledgeFiles || [],
-      knowledgeMode:  bot.knowledgeMode  || 'relevant',
-    });
+    let responseText = '';
+    let attachedFiles = [];
 
-    const durationMs   = Date.now() - startTime;
-    const responseText = aiResponse?.text || aiResponse?.response || '';
+    try {
+      const result = await AICoreService.processMessage({
+        userId: bot._id,  // use bot id as stand-in for userId
+        botId: bot._id,
+        bot,
+        message,
+        threadId: null,
+        history: (history || []).map(m => ({ role: m.role, content: m.content })),
+        attachedFile: null,
+      });
+      responseText  = result.response || '';
+      attachedFiles = result.attachedFiles || [];
+    } catch (innerErr) {
+      // Fallback to plain AIProviderService if AICoreService fails
+      console.warn('[EXTERNAL] AICoreService failed, falling back to plain AI:', innerErr.message);
+      const aiResponse = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider,
+        systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
+        messages:       (history || []).map(m => ({ role: m.role, content: m.content })),
+        userContent:    message,
+        capabilities:   bot.capabilities,
+        knowledgeFiles: bot.knowledgeFiles || [],
+        knowledgeMode:  bot.knowledgeMode  || 'relevant',
+      });
+      responseText = aiResponse?.text || aiResponse?.response || '';
+    }
 
-    // 5. WAHA Forward (fire & forget) — sama persis seperti chat internal
+    const durationMs = Date.now() - startTime;
+
+    // Make relative image URLs absolute so caller can directly GET them
+    const absoluteResponse = responseText.replace(
+      /\(\/api\/files\//g,
+      `(${baseUrl}/api/files/`
+    );
+
+    // 6. WAHA Forward (fire & forget)
     sendToWaha(bot, callerUsername, message, responseText);
 
-    // 6. Audit log
-    const usage = normalizeUsage(aiResponse?.usage, model);
-    await AuditService.log({
-      req,
-      category:   'chat',
-      action:     responseText.trim() ? 'AI_RESPONSE' : 'AI_RESPONSE_EMPTY',
-      status:     responseText.trim() ? 'success'     : 'failed',
-      targetId:   bot._id,
-      targetName: bot.name,
-      username:   callerUsername,
-      detail: {
-        bot:             bot.name,
-        model,
-        provider,
-        durationMs,
-        maxTokensConfig: maxTokens,
-        source:          'external_api',
-        tokens: usage ? {
-          prompt:     usage.prompt_tokens,
-          completion: usage.completion_tokens,
-          total:      usage.total_tokens,
-          ...(usage.reasoning_tokens !== null && { reasoning: usage.reasoning_tokens }),
-          provider:   usage.provider,
-        } : null,
-        ...(usage?.warningMaxTokens && {
-          warning: `⚠️ Reasoning tokens (${usage.reasoning_tokens}) used most of max_tokens (${maxTokens}). Increase to at least ${Math.ceil(maxTokens * 2)}.`,
-        }),
-        ...(!responseText?.trim() && {
-          emptyResponse: true,
-          emptyReason: usage?.warningMaxTokens ? 'max_tokens_exhausted_by_reasoning' : 'unknown',
-        }),
-      },
-    }).catch(() => {});
-
-    // 7. Response — field "response" konsisten dengan format internal
-    res.json({
+    // 7. Response
+    const responsePayload = {
       success:  true,
       botName:  bot.name,
-      response: responseText,
-    });
+      response: absoluteResponse,
+    };
+
+    // If there are image files attached (newsletter), expose full URLs
+    if (attachedFiles && attachedFiles.length > 0) {
+      responsePayload.files = attachedFiles.map(f => ({
+        name: f.name,
+        url: f.path?.startsWith('/') ? `${baseUrl}${f.path}` : f.path,
+        type: f.type,
+      }));
+    }
+
+    res.json(responsePayload);
 
   } catch (error) {
     console.error('[EXTERNAL] Error:', error);

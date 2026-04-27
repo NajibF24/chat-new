@@ -12,15 +12,22 @@ export default {
     const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
 
-    // Logo: use path relative to server/data which is always mounted in Docker
-    const logoPath = path.join(process.cwd(), 'data', 'gys-logo.webp');
-    // Fallback: try client public path
-    const logoPathAlt = path.join(process.cwd(), '../client/public/assets/gys-logo.webp');
+    // Logo: primary = server/assets/ (git-tracked, always inside Docker)
+    const logoPath = path.join(process.cwd(), 'assets', 'gys-logo.webp');
+    // Fallback: data/ (auto-copied by server.js), then client/public
+    const logoPathAlt = path.join(process.cwd(), 'data', 'gys-logo.webp');
+    const logoPathAlt2 = path.join(process.cwd(), '../client/public/assets/gys-logo.webp');
     let logoBase64 = '';
-    const resolvedLogoPath = fs.existsSync(logoPath) ? logoPath : (fs.existsSync(logoPathAlt) ? logoPathAlt : null);
+    const resolvedLogoPath = fs.existsSync(logoPath) ? logoPath 
+      : fs.existsSync(logoPathAlt) ? logoPathAlt 
+      : fs.existsSync(logoPathAlt2) ? logoPathAlt2 
+      : null;
     if (resolvedLogoPath) {
       const logoBuf = fs.readFileSync(resolvedLogoPath);
       logoBase64 = 'data:image/webp;base64,' + logoBuf.toString('base64');
+      console.log('[NEWSLETTER] Logo loaded from:', resolvedLogoPath);
+    } else {
+      console.warn('[NEWSLETTER] Logo not found — using text fallback');
     }
     
     const logoHtml = logoBase64 
@@ -58,9 +65,11 @@ export default {
       background-color: #F8FAF9;
       color: #1F2937;
       width: 1000px;
-      height: 1480px; /* Extended A4 aspect ratio to fit sources */
+      min-height: 100vh;
       box-sizing: border-box;
       position: relative;
+      display: flex;
+      flex-direction: column;
     }
     
     /* Header Section */
@@ -104,7 +113,7 @@ export default {
     /* Diagonal decorative lines in header */
     .deco-lines { position: absolute; right: -50px; top: -50px; width: 400px; height: 400px; opacity: 0.15; z-index: 1; background: repeating-linear-gradient(45deg, transparent, transparent 10px, #ffffff 10px, #ffffff 12px); }
 
-    .main-content { padding: 30px 40px; display: flex; flex-direction: column; gap: 20px; }
+    .main-content { padding: 30px 40px; display: flex; flex-direction: column; gap: 20px; flex: 1; }
     
     /* Box Styles */
     .box {
@@ -162,8 +171,8 @@ export default {
     .quote-end { bottom: -40px; right: 0; }
     .takeaway-text { font-size: 16px; font-weight: 600; font-style: italic; color: #064E3B; line-height: 1.6; position: relative; z-index: 1; text-align: center; padding: 0 20px; }
     
-    /* Footer */
-    .footer { position: absolute; bottom: 0; left: 0; right: 0; background: #064E3B; color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+    /* Footer — normal flow at bottom, NOT absolute */
+    .footer { background: #064E3B; color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; margin-top: 0; }
     .footer-left strong { font-family: 'Oswald', sans-serif; font-size: 20px; letter-spacing: 0.5px; }
     .footer-left span { font-style: italic; font-size: 13px; color: #A7F3D0; margin-left: 10px; }
     .footer-right { font-size: 12px; color: #D1FAE5; text-align: right; }
@@ -324,12 +333,12 @@ export default {
     });
     const page = await browser.newPage();
     
-    // Set viewport to match the aspect ratio of the layout
-    await page.setViewport({ width: 1000, height: 1480, deviceScaleFactor: 2 });
+    // Set viewport wide enough; height will be determined by content (fullPage)
+    await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 2 });
     
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     
-    // Take screenshot of the full page
+    // Take full-page screenshot — captures ALL content regardless of viewport height
     await page.screenshot({ path: filepath, fullPage: true, type: 'png' });
 
     await browser.close();
