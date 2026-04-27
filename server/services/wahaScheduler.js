@@ -77,47 +77,54 @@ async function sendWahaMessage(wahaConfig, chatId, text) {
 async function sendWahaImage(wahaConfig, chatId, imagePath, caption, publicImageUrl) {
   if (!wahaConfig.endpoint || !chatId) return;
 
-  const sendUrl = wahaConfig.endpoint.replace(/\/$/, '') + '/api/sendImage';
-  
-  let base64Data = '';
-  if (fs.existsSync(imagePath)) {
-    const buf = fs.readFileSync(imagePath);
-    base64Data = 'data:image/png;base64,' + buf.toString('base64');
-  }
-
-  const payload = {
-    session: wahaConfig.session || 'default',
-    chatId,
-    file: {
-      mimetype: 'image/png',
-      filename: path.basename(imagePath),
-      data: base64Data
-    },
-    caption
-  };
-  
+  const baseEndpoint = wahaConfig.endpoint.replace(/\/$/, '');
   const headers = {
     'Content-Type': 'application/json',
     ...(wahaConfig.apiKey && { 'X-Api-Key': wahaConfig.apiKey }),
   };
+  const session = wahaConfig.session || 'default';
 
-  try {
-    await axios.post(sendUrl, payload, { headers, timeout: 60000 });
-    console.log(`[WahaScheduler] ✅ Sent IMAGE to ${chatId}`);
-  } catch (err) {
-    const errMsg = err.response?.data?.message || err.message || '';
-    const isPlusOnly = errMsg.toLowerCase().includes('plus') || errMsg.toLowerCase().includes('only in plus');
+  // ── Attempt 1: Send via public URL (works on NOWEB & some free engines) ──
+  if (publicImageUrl) {
+    try {
+      await axios.post(`${baseEndpoint}/api/sendImage`, {
+        session, chatId, caption,
+        file: { url: publicImageUrl }
+      }, { headers, timeout: 30000 });
+      console.log(`[WahaScheduler] ✅ Sent IMAGE (via URL) to ${chatId}`);
+      return;
+    } catch (e1) {
+      console.warn(`[WahaScheduler] ⚠️ URL method failed, trying base64... (${e1.response?.data?.message || e1.message})`);
+    }
+  }
 
-    if (isPlusOnly && publicImageUrl) {
-      // ── Fallback: send as text with clickable URL ──────────────
-      console.warn(`[WahaScheduler] ⚠️ sendImage requires WAHA Plus. Falling back to text+URL for ${chatId}`);
-      const fallbackText = `${caption}\n\n🖼️ *GYS Steel Signal Newsletter:*\n${publicImageUrl}`;
-      await sendWahaMessage(wahaConfig, chatId, fallbackText);
-    } else {
-      console.error(`[WahaScheduler] ❌ Failed to send IMAGE to ${chatId}:`, errMsg);
+  // ── Attempt 2: Send via Base64 ─────────────────────────────────────────
+  if (fs.existsSync(imagePath)) {
+    try {
+      const buf = fs.readFileSync(imagePath);
+      const base64Data = 'data:image/png;base64,' + buf.toString('base64');
+      await axios.post(`${baseEndpoint}/api/sendImage`, {
+        session, chatId, caption,
+        file: { mimetype: 'image/png', filename: path.basename(imagePath), data: base64Data }
+      }, { headers, timeout: 60000 });
+      console.log(`[WahaScheduler] ✅ Sent IMAGE (base64) to ${chatId}`);
+      return;
+    } catch (e2) {
+      const errMsg = e2.response?.data?.message || e2.message || '';
+      console.warn(`[WahaScheduler] ⚠️ base64 method failed (${errMsg})`);
+
+      // ── Attempt 3: Fallback to text + clickable URL ──────────────────
+      if (publicImageUrl) {
+        console.warn(`[WahaScheduler] ↩️ Falling back to text+URL for ${chatId}`);
+        const fallbackText = `${caption}\n\n🖼️ *GYS Steel Signal Newsletter:*\n${publicImageUrl}\n\n_Tip: Upgrade WAHA ke engine NOWEB agar gambar langsung terkirim._`;
+        await sendWahaMessage(wahaConfig, chatId, fallbackText);
+      } else {
+        console.error(`[WahaScheduler] ❌ All image send methods failed for ${chatId}:`, errMsg);
+      }
     }
   }
 }
+
 
 // ── Generate AI response for a schedule prompt ────────────────
 async function generateAIResponse(bot, prompt) {
