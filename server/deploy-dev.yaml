@@ -19,7 +19,7 @@ spec:
         - name: server
           image: harbor.gyssteel.com/portalai/server:IMAGE_TAG
           ports:
-            - containerPort: 80
+            - containerPort: 5000
           envFrom:
             - configMapRef:
                 name: portalai-config
@@ -44,6 +44,6 @@ spec:
     app: portalai-server
   ports:
     - protocol: TCP
-      port: 80
-      targetPort: 80
+      port: 5000
+      targetPort: 5000
   type: ClusterIP
