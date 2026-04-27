@@ -248,7 +248,7 @@ function addSlideTitle(slide, GYS, title) {
   // ✅ v1.5.0: tighter box (w=8.0 to leave room for badge) + stricter scaling
   const titleSize = calcFontSize(titleStr, 45, 22, 13);
   slide.addText(titleStr, {
-    x: 0.95, y: 0.10, w: 8.0, h: 0.62,
+    x: 1.6, y: 0.10, w: 7.3, h: 0.62,
     fontSize: titleSize, bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle, autoFit: true,
   });
@@ -1073,7 +1073,7 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   // ── Slide Title (left of badge) ──────────────────────────
   const slideTitle = String(data.title || "Project Status Update");
   slide.addText(slideTitle, {
-    x: 0.95, y: 0.12, w: 6.80, h: 0.58,  // ✅ shorter w to leave room for badge
+    x: 1.6, y: 0.12, w: 6.15, h: 0.58,  // ✅ shorter w to leave room for badge
     fontSize: calcFontSize(slideTitle, 50, 19, 12),
     bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle, autoFit: true,
