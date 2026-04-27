@@ -1691,27 +1691,8 @@ class AICoreService {
     contentUserMsg += `STEP 1: Search the web for TODAY's latest steel market news (Indonesian and global). Use queries like "Indonesia steel market news today", "harga baja Indonesia terbaru", "steel price Asia today". Find at least 2 real, currently accessible news articles.\n\n`;
     contentUserMsg += `STEP 2: Based ONLY on what you actually found in your web search, generate a JSON for the "GYS Steel Signal" newsletter. Write all content strictly in ENGLISH.\n\n`;
     contentUserMsg += `CRITICAL URL RULE: The "sourceLinks" array MUST contain ONLY real URLs you actually visited and verified. DO NOT invent or guess URLs. If no real URLs found, return sourceLinks as [].\n\n`;
-    contentUserMsg += `Output ONLY a raw JSON object (no markdown, no code blocks).`;
-    contentUserMsg += `\nStructure:`;
-{
-  "headline": "String - Main news headline (max 80 chars)",
-  "summaryParagraphs": ["String - Paragraph 1", "String - Paragraph 2"],
-  "keyPoints": [
-    { "title": "String - Point 1 Title", "description": "String - Point 1 Description" },
-    { "title": "String - Point 2 Title", "description": "String - Point 2 Description" },
-    { "title": "String - Point 3 Title", "description": "String - Point 3 Description" }
-  ],
-  "implicationIntro": "String - Short intro to implications",
-  "implicationCustomer": "String - Customer behavior implication",
-  "implicationSupplier": "String - Supplier behavior implication",
-  "implicationMarket": "String - Market narrative implication",
-  "actionSalesCheck": "String - Sales action check",
-  "actionSalesRec": "String - Sales recommended action",
-  "actionProcurementCheck": "String - Procurement action check",
-  "actionProcurementRec": "String - Procurement recommended action",
-  "managementTakeaway": "String - A strong management takeaway quote (italicized tone)",
-  "sourceLinks": ["String - URL 1", "String - URL 2"]
-}`;
+    const jsonSchema = '{\n  "headline": "String - Main news headline (max 80 chars)",\n  "summaryParagraphs": ["String - Paragraph 1", "String - Paragraph 2"],\n  "keyPoints": [\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" }\n  ],\n  "implicationIntro": "String - Short intro to implications",\n  "implicationCustomer": "String - Customer behavior implication",\n  "implicationSupplier": "String - Supplier behavior implication",\n  "implicationMarket": "String - Market narrative implication",\n  "actionSalesCheck": "String - Sales action check",\n  "actionSalesRec": "String - Sales recommended action",\n  "actionProcurementCheck": "String - Procurement action check",\n  "actionProcurementRec": "String - Procurement recommended action",\n  "managementTakeaway": "String - Strong management takeaway",\n  "sourceLinks": ["ONLY real verified URLs — leave empty array [] if none found"]\n}';
+    contentUserMsg += `Output ONLY a raw JSON object (no markdown, no code blocks).\nStructure:\n${jsonSchema}`;
 
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
