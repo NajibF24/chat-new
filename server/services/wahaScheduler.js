@@ -366,4 +366,5 @@ export const startWahaScheduler = () => {
   setInterval(cleanFiredCache, 60 * 60 * 1000); // every hour
 };
 
-export default startWahaScheduler;
+export default startWahaScheduler;#   S E R V E R _ P U B L I C _ U R L   c o n f i g u r e d   i n   d o c k e r - c o m p o s e . d e v . y m l  
+ 
