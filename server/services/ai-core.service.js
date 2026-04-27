@@ -1733,6 +1733,9 @@ class AICoreService {
 
       const rawExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
 
+      // ✅ Save User Message to DB early so it is preserved even if generation times out
+      await new Chat({ userId, botId, threadId, role: 'user', content: message || '/ppt' }).save();
+
       // ── STEP 2: Build content generation prompt ──────────────────────────────
       const userRequest = message || '';
       let contentUserMsg = '';
@@ -1971,7 +1974,6 @@ ${layoutSummary}`
 **Layout per slide:**
 ${layoutSummary}`;
 
-      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
