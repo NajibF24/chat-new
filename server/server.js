@@ -88,6 +88,28 @@ console.log('🖼️  Serving avatars from:', avatarsPath);
     await fs.mkdir(avatarsPath,      { recursive: true });
     await fs.mkdir(path.join(process.cwd(), 'data', 'tmp'), { recursive: true });
     console.log('✅ Directories ensured');
+
+    // ✅ Ensure GYS logo is available in server/data/ for newsletter generation
+    const logoDestPath = path.join(process.cwd(), 'data', 'gys-logo.webp');
+    const logoSrcPaths = [
+      path.join(process.cwd(), '../client/public/assets/gys-logo.webp'),
+      path.join(__dirname, '../client/public/assets/gys-logo.webp'),
+    ];
+    try {
+      const logoExists = await fs.access(logoDestPath).then(() => true).catch(() => false);
+      if (!logoExists) {
+        for (const src of logoSrcPaths) {
+          const srcExists = await fs.access(src).then(() => true).catch(() => false);
+          if (srcExists) {
+            await fs.copyFile(src, logoDestPath);
+            console.log('✅ GYS logo copied to server/data/');
+            break;
+          }
+        }
+      }
+    } catch (logoErr) {
+      console.warn('⚠️ Could not copy GYS logo (newsletter will use text fallback):', logoErr.message);
+    }
   } catch (e) {
     console.error('❌ Failed to create directories:', e);
   }
