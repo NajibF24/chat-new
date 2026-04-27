@@ -11,7 +11,7 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont
 
-# 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine#
+# 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
