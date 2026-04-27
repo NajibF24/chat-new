@@ -27,7 +27,7 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 // ── Helper: detect reasoning/GPT-5 model ─────────────────────
 const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(model);
 
-// ── Helper: kirim ke WAHA WhatsApp ───────────────────────────
+// ── Helper: forward chat log to WhatsApp via Baileys ─────────
 async function sendToWaha(bot, username, userMessage, aiResponse) {
   if (!bot.wahaConfig?.enabled || !bot.wahaConfig?.chatId) return;
   try {
@@ -38,8 +38,12 @@ async function sendToWaha(bot, username, userMessage, aiResponse) {
       `🤖 *Answer:*\n${aiResponse}`,
     ].join('\n');
 
-    await BaileysService.sendText(bot.wahaConfig.chatId, waText);
-    console.log(`[WAHA] ✅ Forwarded to: ${bot.wahaConfig.chatId}`);
+    const ok = await BaileysService.sendText(bot.wahaConfig.chatId, waText);
+    if (ok) {
+      console.log(`[WAHA] ✅ Forwarded to: ${bot.wahaConfig.chatId}`);
+    } else {
+      console.warn(`[WAHA] ⚠️ Could not forward to: ${bot.wahaConfig.chatId} (Baileys offline or forbidden)`);
+    }
   } catch (err) {
     console.error('[WAHA] ❌ Forward failed:', err.message);
   }
