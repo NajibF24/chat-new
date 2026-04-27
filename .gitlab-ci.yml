@@ -11,7 +11,9 @@ build_client:
   tags:
     - CI-Shell
   rules:
-    - if: $CI_COMMIT_BRANCH == "development"  # Hanya jalan di branch development
+    - if: $CI_COMMIT_MESSAGE =~ /\[skip-build\]/
+      when: never
+    - if: $CI_COMMIT_BRANCH == "development"
       changes:
         - client/**/*
   script:
@@ -28,9 +30,11 @@ build_server:
   tags:
     - CI-Shell
   rules:
-    - if: $CI_COMMIT_BRANCH == "development"  # Hanya jalan di branch development
+    - if: $CI_COMMIT_MESSAGE =~ /\[skip-build\]/
+      when: never
+    - if: $CI_COMMIT_BRANCH == "development"
       changes:
-       - server/**/*
+        - server/**/*
   script:
     - >
       docker build
