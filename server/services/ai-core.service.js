@@ -1729,13 +1729,8 @@ Structure:
     const outputDir = path.join(process.cwd(), 'data', 'files');
     const result = await NewsletterService.generateNewsletterImage({ data: newsletterData, outputDir });
 
-    let linksMarkdown = '';
-    if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
-      linksMarkdown = `\n\n🔗 **Sumber Referensi:**\n` + newsletterData.sourceLinks.map(l => `- [${l}](${l})`).join('\n');
-    }
-
     const firstLink = (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) ? newsletterData.sourceLinks[0] : result.fileUrl;
-    const responseMarkdown = `[![GYS Steel Signal](${result.fileUrl})](${firstLink})${linksMarkdown}`;
+    const responseMarkdown = `[![GYS Steel Signal](${result.fileUrl})](${firstLink})`;
 
     return { result, responseMarkdown, newsletterData };
   }
@@ -1748,13 +1743,13 @@ Structure:
 
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,
-        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'image' }],
+        attachedFiles: [], // Do not attach file to avoid double rendering, Markdown handles the clickable image
       }).save();
       await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
       return {
         response: responseMarkdown, threadId,
-        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'image' }],
+        attachedFiles: [],
       };
     } catch (error) {
       console.error('❌ [NEWSLETTER Command]', error);
