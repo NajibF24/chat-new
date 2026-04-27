@@ -1,30 +1,30 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dms-app
-  namespace: dms
+  name: portalai-app
+  namespace: portalai
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: client-app
+      app: portalai-app
   template:
     metadata:
       labels:
-        app: dms-app
+        app: portalai-app
     spec:
       imagePullSecrets:
-        - name:	client-registry   # secret untuk pull image dari Harbor
+        - name:	portalai-registry   # secret untuk pull image dari Harbor
       containers:
-        - name: php-fpm
-          image: harbor.gyssteel.com/dms/fe-be:IMAGE_TAG
+        - name: client
+          image: harbor.gyssteel.com/portalai/client:IMAGE_TAG
           ports:
             - containerPort: 80
           envFrom:
             - configMapRef:
-                name: dms-config
+                name: portalai-config
             - secretRef:
-                name: dms-secret
+                name: portalai-secret
           resources:
             requests:
               cpu: "200m"
@@ -32,3 +32,18 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portalai-service
+  namespace: portalai
+spec:
+  selector:
+    app: portalai-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+
