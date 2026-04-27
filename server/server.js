@@ -14,9 +14,10 @@ import chatRoutes      from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes     from './routes/embed.js';
 import pptxRoutes      from './routes/pptx.js';
-import wahaRoutes      from './routes/waha.js'; // ✅ NEW: WAHA webhook
+import wahaRoutes      from './routes/waha.js'; // 🔹 NEW: WAHA webhook
 
-import { startWahaScheduler } from './services/wahaScheduler.js'; // ✅ UPDATED scheduler
+import { startWahaScheduler } from './services/wahaScheduler.js'; // 🔹 UPDATED scheduler
+import CleanupService from './services/cleanup.service.js';
 
 dotenv.config();
 
@@ -124,6 +125,9 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  // ✅ Start WAHA flexible scheduler
+  // 🔹 Start WAHA flexible scheduler
   startWahaScheduler();
+  
+  // 🔹 Start File Cleanup Scheduler
+  CleanupService.start();
 });
