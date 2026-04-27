@@ -1729,8 +1729,22 @@ Structure:
     const outputDir = path.join(process.cwd(), 'data', 'files');
     const result = await NewsletterService.generateNewsletterImage({ data: newsletterData, outputDir });
 
-    const firstLink = (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) ? newsletterData.sourceLinks[0] : result.fileUrl;
-    const responseMarkdown = `[![GYS Steel Signal](${result.fileUrl})](${firstLink})`;
+    // Build the Markdown: image is clickable (links to first source), then show all sources as real text links below
+    const firstLink = (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) ? newsletterData.sourceLinks[0] : null;
+    
+    // Image wrapped in link pointing to first source
+    const imageMarkdown = firstLink 
+      ? `[![GYS Steel Signal](${result.fileUrl})](${firstLink})`
+      : `![GYS Steel Signal](${result.fileUrl})`;
+
+    // Source links as real, clickable Markdown text below the image 
+    let sourceMarkdown = '';
+    if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
+      sourceMarkdown = '\n\n**Sources & References:**\n' +
+        newsletterData.sourceLinks.map(l => `- [${l}](${l})`).join('\n');
+    }
+
+    const responseMarkdown = imageMarkdown + sourceMarkdown;
 
     return { result, responseMarkdown, newsletterData };
   }
