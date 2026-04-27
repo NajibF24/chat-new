@@ -142,6 +142,37 @@ app.use('/api/newsletter',  newsletterRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// ── Baileys Admin Endpoints (must be before 404 handler) ───────────
+app.get('/api/admin/baileys/status', (req, res) => {
+  res.json({
+    status: BaileysService.getStatus(),
+    connected: BaileysService.isConnected(),
+  });
+});
+
+app.get('/api/admin/baileys/qr', (req, res) => {
+  const qr = BaileysService.getQRBase64();
+  if (!qr) {
+    const st = BaileysService.getStatus();
+    return res.status(202).json({
+      message: st === 'connected' ? 'Already connected — no QR needed' : 'QR not ready yet, wait a moment and refresh',
+      status: st,
+    });
+  }
+  res.send(`<!DOCTYPE html>
+<html><head><title>GYS WhatsApp QR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111;color:#fff;font-family:sans-serif}
+h1{color:#25D366}p{color:#aaa;font-size:14px}img{border-radius:12px;max-width:300px}</style>
+</head><body>
+<h1>📱 Scan QR Code</h1>
+<p>WhatsApp → Linked Devices → Link a Device</p>
+<img src="${qr}" alt="QR Code" />
+<p style="margin-top:16px;color:#666">Page auto-refreshes every 30s</p>
+</body></html>`);
+});
+
 app.use((req, res)       => res.status(404).json({ error: 'Endpoint Not Found' }));
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err);
@@ -153,7 +184,6 @@ app.listen(PORT, '0.0.0.0', () => {
 
   // 🔹 Start Baileys WhatsApp service
   BaileysService.init().then(() => {
-    // Register incoming message handler after Baileys is initialized
     BaileysService.setMessageHandler(handleBaileysMessage);
   }).catch(err => {
     console.error('❌ Baileys init failed:', err.message);
@@ -164,35 +194,4 @@ app.listen(PORT, '0.0.0.0', () => {
 
   // 🔹 Start File Cleanup Scheduler
   CleanupService.start();
-});
-
-// ── Baileys Admin Endpoints ─────────────────────────────────────────
-app.get('/api/admin/baileys/status', (req, res) => {
-  res.json({
-    status: BaileysService.getStatus(),
-    connected: BaileysService.isConnected(),
-  });
-});
-
-app.get('/api/admin/baileys/qr', (req, res) => {
-  const qr = BaileysService.getQRBase64();
-  if (!qr) {
-    const status = BaileysService.getStatus();
-    return res.status(404).json({
-      error: status === 'connected' ? 'Already connected — no QR needed' : 'QR not ready yet, wait a moment',
-      status,
-    });
-  }
-  // Return as HTML page with QR image for easy scanning
-  res.send(`<!DOCTYPE html>
-<html><head><title>GYS WhatsApp QR</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111;color:#fff;font-family:sans-serif}
-h1{color:#25D366}p{color:#aaa;font-size:14px}img{border-radius:12px;max-width:300px}</style>
-</head><body>
-<h1>📱 Scan QR Code</h1>
-<p>WhatsApp → Linked Devices → Link a Device</p>
-<img src="${qr}" alt="QR Code" />
-<p style="margin-top:16px;color:#666">Refresh page if QR expires</p>
-</body></html>`);
 });
