@@ -23,6 +23,20 @@ export default {
       ? `<img src="${logoBase64}" alt="GYS Logo" style="height: 60px;">` 
       : `<div class="logo-text">GYS</div><div class="logo-sub">GARUDA YAMATO STEEL</div>`;
 
+    const icons = {
+      traffic: `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2C8.13 2 5 5.13 5 9v6c0 3.87 3.13 7 7 7s7-3.13 7-7V9c0-3.87-3.13-7-7-7zm0 4.5c.83 0 1.5.67 1.5 1.5S12.83 9.5 12 9.5 10.5 8.83 10.5 8 11.17 6.5 12 6.5zm0 5.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5.67-1.5 1.5-1.5zm0 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>`,
+      compass: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>`,
+      target: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`,
+      users: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+      handshake: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 14H6"/></svg>`,
+      trend: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`,
+      check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polyline points="20 6 9 17 4 12"/></svg>`,
+      bar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`,
+      cart: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`,
+      pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>`,
+      link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`
+    };
+
     // HTML Template matching the "GYS STEEL SIGNAL" reference
     const htmlContent = `
 <!DOCTYPE html>
@@ -40,7 +54,7 @@ export default {
       background-color: #F8FAF9;
       color: #1F2937;
       width: 1000px;
-      height: 1414px; /* A4 aspect ratio (1:1.414) */
+      height: 1480px; /* Extended A4 aspect ratio to fit sources */
       box-sizing: border-box;
       position: relative;
     }
@@ -177,7 +191,7 @@ export default {
     <!-- 1. TODAY'S SIGNAL -->
     <div class="box signal-box">
       <div class="section-header">
-        <div class="section-icon">🚦</div>
+        <div class="section-icon">${icons.traffic}</div>
         <h2 class="section-title">Today's Signal</h2>
       </div>
       <div class="signal-headline">${data.headline || 'Market Update'}</div>
@@ -189,7 +203,7 @@ export default {
     <!-- 2. THINGS YOU NEED TO KNOW -->
     <div class="box">
       <div class="section-header">
-        <div class="section-icon">🧭</div>
+        <div class="section-icon">${icons.compass}</div>
         <h2 class="section-title">Things You Need to Know</h2>
       </div>
       <div class="grid-3">
@@ -205,28 +219,28 @@ export default {
     <!-- 3. COMMERCIAL IMPLICATION -->
     <div class="box">
       <div class="section-header">
-        <div class="section-icon">🎯</div>
+        <div class="section-icon">${icons.target}</div>
         <h2 class="section-title">Commercial Implication for GYS</h2>
       </div>
       <div class="impl-intro">${data.implicationIntro || 'The immediate focus should be to monitor whether this news changes:'}</div>
       <div class="impl-grid">
         <div class="impl-item">
           <div class="impl-header">
-            <span class="impl-icon">👥</span>
+            <span class="impl-icon" style="width:24px;height:24px;display:inline-block;">${icons.users}</span>
             <span class="impl-title">Customer behavior</span>
           </div>
           <div class="impl-text">${data.implicationCustomer || ''}</div>
         </div>
         <div class="impl-item">
           <div class="impl-header">
-            <span class="impl-icon">🤝</span>
+            <span class="impl-icon" style="width:24px;height:24px;display:inline-block;">${icons.handshake}</span>
             <span class="impl-title">Supplier behavior</span>
           </div>
           <div class="impl-text">${data.implicationSupplier || ''}</div>
         </div>
         <div class="impl-item">
           <div class="impl-header">
-            <span class="impl-icon">📈</span>
+            <span class="impl-icon" style="width:24px;height:24px;display:inline-block;">${icons.trend}</span>
             <span class="impl-title">Market narrative</span>
           </div>
           <div class="impl-text">${data.implicationMarket || ''}</div>
@@ -237,12 +251,12 @@ export default {
     <!-- 4. ACTIONS FOR THIS WEEK -->
     <div class="box">
       <div class="section-header">
-        <div class="section-icon">✅</div>
+        <div class="section-icon">${icons.check}</div>
         <h2 class="section-title">Actions for This Week</h2>
       </div>
       <div class="action-grid">
         <div class="action-card">
-          <div class="action-icon-wrap">📊</div>
+          <div class="action-icon-wrap">${icons.bar}</div>
           <div class="action-content">
             <h3 class="action-role">Sales</h3>
             <p class="action-desc">${data.actionSalesCheck || ''}</p>
@@ -251,7 +265,7 @@ export default {
           </div>
         </div>
         <div class="action-card">
-          <div class="action-icon-wrap">🛒</div>
+          <div class="action-icon-wrap">${icons.cart}</div>
           <div class="action-content">
             <h3 class="action-role">Procurement</h3>
             <p class="action-desc">${data.actionProcurementCheck || ''}</p>
@@ -264,11 +278,22 @@ export default {
 
     <!-- 5. MANAGEMENT TAKEAWAY -->
     <div class="box takeaway-box">
-      <div class="takeaway-icon">📌</div>
+      <div class="takeaway-icon">${icons.pin}</div>
       <div class="takeaway-content">
         <span class="quote-mark quote-start">"</span>
         <div class="takeaway-text">${data.managementTakeaway || ''}</div>
         <span class="quote-mark quote-end">"</span>
+      </div>
+    </div>
+
+    <!-- 6. SOURCES -->
+    <div class="box" style="margin-top: -5px; padding: 15px 25px; border-left: 4px solid #F59E0B;">
+      <div class="section-header" style="margin-bottom: 5px;">
+        <div class="section-icon" style="width:24px;height:24px;">${icons.link}</div>
+        <h2 class="section-title" style="font-size: 16px;">Sources & References</h2>
+      </div>
+      <div class="source-links" style="font-size: 13px; color: #2563EB; word-break: break-all; padding-left: 36px;">
+        ${(data.sourceLinks && data.sourceLinks.length > 0) ? data.sourceLinks.join('<br>') : 'Internal Market Data'}
       </div>
     </div>
 
@@ -297,7 +322,7 @@ export default {
     const page = await browser.newPage();
     
     // Set viewport to match the aspect ratio of the layout
-    await page.setViewport({ width: 1000, height: 1414, deviceScaleFactor: 2 });
+    await page.setViewport({ width: 1000, height: 1480, deviceScaleFactor: 2 });
     
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     

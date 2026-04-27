@@ -15,6 +15,7 @@ import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes     from './routes/embed.js';
 import pptxRoutes      from './routes/pptx.js';
 import wahaRoutes      from './routes/waha.js'; // 🔹 NEW: WAHA webhook
+import newsletterRoutes from './routes/newsletter.js';
 
 import { startWahaScheduler } from './services/wahaScheduler.js'; // 🔹 UPDATED scheduler
 import CleanupService from './services/cleanup.service.js';
@@ -114,6 +115,7 @@ app.use('/api/smartsheet',  smartsheetRoutes);
 app.use('/api/embed',       embedRoutes);
 app.use('/api/pptx',        pptxRoutes);
 app.use('/api/waha',        wahaRoutes); // ✅ NEW: WAHA webhook receiver
+app.use('/api/newsletter',  newsletterRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 

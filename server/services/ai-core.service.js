@@ -1686,8 +1686,8 @@ class AICoreService {
   async generateNewsletterDataCore({ bot, message, history = [] }) {
     console.log('[NEWSLETTER CORE] Generating GYS Steel Signal Image...');
 
-    let contentUserMsg = `=== PERMINTAAN USER (Format GYS Steel Signal) ===\n${message}\n\n`;
-    contentUserMsg += `Please generate a JSON object for the "GYS Steel Signal" newsletter based on the user's request and any provided news links. Gunakan BAHASA INDONESIA SEPENUHNYA untuk seluruh isi konten JSON ini (terjemahkan judul atau poin menjadi bahasa Indonesia yang profesional). Your output MUST be ONLY a raw JSON object.
+    let contentUserMsg = `=== USER REQUEST (Format GYS Steel Signal) ===\n${message}\n\n`;
+    contentUserMsg += `Please generate a JSON object for the "GYS Steel Signal" newsletter based on the user's request and any provided news links. Write all content strictly in ENGLISH. Your output MUST be ONLY a raw JSON object.
 Structure:
 {
   "headline": "String - Main news headline (max 80 chars)",
