@@ -12,7 +12,7 @@ export default {
     const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
 
-    const logoPath = path.join(process.cwd(), '../client/src/assets/gys-logo.webp');
+    const logoPath = path.join(process.cwd(), '../client/public/assets/gys-logo.webp');
     let logoBase64 = '';
     if (fs.existsSync(logoPath)) {
       const logoBuf = fs.readFileSync(logoPath);
