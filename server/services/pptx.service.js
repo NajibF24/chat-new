@@ -204,7 +204,7 @@ function addFooter(slide, pptx, GYS, pageLabel = "") {
 function addLogoLight(slide, pptx, GYS, x = 0.22, y = 0.14) {
   slide.addShape(pptx.ShapeType.roundRect, {
     x, y, w: 0.58, h: 0.4,
-    fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.05,
+    fill: { color: GYS.teal }, line: { type: "none" },
   });
   slide.addText("GYS", {
     x, y, w: 0.58, h: 0.4,
@@ -248,7 +248,7 @@ function addSlideTitle(slide, GYS, title) {
   // ✅ v1.5.0: tighter box (w=8.0 to leave room for badge) + stricter scaling
   const titleSize = calcFontSize(titleStr, 45, 22, 13);
   slide.addText(titleStr, {
-    x: 0.95, y: 0.10, w: 8.0, h: 0.62,
+    x: 1.6, y: 0.10, w: 7.3, h: 0.62,
     fontSize: titleSize, bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle, autoFit: true,
   });
@@ -258,12 +258,9 @@ function addSlideTitle(slide, GYS, title) {
 // IMAGE_SLIDE layout
 // ────────────────────────────────────────────────────────────
 function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const imagePath = data.imagePath;
@@ -311,7 +308,7 @@ function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
   } else {
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 0.3, y: ZONE_TOP, w: 9.4, h: ZONE_H,
-      fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+      fill: { color: GYS.tealLight }, line: { type: "none" }, rectRadius: 0.1,
     });
     slide.addText('🖼️ Image\n' + (caption || 'Visual'), {
       x: 0.3, y: ZONE_TOP, w: 9.4, h: ZONE_H,
@@ -320,7 +317,7 @@ function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
     });
   }
 
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 // ────────────────────────────────────────────────────────────
@@ -328,28 +325,12 @@ function renderImageSlide(pptx, slide, data, GYS, pageLabel) {
 // ────────────────────────────────────────────────────────────
 
 function renderTitle(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.teal }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: 7.2, y: -1.5, w: 5.0, h: 5.0,
-    fill: { color: GYS.tealDark }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: 8.0, y: 2.8, w: 3.2, h: 3.2,
-    fill: { color: GYS.tealMid }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: -0.3, y: 4.5, w: 1.8, h: 1.8,
-    fill: { color: GYS.tealMid }, line: { type: "none" },
-  });
-  addLogoDark(slide, pptx, GYS, 0.3, 0.2);
-  slide.addText("GARUDA YAMATO STEEL", {
-    x: 1.0, y: 0.22, w: 5.5, h: 0.34,
-    fontSize: 10, bold: true, color: GYS.white, charSpacing: 2.0,
-    fontFace: GYS.fontTitle,
-  });
+  
+  
+  
+  
+  
+  
   slide.addShape(pptx.ShapeType.rect, {
     x: 0.5, y: 1.65, w: 3.5, h: 0.04,
     fill: { color: GYS.tealAccent }, line: { type: "none" },
@@ -377,23 +358,14 @@ function renderTitle(pptx, slide, data, GYS, pageLabel) {
       fontSize: 12, color: "7BC8AD", fontFace: GYS.fontBody,
     });
   }
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderSection(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: 3.0, h: GYS.slideH,
-    fill: { color: GYS.teal }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: -0.8, y: 3.5, w: 2.8, h: 2.8,
-    fill: { color: GYS.tealMid }, line: { type: "none" },
-  });
-  addLogoDark(slide, pptx, GYS, 0.25, 0.2);
+  
+  
+  
+  
   if (data.sectionNumber) {
     slide.addText(String(data.sectionNumber), {
       x: 0.2, y: 1.7, w: 2.6, h: 1.5,
@@ -416,16 +388,13 @@ function renderSection(pptx, slide, data, GYS, pageLabel) {
       fontFace: GYS.fontBody, wrap: true, lineSpacingMultiple: 1.3, autoFit: true,
     });
   }
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderGrid(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const items   = (data.items || []).slice(0, 4);
@@ -445,7 +414,7 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
     });
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cx, y: cardY, w: cardW, h: cardH,
-      fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.12,
+      fill: { color: GYS.offWhite }, line: { type: "none" },
     });
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cx, y: cardY, w: cardW, h: 0.12,
@@ -486,7 +455,7 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
     });
   });
 
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 // ────────────────────────────────────────────────────────────
@@ -497,12 +466,9 @@ function renderGrid(pptx, slide, data, GYS, pageLabel) {
 // ────────────────────────────────────────────────────────────
 function renderGrid3x3(pptx, slide, data, GYS, pageLabel) {
   // Background
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const allItems = (data.items || []).slice(0, 9);
@@ -533,12 +499,12 @@ function renderGrid3x3(pptx, slide, data, GYS, pageLabel) {
     // Card body
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cx, y: cy, w: cardW, h: cardH,
-      fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 0.75 }, rectRadius: 0.10,
+      fill: { color: GYS.offWhite }, line: { type: "none" }, rectRadius: 0.10,
     });
     // Top accent strip
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cx, y: cy, w: cardW, h: 0.09,
-      fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.05,
+      fill: { color: GYS.teal }, line: { type: "none" },
     });
 
     // Icon circle
@@ -592,17 +558,14 @@ function renderGrid3x3(pptx, slide, data, GYS, pageLabel) {
     }
   });
 
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderContent(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
-  addLeftAccent(slide, pptx, GYS, 0.85, 4.3);
+  
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const imagePath = data.imagePath;
@@ -665,16 +628,13 @@ function renderContent(pptx, slide, data, GYS, pageLabel) {
       fontFace: GYS.fontBody, lineSpacingMultiple: 1.4, autoFit: true,
     });
   }
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderTwoColumn(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   // Cards: y=1.0 → y=5.30 (h=4.3)
@@ -686,11 +646,11 @@ function renderTwoColumn(pptx, slide, data, GYS, pageLabel) {
 
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 0.22, y: CARD_Y, w: 4.6, h: CARD_H,
-    fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+    fill: { color: GYS.offWhite }, line: { type: "none" },
   });
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 5.18, y: CARD_Y, w: 4.6, h: CARD_H,
-    fill: { color: GYS.cardWhite }, line: { color: GYS.teal, width: 2 }, rectRadius: 0.1,
+    fill: { color: GYS.offWhite }, line: { type: "none" }, rectRadius: 0.1,
   });
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 0.22, y: CARD_Y, w: 4.6, h: HDR_H,
@@ -698,7 +658,7 @@ function renderTwoColumn(pptx, slide, data, GYS, pageLabel) {
   });
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 5.18, y: CARD_Y, w: 4.6, h: HDR_H,
-    fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.1,
+    fill: { color: GYS.tealLight }, line: { type: "none" },
   });
   if (data.leftTitle) {
     slide.addText(truncateText(String(data.leftTitle), 35), {
@@ -711,7 +671,7 @@ function renderTwoColumn(pptx, slide, data, GYS, pageLabel) {
     slide.addText(truncateText(String(data.rightTitle), 35), {
       x: 5.3, y: CARD_Y + 0.02, w: 4.3, h: HDR_H - 0.04,
       fontSize: calcFontSize(String(data.rightTitle), 28, 13, 9),
-      bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+      bold: true, color: GYS.darkText, valign: "middle", fontFace: GYS.fontTitle,
     });
   }
 
@@ -742,16 +702,13 @@ function renderTwoColumn(pptx, slide, data, GYS, pageLabel) {
       }
     );
   }
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderStats(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const stats  = (data.stats || []).slice(0, 4);
@@ -773,8 +730,8 @@ function renderStats(pptx, slide, data, GYS, pageLabel) {
     });
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cx, y: cardY, w: cardW, h: cardH,
-      fill: { color: isDark ? GYS.teal : GYS.cardWhite },
-      line: { color: isDark ? GYS.teal : GYS.grayBorder, width: isDark ? 0 : 1.5 },
+      fill: { color: isDark ? GYS.teal : GYS.offWhite },
+      line: { type: "none" },
       rectRadius: 0.12,
     });
     const textColor = isDark ? GYS.white  : GYS.darkText;
@@ -799,7 +756,7 @@ function renderStats(pptx, slide, data, GYS, pageLabel) {
     const valueFs     = calcFontSize(valStr, 7, valueFsBase, 18);
     slide.addText(valStr, {
       x: cx + 0.08, y: valueY, w: cardW - 0.16, h: 1.0,
-      fontSize: valueFs, bold: true, color: valColor, align: "center",
+      fontSize: valueFs, bold: true, color: GYS.tealDark, align: "center",
       fontFace: GYS.fontTitle, autoFit: true,
     });
 
@@ -824,16 +781,13 @@ function renderStats(pptx, slide, data, GYS, pageLabel) {
       });
     }
   });
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderTimeline(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const steps = (data.steps || []).slice(0, 6);
@@ -887,11 +841,11 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cardX, y: cardY, w: cardW, h: cardH,
-      fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+      fill: { color: GYS.offWhite }, line: { type: "none" },
     });
     slide.addShape(pptx.ShapeType.roundRect, {
       x: cardX, y: cardY, w: cardW, h: 0.1,
-      fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.05,
+      fill: { color: GYS.teal }, line: { type: "none" },
     });
 
     // Step title: cardY+0.12 → cardY+0.66 (0.54in)
@@ -915,16 +869,13 @@ function renderTimeline(pptx, slide, data, GYS, pageLabel) {
       lineSpacingMultiple: 1.2, autoFit: true,
     });
   });
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderChart(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const cfg     = data.chartConfig || {};
@@ -944,15 +895,15 @@ function renderChart(pptx, slide, data, GYS, pageLabel) {
   if (hasInsight) {
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 0.18, y: CHART_TOP, w: 3.0, h: CHART_H,
-      fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+      fill: { color: GYS.tealLight }, line: { type: "none" }, rectRadius: 0.1,
     });
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 0.18, y: CHART_TOP, w: 3.0, h: 0.42,
-      fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.1,
+      fill: { color: GYS.tealLight }, line: { type: "none" },
     });
     slide.addText("Key Insight", {
       x: 0.28, y: CHART_TOP + 0.02, w: 2.8, h: 0.38,
-      fontSize: 12, bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+      fontSize: 12, bold: true, color: GYS.darkText, valign: "middle", fontFace: GYS.fontTitle,
     });
     const insightStr = String(data.insightText);
     const insightFs  = calcFontSizeByArea(insightStr, 2.8, CHART_H - 0.52, 13, 8);
@@ -979,21 +930,18 @@ function renderChart(pptx, slide, data, GYS, pageLabel) {
       barGrouping: cfg.isStacked ? "stacked" : "clustered",
     });
   }
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderTable(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
   addSlideTitle(slide, GYS, data.title);
 
   const headers = data.tableHeaders || [];
   const rows    = data.tableRows    || [];
-  if (!headers.length && !rows.length) { addFooter(slide, pptx, GYS, pageLabel); return; }
+  if (!headers.length && !rows.length) {  return; }
 
   const colCount   = Math.max(headers.length, rows[0] ? (Array.isArray(rows[0]) ? rows[0].length : 1) : 1);
   const totalRows  = rows.length + (headers.length ? 1 : 0);
@@ -1010,7 +958,7 @@ function renderTable(pptx, slide, data, GYS, pageLabel) {
       headers.map(h => ({
         text: truncateText(String(h), maxCellChars + 10),
         options: {
-          bold: true, color: GYS.white, fill: GYS.teal,
+          bold: true, color: GYS.darkText, fill: GYS.tealLight,
           align: "left", fontSize: headerFs, valign: "middle", fontFace: GYS.fontTitle,
         },
       }))
@@ -1021,7 +969,7 @@ function renderTable(pptx, slide, data, GYS, pageLabel) {
       (Array.isArray(row) ? row : [row]).map((cell, ci) => ({
         text: truncateText(String(cell ?? ""), maxCellChars),
         options: {
-          color: GYS.bodyText, fill: ri % 2 === 0 ? GYS.cardWhite : GYS.offWhite,
+          color: GYS.bodyText, fill: ri % 2 === 0 ? GYS.offWhite : GYS.white,
           fontSize: cellFs, valign: "middle", align: "left",
           bold: ci === 0, fontFace: GYS.fontBody,
         },
@@ -1034,26 +982,17 @@ function renderTable(pptx, slide, data, GYS, pageLabel) {
   const rowH     = Math.min(0.52, TABLE_H / Math.max(tableData.length, 1));
   slide.addTable(tableData, {
     x: 0.25, y: TABLE_Y, w: 9.5, h: TABLE_H,
-    border: { type: "solid", color: GYS.grayBorder, pt: 0.75 },
+    border: { type: "solid", color: GYS.tealLight, pt: 0.75 },
     rowH, autoPage: false,
   });
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderQuote(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.teal }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: -1.2, y: -1.5, w: 5, h: 5,
-    fill: { color: GYS.tealDark }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: 7.8, y: 2.8, w: 3.5, h: 3.5,
-    fill: { color: GYS.tealMid }, line: { type: "none" },
-  });
-  addLogoDark(slide, pptx, GYS, 0.28, 0.2);
+  
+  
+  
+  
   slide.addText("\u201C", {
     x: 0.5, y: 0.6, w: 1.8, h: 1.4,
     fontSize: 110, color: GYS.tealAccent, bold: true, fontFace: "Georgia",
@@ -1072,27 +1011,15 @@ function renderQuote(pptx, slide, data, GYS, pageLabel) {
       fontSize: 14, color: "A8D5C2", align: "right", fontFace: GYS.fontBody,
     });
   }
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 function renderClosing(pptx, slide, data, GYS, pageLabel) {
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.teal }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: -1.5, y: -2, w: 6, h: 6,
-    fill: { color: GYS.tealDark }, line: { type: "none" },
-  });
-  slide.addShape(pptx.ShapeType.ellipse, {
-    x: 7.5, y: 2.5, w: 4, h: 4,
-    fill: { color: GYS.tealMid }, line: { type: "none" },
-  });
-  addLogoDark(slide, pptx, GYS, 0.3, 0.22);
-  slide.addText("GARUDA YAMATO STEEL", {
-    x: 1.0, y: 0.24, w: 5.5, h: 0.32,
-    fontSize: 10, bold: true, color: GYS.white, charSpacing: 2.0, fontFace: GYS.fontTitle,
-  });
+  
+  
+  
+  
+  
   slide.addShape(pptx.ShapeType.rect, {
     x: 3.5, y: 2.0, w: 3.0, h: 0.04,
     fill: { color: GYS.tealAccent }, line: { type: "none" },
@@ -1118,7 +1045,7 @@ function renderClosing(pptx, slide, data, GYS, pageLabel) {
       fontSize: 13, color: "7BC8AD", align: "center", fontFace: GYS.fontBody,
     });
   }
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 
@@ -1139,17 +1066,14 @@ function renderClosing(pptx, slide, data, GYS, pageLabel) {
 // ────────────────────────────────────────────────────────────
 function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   // ── Background ───────────────────────────────────────────
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0, y: 0, w: GYS.slideW, h: GYS.slideH,
-    fill: { color: GYS.offWhite }, line: { type: "none" },
-  });
-  addHeaderBar(slide, pptx, GYS);
-  addLogoLight(slide, pptx, GYS);
+  
+  
+  
 
   // ── Slide Title (left of badge) ──────────────────────────
   const slideTitle = String(data.title || "Project Status Update");
   slide.addText(slideTitle, {
-    x: 0.95, y: 0.12, w: 6.80, h: 0.58,  // ✅ shorter w to leave room for badge
+    x: 1.6, y: 0.12, w: 6.15, h: 0.58,  // ✅ shorter w to leave room for badge
     fontSize: calcFontSize(slideTitle, 50, 19, 12),
     bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle, autoFit: true,
@@ -1187,16 +1111,16 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   const leftPanel = data.leftPanel || {};
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 0.18, y: PANEL_Y, w: 4.82, h: PANEL_H,
-    fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+    fill: { color: GYS.offWhite }, line: { type: "none" },
   });
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 0.18, y: PANEL_Y, w: 4.82, h: PANEL_HDR,
-    fill: { color: GYS.teal }, line: { type: "none" }, rectRadius: 0.1,
+    fill: { color: GYS.tealLight }, line: { type: "none" },
   });
   slide.addText(truncateText(String(leftPanel.title || "Assessment Results"), 48), {
     x: 0.32, y: PANEL_Y + 0.01, w: 4.55, h: PANEL_HDR - 0.02,
     fontSize: calcFontSize(String(leftPanel.title || ""), 40, 10.5, 7.5),
-    bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+    bold: true, color: GYS.darkText, valign: "middle", fontFace: GYS.fontTitle,
   });
 
   // Icon flow row
@@ -1265,7 +1189,7 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   const rightPanel = data.rightPanel || {};
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 5.18, y: PANEL_Y, w: 4.64, h: PANEL_H,
-    fill: { color: GYS.cardWhite }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.1,
+    fill: { color: GYS.offWhite }, line: { type: "none" },
   });
   slide.addShape(pptx.ShapeType.roundRect, {
     x: 5.18, y: PANEL_Y, w: 4.64, h: PANEL_HDR,
@@ -1274,7 +1198,7 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   slide.addText(truncateText(String(rightPanel.title || "Vendor Pipeline"), 48), {
     x: 5.30, y: PANEL_Y + 0.01, w: 4.38, h: PANEL_HDR - 0.02,
     fontSize: calcFontSize(String(rightPanel.title || ""), 40, 10.5, 7.5),
-    bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+    bold: true, color: GYS.darkText, valign: "middle", fontFace: GYS.fontTitle,
   });
 
   // Vendor rows — clamp so they never exit the panel
@@ -1324,7 +1248,7 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
     const noteFs = calcFontSizeByArea(String(rightPanel.note), 4.40, noteH, 9, 6.5);
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 5.26, y: rY + 0.02, w: 4.48, h: noteH,
-      fill: { color: GYS.tealLight }, line: { color: GYS.grayBorder, width: 1 }, rectRadius: 0.06,
+      fill: { color: GYS.tealLight }, line: { type: "none" }, rectRadius: 0.06,
     });
     slide.addText("💬  " + String(rightPanel.note), {
       x: 5.30, y: rY + 0.04, w: 4.40, h: noteH - 0.06,
@@ -1351,7 +1275,7 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
   slide.addText(truncateText(tlTitle, 90), {
     x: 0.28, y: TL_Y + 0.01, w: 9.30, h: TL_HDR_H - 0.02,
     fontSize: calcFontSize(tlTitle, 80, 9, 7),
-    bold: true, color: GYS.white, valign: "middle", fontFace: GYS.fontTitle,
+    bold: true, color: GYS.darkText, valign: "middle", fontFace: GYS.fontTitle,
   });
   slide.addShape(pptx.ShapeType.rect, {
     x: 0.18, y: TL_AREA_Y, w: 9.64, h: TL_AREA_H,
@@ -1515,7 +1439,7 @@ function renderStatusSlide(pptx, slide, data, GYS, pageLabel) {
     }
   }
 
-  addFooter(slide, pptx, GYS, pageLabel);
+  
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1606,6 +1530,76 @@ function assignImagesToSlides(slides, extractedImages) {
 // ────────────────────────────────────────────────────────────
 // MAIN generate()
 // ────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────
+// ✅ TRUE TEMPLATE ENGINE: ZIP CLONING
+// Merges PptxGenJS generated slides into an actual PowerPoint template
+// ────────────────────────────────────────────────────────────
+async function applyTemplateToBuffer(generatedBuffer, templatePath, slideLayoutMap = []) {
+  try {
+    const genZip = await JSZip.loadAsync(generatedBuffer);
+    const tplZip = await JSZip.loadAsync(fs.readFileSync(templatePath));
+    
+    // 1. Rename template media to avoid collision
+    const tplMediaFiles = Object.keys(tplZip.files).filter(f => f.startsWith('ppt/media/') && !tplZip.files[f].dir);
+    for (const mediaFile of tplMediaFiles) {
+      const filename = path.basename(mediaFile);
+      const newName = `tpl_${filename}`;
+      const newPath = `ppt/media/${newName}`;
+      const content = await tplZip.files[mediaFile].async('nodebuffer');
+      tplZip.file(newPath, content);
+      tplZip.remove(mediaFile);
+    }
+    
+    // 1.5 REMAP SLIDE LAYOUTS BASED ON slideLayoutMap
+    if (slideLayoutMap && slideLayoutMap.length > 0) {
+      for (let i = 0; i < slideLayoutMap.length; i++) {
+        const relsPath = `ppt/slides/_rels/slide${i + 1}.xml.rels`;
+        if (genZip.files[relsPath]) {
+          let xml = await genZip.files[relsPath].async('string');
+          xml = xml.replace(/Target="[^"]*slideLayout\d+\.xml"/g, `Target="../slideLayouts/${slideLayoutMap[i]}"`);
+          genZip.file(relsPath, xml);
+        }
+      }
+    }
+
+    // 2. Update template .rels to point to tpl_ media
+    const relsFiles = Object.keys(tplZip.files).filter(f => f.endsWith('.rels') && !tplZip.files[f].dir);
+    for (const relsFile of relsFiles) {
+      if (relsFile.includes('slideMasters') || relsFile.includes('slideLayouts')) {
+        let xml = await tplZip.files[relsFile].async('string');
+        xml = xml.replace(/Target="\.\.\/media\/([^"]+)"/g, 'Target="../media/tpl_$1"');
+        tplZip.file(relsFile, xml);
+      }
+    }
+    
+    // 3. Clear generated theme, masters, layouts
+    const dirsToReplace = ['ppt/theme/', 'ppt/slideMasters/', 'ppt/slideLayouts/'];
+    for (const dir of dirsToReplace) {
+      Object.keys(genZip.files).filter(f => f.startsWith(dir)).forEach(f => genZip.remove(f));
+    }
+    
+    // 4. Copy from template to generated
+    for (const dir of dirsToReplace) {
+      const files = Object.keys(tplZip.files).filter(f => f.startsWith(dir) && !tplZip.files[f].dir);
+      for (const f of files) {
+        genZip.file(f, await tplZip.files[f].async('nodebuffer'));
+      }
+    }
+    
+    // 5. Copy renamed media
+    const mediaToCopy = Object.keys(tplZip.files).filter(f => f.startsWith('ppt/media/tpl_') && !tplZip.files[f].dir);
+    for (const f of mediaToCopy) {
+      genZip.file(f, await tplZip.files[f].async('nodebuffer'));
+    }
+    
+    return await genZip.generateAsync({ type: 'nodebuffer' });
+  } catch (err) {
+    console.error('[PPT Template Engine] Merge failed, falling back to original buffer:', err.message);
+    return generatedBuffer;
+  }
+}
+
 const PptxService = {
 
   async generate({ pptData, slideContent, title, outputDir, styleDesc, templatePath = null, extractedImages = [] }) {
@@ -1614,10 +1608,16 @@ const PptxService = {
     }
 
     // ── Extract theme colors/fonts from template (for content rendering) ──
-    const GYS = templatePath
+    
+    if (!templatePath) {
+      templatePath = path.resolve(process.cwd(), 'templates/gys-theme.pptx');
+    }
+    const GYS = fs.existsSync(templatePath)
       ? await extractTemplateTheme(templatePath)
       : { ...GYS_DEFAULTS };
 
+
+    
     const pptx = new PptxGenJS();
     pptx.layout  = "LAYOUT_16x9";
     pptx.author  = "GYS Portal AI";
@@ -1625,8 +1625,14 @@ const PptxService = {
     pptx.subject = title || "Presentation";
     pptx.title   = title || "Presentation";
 
+    // ✅ DEFINE MASTER SLIDES SO THEY MATCH TEMPLATE LAYOUTS 1 AND 2
+    pptx.defineSlideMaster({ title: "COVER" });
+    pptx.defineSlideMaster({ title: "CONTENT" });
+
+
     let slideCount   = 0;
     let usedFallback = false;
+    const slideLayoutMap = [];
 
     try {
       if (!pptData?.slides?.length) throw new Error("No slides in pptData");
@@ -1635,8 +1641,10 @@ const PptxService = {
       const total = slidesWithImages.length;
 
       slidesWithImages.forEach((sd, idx) => {
-        const slide     = pptx.addSlide();
-        const layout    = (sd.layout || "CONTENT").toUpperCase();
+        const layout = (sd.layout || "CONTENT").toUpperCase();
+        const isCover = layout === "TITLE" || layout === "CLOSING" || layout === "THANKYOU" || layout === "THANK_YOU";
+        const slide = pptx.addSlide(isCover ? "COVER" : "CONTENT");
+        slideLayoutMap.push(isCover ? "slideLayout1.xml" : "slideLayout2.xml");
         const pageLabel = `${idx + 1} / ${total}`;
         slideCount++;
 
@@ -1676,13 +1684,15 @@ const PptxService = {
       console.warn("⚠️ [PPT] Render error — fallback:", err.message);
       usedFallback = true;
       slideCount   = 1;
-      const slide  = pptx.addSlide();
+      const slide = pptx.addSlide("COVER");
+      slideLayoutMap.push("slideLayout1.xml");
       renderTitle(pptx, slide, {
         title:    title || "GYS Presentation",
         subtitle: "Generated by GYS Portal AI",
       }, GYS, "1 / 1");
     }
 
+    
     const safeTitle = (title || "Presentation")
       .replace(/[^a-zA-Z0-9\s-]/g, "")
       .replace(/\s+/g, "-")
@@ -1690,7 +1700,14 @@ const PptxService = {
     const filename  = `GYS-${safeTitle}-${Date.now()}.pptx`;
     const filepath  = path.join(outputDir, filename);
 
-    await pptx.writeFile({ fileName: filepath });
+    // ✅ Generate as buffer, inject template, write to file
+    const generatedBuffer = await pptx.write({ outputType: "nodebuffer" });
+    const finalBuffer = (templatePath && fs.existsSync(templatePath))
+      ? await applyTemplateToBuffer(generatedBuffer, templatePath, slideLayoutMap)
+      : generatedBuffer;
+
+    fs.writeFileSync(filepath, finalBuffer);
+
     console.log(`✅ [PPT] Generated: ${filename} (${slideCount} slides, template: ${templatePath ? 'yes' : 'no'})`);
 
     return {
@@ -1712,7 +1729,7 @@ const PptxService = {
     pptx.company = "PT Garuda Yamato Steel";
     pptx.title   = title || "Presentation";
 
-    const slide = pptx.addSlide();
+    const slide = pptx.addSlide("COVER");
     renderTitle(pptx, slide, {
       title:    title || "GYS Presentation",
       subtitle: "Generated by GYS Portal AI — " + styleDesc,

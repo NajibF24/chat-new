@@ -26,6 +26,8 @@ import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
 import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
+import DocService             from './doc.service.js';
+import ExcelService           from './excel.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
@@ -526,6 +528,22 @@ function isPptCommand(message = '') {
     isFreeformLayoutRequest(message)
   );
 }
+
+export function isDocCommand(text) {
+  if (!text) return false;
+  return /\b(doc|docx|word)\b/i.test(text) || text.toLowerCase().includes('/doc');
+}
+
+export function isPdfCommand(text) {
+  if (!text) return false;
+  return /\b(pdf)\b/i.test(text) || text.toLowerCase().includes('/pdf');
+}
+
+export function isExcelCommand(text) {
+  if (!text) return false;
+  return /\b(excel|xlsx|spreadsheet|tabel)\b/i.test(text) || text.toLowerCase().includes('/excel');
+}
+
 
 // ─────────────────────────────────────────────────────────────
 // ✅ NEW: IMAGE GENERATION DETECTOR
@@ -1094,8 +1112,16 @@ class AICoreService {
     }
 
     if (isPptCommand(message)) {
-      return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
-    }
+        return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
+      }
+
+      if (isDocCommand(message) || isPdfCommand(message)) {
+        return this._handleDocCommand({ userId, botId, bot, message, threadId, history, attachedFile, isPdf: isPdfCommand(message) && !isDocCommand(message) });
+      }
+
+      if (isExcelCommand(message)) {
+        return this._handleExcelCommand({ userId, botId, bot, message, threadId, history, attachedFile });
+      }
 
     // ── ✅ NEW: Image Generation Handler ───────────────────────
     // Skip if user attached a file — they want to analyze it, not generate a new image
@@ -1594,7 +1620,105 @@ class AICoreService {
   //   - Chunked large document reading (100+ pages)
   //   - Freeform requests skip corporate template constraints
   // ─────────────────────────────────────────────────────────
-  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+  
+  async _handleDocCommand({ userId, botId, bot, message, threadId, history = [], attachedFile, isPdf }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      
+      const formatName = isPdf ? 'PDF' : 'Word';
+      console.log(`[DOC] Generating ${formatName} Document...`);
+
+      let contentUserMsg = `=== PERMINTAAN USER (Format ${formatName}) ===\n${message}\n\n`;
+      contentUserMsg += `Please write a highly detailed, professional document in Markdown format. Use extensive headers (H1, H2, H3), lists, paragraphs, and bold text. Do not output JSON. Just output pure Markdown. Start with a main # Header (Title).`;
+
+      const aiResponse = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: "You are a professional document writer and technical author. You write comprehensive, structured Markdown documents.",
+        messages: history,
+        userContent: contentUserMsg,
+        timeout: 120000,
+        maxTokens: 4000,
+      });
+
+      const markdownContent = aiResponse.text;
+      const titleMatch = markdownContent.match(/^#\s+(.+)/m);
+      const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'Generated Document';
+
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      let result;
+      if (isPdf) {
+        result = await DocService.generatePdf({ markdownContent, title, outputDir });
+      } else {
+        result = await DocService.generateWord({ markdownContent, title, outputDir });
+      }
+
+      const responseMarkdown = `✅ **Dokumen ${formatName} berhasil dibuat!**\n\n📊 **Judul:** ${title}\n\n---\n### [⬇️ Download ${formatName}](${result.fileUrl})`;
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      };
+    } catch (error) {
+      console.error('❌ [DOC Command]', error);
+      throw new Error(`Gagal membuat dokumen ${isPdf ? 'PDF' : 'Word'}: ${error.message}`);
+    }
+  }
+
+  async _handleExcelCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      console.log('[EXCEL] Generating Spreadsheet...');
+
+      let contentUserMsg = `=== PERMINTAAN USER (Format Excel) ===\n${message}\n\n`;
+      contentUserMsg += `Please generate a spreadsheet representation in JSON format. Your output MUST be ONLY a raw JSON object (no markdown formatting, no code blocks). Structure:\n{"sheets": [{"name": "Sheet1", "columns": ["Col1", "Col2"], "rows": [["Val1", "Val2"]]}]}`;
+
+      const aiResponse = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: "You are an expert data analyst. You output ONLY valid raw JSON.",
+        messages: history,
+        userContent: contentUserMsg,
+        timeout: 120000,
+        maxTokens: 4000,
+      });
+
+      let rawJson = aiResponse.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+      const jsonStart = rawJson.indexOf('{');
+      const jsonEnd = rawJson.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+      }
+      
+      const sheetData = JSON.parse(rawJson);
+      const title = sheetData.sheets && sheetData.sheets[0] && sheetData.sheets[0].name ? sheetData.sheets[0].name : 'Spreadsheet';
+
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      const result = await ExcelService.generateExcel({ sheetData, title, outputDir });
+
+      const responseMarkdown = `✅ **Spreadsheet Excel berhasil dibuat!**\n\n📊 **Judul:** ${title}\n\n---\n### [⬇️ Download Excel (.xlsx)](${result.fileUrl})`;
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      };
+    } catch (error) {
+      console.error('❌ [EXCEL Command]', error);
+      throw new Error(`Gagal membuat spreadsheet: ${error.message}`);
+    }
+  }
+
+async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
       // ── Detect if this is a freeform designer-style request ─────────────────
       const freeformMode = isFreeformLayoutRequest(message || '');
@@ -1732,6 +1856,9 @@ class AICoreService {
       }
 
       const rawExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
+
+      // ✅ Save User Message to DB early so it is preserved even if generation times out
+      await new Chat({ userId, botId, threadId, role: 'user', content: message || '/ppt' }).save();
 
       // ── STEP 2: Build content generation prompt ──────────────────────────────
       const userRequest = message || '';
@@ -1971,7 +2098,6 @@ ${layoutSummary}`
 **Layout per slide:**
 ${layoutSummary}`;
 
-      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],
