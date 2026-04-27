@@ -86,8 +86,8 @@ export default {
     }
     
     .logo-container {
-      background: white;
-      padding: 15px 25px;
+      background: transparent;
+      padding: 8px 16px;
       border-radius: 8px;
       margin-right: 30px;
       z-index: 2;
@@ -96,8 +96,9 @@ export default {
       align-items: center;
       justify-content: center;
     }
-    .logo-text { font-family: 'Oswald', sans-serif; font-size: 46px; font-weight: 800; color: #064E3B; letter-spacing: -1px; line-height: 1; }
-    .logo-sub { font-size: 10px; font-weight: 700; color: #064E3B; letter-spacing: 0.5px; text-align: center; }
+    .logo-container img { max-height: 70px; width: auto; object-fit: contain; }
+    .logo-text { font-family: 'Oswald', sans-serif; font-size: 46px; font-weight: 800; color: #ffffff; letter-spacing: -1px; line-height: 1; }
+    .logo-sub { font-size: 10px; font-weight: 700; color: #A7F3D0; letter-spacing: 0.5px; text-align: center; }
     
     .header-content { z-index: 2; flex: 1; }
     .title { font-family: 'Oswald', sans-serif; font-size: 58px; font-weight: 600; line-height: 1; margin: 0; letter-spacing: -0.5px; }
