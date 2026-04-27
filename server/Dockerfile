@@ -9,7 +9,10 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    python3 \
+    make \
+    g++
 
 # 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
@@ -19,7 +22,7 @@ WORKDIR /usr/src/app
 
 # 3. Copy package files dan install dependencies
 COPY package*.json ./
-RUN npm install --production
+RUN npm install --production --legacy-peer-deps
 
 # 4. Copy sisa kode aplikasi
 COPY . .
