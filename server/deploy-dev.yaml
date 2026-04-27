@@ -1,14 +1,67 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: portalai-server
+  name: portalai-mongo
   namespace: portalai
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: portalai-server
+      app: portalai-mongo
   template:
+    metadata:
+      labels:
+        app: portalai-mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7.0
+          ports:
+            - containerPort: 27017
+          env:
+            - name: TZ
+              value: "Asia/Jakarta"
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: portalai-secret
+                  key: MONGO_USER
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: portalai-secret
+                  key: MONGO_PASSWORD
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+      volumes:
+        - name: mongo-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: portalai
+spec:
+  selector:
+    app: portalai-mongo
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
     metadata:
       labels:
         app: portalai-server
@@ -19,7 +72,12 @@ spec:
         - name: server
           image: harbor.gyssteel.com/portalai/server:IMAGE_TAG
           ports:
-            - containerPort: 5000
+            - containerPort: 5001
+          env:
+            - name: SERVER_PORT
+              value: "5001"
+            - name: MONGODB_URI
+              value: "mongodb://admin:admin123@mongo.portalai.svc.cluster.local:27017/internal-chat?authSource=admin&retryWrites=true&w=majority"
           envFrom:
             - configMapRef:
                 name: portalai-config
@@ -45,5 +103,5 @@ spec:
   ports:
     - protocol: TCP
       port: 5000
-      targetPort: 5000
+      targetPort: 5001
   type: ClusterIP
