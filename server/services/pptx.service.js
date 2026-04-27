@@ -1557,7 +1557,7 @@ async function applyTemplateToBuffer(generatedBuffer, templatePath, slideLayoutM
         const relsPath = `ppt/slides/_rels/slide${i + 1}.xml.rels`;
         if (genZip.files[relsPath]) {
           let xml = await genZip.files[relsPath].async('string');
-          xml = xml.replace(/Target="\.\.\/slideLayouts\/slideLayout\d+\.xml"/g, `Target="../slideLayouts/${slideLayoutMap[i]}"`);
+          xml = xml.replace(/Target="[^"]*slideLayout\d+\.xml"/g, `Target="../slideLayouts/${slideLayoutMap[i]}"`);
           genZip.file(relsPath, xml);
         }
       }
