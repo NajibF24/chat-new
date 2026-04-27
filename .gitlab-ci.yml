@@ -11,7 +11,7 @@ build_client:
   tags:
     - CI-Shell
   rules:
-    - if: $CI_COMMIT_BRANCH == "develpment"  # Hanya jalan di branch development
+    - if: $CI_COMMIT_BRANCH == "development"  # Hanya jalan di branch development
       changes:
         - client/**/*
   script:
@@ -52,7 +52,7 @@ deploy_client:
   rules:
     - if: $CI_COMMIT_BRANCH == "development"
       changes:
-        - frontend/**/*
+        - client/**/*
   script:
     - export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
     - export IMAGE_TAG=$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
@@ -69,7 +69,7 @@ deploy_server:
   rules:
     - if: $CI_COMMIT_BRANCH == "development"
       changes:
-        - backend/**/*
+        - server/**/*
   script:
     - export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
     - export IMAGE_TAG=$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
