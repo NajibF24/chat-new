@@ -1683,13 +1683,11 @@ class AICoreService {
   }
 
   
-  async _handleNewsletterCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
-    try {
-      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
-      console.log('[NEWSLETTER] Generating GYS Steel Signal Image...');
+  async generateNewsletterDataCore({ bot, message, history = [] }) {
+    console.log('[NEWSLETTER CORE] Generating GYS Steel Signal Image...');
 
-      let contentUserMsg = `=== PERMINTAAN USER (Format GYS Steel Signal) ===\n${message}\n\n`;
-      contentUserMsg += `Please generate a JSON object for the "GYS Steel Signal" newsletter based on the user's request and any provided news links. Your output MUST be ONLY a raw JSON object.
+    let contentUserMsg = `=== PERMINTAAN USER (Format GYS Steel Signal) ===\n${message}\n\n`;
+    contentUserMsg += `Please generate a JSON object for the "GYS Steel Signal" newsletter based on the user's request and any provided news links. Gunakan BAHASA INDONESIA SEPENUHNYA untuk seluruh isi konten JSON ini (terjemahkan judul atau poin menjadi bahasa Indonesia yang profesional). Your output MUST be ONLY a raw JSON object.
 Structure:
 {
   "headline": "String - Main news headline (max 80 chars)",
@@ -1711,35 +1709,42 @@ Structure:
   "sourceLinks": ["String - URL 1", "String - URL 2"]
 }`;
 
-      const aiResponse = await AIProviderService.generateCompletion({
-        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-        systemPrompt: "You are an expert market intelligence analyst. You output ONLY valid raw JSON.",
-        messages: history,
-        userContent: contentUserMsg,
-        timeout: 120000,
-        maxTokens: 4000,
-      });
+    const aiResponse = await AIProviderService.generateCompletion({
+      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      systemPrompt: "You are an expert market intelligence analyst. You output ONLY valid raw JSON.",
+      messages: history,
+      userContent: contentUserMsg,
+      timeout: 120000,
+      maxTokens: 4000,
+    });
 
-      let rawJson = aiResponse.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-      const jsonStart = rawJson.indexOf('{');
-      const jsonEnd = rawJson.lastIndexOf('}');
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
-      }
+    let rawJson = aiResponse.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    const jsonStart = rawJson.indexOf('{');
+    const jsonEnd = rawJson.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+    }
+    
+    const newsletterData = JSON.parse(rawJson);
+    const outputDir = path.join(process.cwd(), 'data', 'files');
+    const result = await NewsletterService.generateNewsletterImage({ data: newsletterData, outputDir });
+
+    let linksMarkdown = '';
+    if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
+      linksMarkdown = `\n\n🔗 **Sumber Referensi:**\n` + newsletterData.sourceLinks.map(l => `- [${l}](${l})`).join('\n');
+    }
+
+    const firstLink = (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) ? newsletterData.sourceLinks[0] : result.fileUrl;
+    const responseMarkdown = `[![GYS Steel Signal](${result.fileUrl})](${firstLink})${linksMarkdown}`;
+
+    return { result, responseMarkdown, newsletterData };
+  }
+
+  async _handleNewsletterCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       
-      const newsletterData = JSON.parse(rawJson);
-
-      const outputDir = path.join(process.cwd(), 'data', 'files');
-      const result = await NewsletterService.generateNewsletterImage({ data: newsletterData, outputDir });
-
-      let linksMarkdown = '';
-      if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
-        linksMarkdown = `\n\n🔗 **Sumber Referensi:**\n` + newsletterData.sourceLinks.map(l => `- [${l}](${l})`).join('\n');
-      }
-
-      // To render an image in Markdown, we use ![alt](url)
-      // Since it's a chat, we can just send the image markdown + source links.
-      const responseMarkdown = `![GYS Steel Signal](${result.fileUrl})${linksMarkdown}`;
+      const { result, responseMarkdown } = await this.generateNewsletterDataCore({ bot, message, history });
 
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,

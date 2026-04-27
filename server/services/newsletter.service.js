@@ -12,6 +12,17 @@ export default {
     const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
 
+    const logoPath = path.join(process.cwd(), '../client/src/assets/gys-logo.webp');
+    let logoBase64 = '';
+    if (fs.existsSync(logoPath)) {
+      const logoBuf = fs.readFileSync(logoPath);
+      logoBase64 = 'data:image/webp;base64,' + logoBuf.toString('base64');
+    }
+    
+    const logoHtml = logoBase64 
+      ? `<img src="${logoBase64}" alt="GYS Logo" style="height: 60px;">` 
+      : `<div class="logo-text">GYS</div><div class="logo-sub">GARUDA YAMATO STEEL</div>`;
+
     // HTML Template matching the "GYS STEEL SIGNAL" reference
     const htmlContent = `
 <!DOCTYPE html>
@@ -53,6 +64,10 @@ export default {
       border-radius: 8px;
       margin-right: 30px;
       z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
     .logo-text { font-family: 'Oswald', sans-serif; font-size: 46px; font-weight: 800; color: #064E3B; letter-spacing: -1px; line-height: 1; }
     .logo-sub { font-size: 10px; font-weight: 700; color: #064E3B; letter-spacing: 0.5px; text-align: center; }
@@ -143,8 +158,7 @@ export default {
   <div class="header">
     <div class="deco-lines"></div>
     <div class="logo-container">
-      <div class="logo-text">GYS</div>
-      <div class="logo-sub">GARUDA YAMATO STEEL</div>
+      ${logoHtml}
     </div>
     <div class="header-content">
       <h1 class="title">GYS STEEL SIGNAL</h1>

@@ -17,6 +17,9 @@
 import axios   from 'axios';
 import Bot     from '../models/Bot.js';
 import AIProviderService from './ai-provider.service.js';
+import AICoreService, { isNewsletterCommand } from './ai-core.service.js';
+import fs from 'fs';
+import path from 'path';
 
 // Track last-fired times to avoid double-firing within same minute
 // Key: `${botId}:${scheduleId}:${YYYY-MM-DD HH:MM}` → true
@@ -70,6 +73,42 @@ async function sendWahaMessage(wahaConfig, chatId, text) {
   }
 }
 
+// ── Send IMAGE via WAHA API ─────────────────────────────────
+async function sendWahaImage(wahaConfig, chatId, imagePath, caption) {
+  if (!wahaConfig.endpoint || !chatId) return;
+
+  const sendUrl = wahaConfig.endpoint.replace(/\/$/, '') + '/api/sendImage';
+  
+  let base64Data = '';
+  if (fs.existsSync(imagePath)) {
+    const buf = fs.readFileSync(imagePath);
+    base64Data = 'data:image/png;base64,' + buf.toString('base64');
+  }
+
+  const payload = {
+    session: wahaConfig.session || 'default',
+    chatId,
+    file: {
+      mimetype: 'image/png',
+      filename: path.basename(imagePath),
+      data: base64Data
+    },
+    caption
+  };
+  
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(wahaConfig.apiKey && { 'X-Api-Key': wahaConfig.apiKey }),
+  };
+
+  try {
+    await axios.post(sendUrl, payload, { headers, timeout: 60000 });
+    console.log(`[WahaScheduler] ✅ Sent IMAGE to ${chatId}`);
+  } catch (err) {
+    console.error(`[WahaScheduler] ❌ Failed to send IMAGE to ${chatId}:`, err.response?.data?.message || err.message);
+  }
+}
+
 // ── Generate AI response for a schedule prompt ────────────────
 async function generateAIResponse(bot, prompt) {
   try {
@@ -99,11 +138,31 @@ async function fireSchedule(bot, schedule) {
 
   console.log(`[WahaScheduler] 🔔 Firing schedule "${schedule.label || schedule._id}" for bot "${bot.name}"`);
 
-  // Generate AI response
-  const aiText = await generateAIResponse(bot, prompt);
-  if (!aiText) return;
+  let isImage = false;
+  let imagePath = '';
+  let formattedMsg = '';
 
-  const formattedMsg = `🤖 *${bot.name}*\n\n${aiText}`;
+  if (isNewsletterCommand(prompt)) {
+    try {
+      const { result, newsletterData } = await AICoreService.generateNewsletterDataCore({ bot, message: prompt, history: [] });
+      isImage = true;
+      imagePath = path.join(process.cwd(), 'data', 'files', result.fileName);
+      
+      let sourceLinks = '';
+      if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
+        sourceLinks = '\n\n🔗 *Sumber Referensi:*\n' + newsletterData.sourceLinks.map(l => `- ${l}`).join('\n');
+      }
+      formattedMsg = `🤖 *${bot.name}*\n\nBerikut adalah GYS Steel Signal terbaru Anda.${sourceLinks}`;
+    } catch (error) {
+      console.error('[WahaScheduler] Newsletter generation error:', error);
+      formattedMsg = `🤖 *${bot.name}*\n\nMaaf, gagal membuat Newsletter: ${error.message}`;
+    }
+  } else {
+    // Generate Text AI response
+    const aiText = await generateAIResponse(bot, prompt);
+    if (!aiText) return;
+    formattedMsg = `🤖 *${bot.name}*\n\n${aiText}`;
+  }
 
   // Determine which targets to send to
   let targets = (wahaConfig.targets || []).filter(t => t.active);
@@ -123,12 +182,20 @@ async function fireSchedule(bot, schedule) {
 
   // Send to all resolved targets
   for (const target of targets) {
-    await sendWahaMessage(wahaConfig, target.chatId, formattedMsg);
+    if (isImage && imagePath) {
+      await sendWahaImage(wahaConfig, target.chatId, imagePath, formattedMsg);
+    } else {
+      await sendWahaMessage(wahaConfig, target.chatId, formattedMsg);
+    }
   }
 
   // Send to legacy chatId if no new targets configured
   if (targets.length === 0 && legacyChatId) {
-    await sendWahaMessage(wahaConfig, legacyChatId, formattedMsg);
+    if (isImage && imagePath) {
+      await sendWahaImage(wahaConfig, legacyChatId, imagePath, formattedMsg);
+    } else {
+      await sendWahaMessage(wahaConfig, legacyChatId, formattedMsg);
+    }
   }
 }
 
