@@ -17,6 +17,7 @@ build_client:
   script:
     - >
       docker build
+      --build-arg REACT_APP_API_URL=/server
       -f client/Dockerfile
       -t $IMAGE_CLIENT:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA client/
 

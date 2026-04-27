@@ -1,5 +1,7 @@
 # Build Stage (Tetap sama)
 FROM node:20-alpine AS build
+ARG REACT_APP_API_URL
+ENV REACT_APP_API_URL=$REACT_APP_API_URL
 WORKDIR /usr/src/app
 COPY package*.json ./
 RUN npm install
@@ -15,10 +17,6 @@ COPY --from=build /usr/src/app/build /usr/share/nginx/html
 # Copy konfigurasi custom
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 
-ARG REACT_APP_BACKEND_URL
-ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
-
-# Expose port 8080
 EXPOSE 8080
 
 # --- TAMBAHAN PENTING ---
