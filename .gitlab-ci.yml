@@ -47,7 +47,7 @@ deploy_client:
   tags:
     - gys-dev
   needs:
-    - job: build_client
+    - job: deploy_client
       optional: true
   rules:
     - if: $CI_COMMIT_BRANCH == "development"
@@ -64,7 +64,7 @@ deploy_server:
   tags:
     - gys-dev
   needs:
-    - job: build_server
+    - job: deploy_server
       optional: true
   rules:
     - if: $CI_COMMIT_BRANCH == "development"
