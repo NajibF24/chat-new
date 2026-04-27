@@ -245,7 +245,8 @@ router.post('/external', async (req, res) => {
     console.log(`[EXTERNAL] Bot: ${bot.name} | From: ${callerUsername} | Msg: ${message.substring(0, 80)}`);
 
     // 4. Derive base URL for absolute file links (e.g. newsletter images)
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    //    Use SERVER_PUBLIC_URL env var so nginx proxying doesn't strip the port
+    const baseUrl = (process.env.SERVER_PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
 
     // 5. Route through AICoreService so newsletter/PPT/Excel detection works
     const startTime = Date.now();
