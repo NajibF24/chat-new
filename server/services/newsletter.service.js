@@ -299,6 +299,18 @@ export default {
       </div>
     </div>
 
+    <!-- 6. SOURCES & REFERENCES -->
+    ${(data.sourceLinks && data.sourceLinks.length > 0) ? `
+    <div class="box" style="padding: 18px 25px; border-left: 4px solid #059669;">
+      <div class="section-header" style="margin-bottom: 8px;">
+        <div class="section-icon" style="width:28px;height:28px;">${icons.link}</div>
+        <h2 class="section-title" style="font-size: 16px;">Sources &amp; References</h2>
+      </div>
+      <div style="font-size: 12px; color: #2563EB; word-break: break-all; padding-left: 40px; line-height: 2;">
+        ${data.sourceLinks.map(l => `<div>&#8226; ${l}</div>`).join('')}
+      </div>
+    </div>` : ''}
+
   </div>
 
   <!-- FOOTER -->
