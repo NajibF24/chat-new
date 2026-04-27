@@ -24,6 +24,15 @@ import path from 'path';
 import pino from 'pino';
 import QRCode from 'qrcode';
 
+// ─── ESM/CJS interop: Baileys is a CJS module ───────────────────────────────
+// If named imports fail (makeWASocket is not a function), fall back to this:
+let _makeWASocket = makeWASocket;
+if (typeof _makeWASocket !== 'function') {
+  // CJS default export wraps everything in module.exports
+  const baileysMod = makeWASocket; // the whole module object
+  _makeWASocket = baileysMod.default || baileysMod.makeWASocket || baileysMod;
+}
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 const SESSION_PATH = path.join(process.cwd(), 'data', 'baileys-session');
 const logger = pino({ level: 'silent' }); // suppress Baileys verbose logs
@@ -61,7 +70,7 @@ async function connect() {
     const { version, isLatest } = await fetchLatestBaileysVersion();
     log(`Using WA v${version.join('.')} (latest: ${isLatest})`);
 
-    sock = makeWASocket({
+    sock = _makeWASocket({
       version,
       logger,
       auth: {
