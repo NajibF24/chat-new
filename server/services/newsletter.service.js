@@ -64,7 +64,7 @@ export default {
       font-family: 'Inter', sans-serif;
       background-color: #F8FAF9;
       color: #1F2937;
-      width: 1000px;
+      width: 900px;
       min-height: 100vh;
       box-sizing: border-box;
       position: relative;
@@ -299,17 +299,6 @@ export default {
       </div>
     </div>
 
-    <!-- 6. SOURCES -->
-    <div class="box" style="margin-top: -5px; padding: 15px 25px; border-left: 4px solid #F59E0B;">
-      <div class="section-header" style="margin-bottom: 5px;">
-        <div class="section-icon" style="width:24px;height:24px;">${icons.link}</div>
-        <h2 class="section-title" style="font-size: 16px;">Sources & References</h2>
-      </div>
-      <div class="source-links" style="font-size: 13px; color: #2563EB; word-break: break-all; padding-left: 36px;">
-        ${(data.sourceLinks && data.sourceLinks.length > 0) ? data.sourceLinks.join('<br>') : 'Internal Market Data'}
-      </div>
-    </div>
-
   </div>
 
   <!-- FOOTER -->
@@ -335,7 +324,7 @@ export default {
     const page = await browser.newPage();
     
     // Set viewport wide enough; height will be determined by content (fullPage)
-    await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 2 });
+    await page.setViewport({ width: 900, height: 1200, deviceScaleFactor: 2 });
     
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     
