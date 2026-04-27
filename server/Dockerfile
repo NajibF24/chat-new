@@ -12,7 +12,8 @@ RUN apk add --no-cache \
     ttf-freefont \
     python3 \
     make \
-    g++
+    g++ \
+    git
 
 # 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
