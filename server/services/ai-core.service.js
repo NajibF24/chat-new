@@ -531,20 +531,17 @@ function isPptCommand(message = '') {
 
 export function isDocCommand(text) {
   if (!text) return false;
-  const lower = text.toLowerCase();
-  return lower.includes('/doc') || lower.includes('/docx') || lower.includes('/word') || lower.includes('format word');
+  return /\b(doc|docx|word)\b/i.test(text) || text.toLowerCase().includes('/doc');
 }
 
 export function isPdfCommand(text) {
   if (!text) return false;
-  const lower = text.toLowerCase();
-  return lower.includes('/pdf') || lower.includes('format pdf');
+  return /\b(pdf)\b/i.test(text) || text.toLowerCase().includes('/pdf');
 }
 
 export function isExcelCommand(text) {
   if (!text) return false;
-  const lower = text.toLowerCase();
-  return lower.includes('/excel') || lower.includes('/xlsx') || lower.includes('/spreadsheet') || lower.includes('format excel');
+  return /\b(excel|xlsx|spreadsheet|tabel)\b/i.test(text) || text.toLowerCase().includes('/excel');
 }
 
 
