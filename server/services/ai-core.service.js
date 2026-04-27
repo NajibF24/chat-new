@@ -1686,9 +1686,13 @@ class AICoreService {
   async generateNewsletterDataCore({ bot, message, history = [] }) {
     console.log('[NEWSLETTER CORE] Generating GYS Steel Signal Image...');
 
-    let contentUserMsg = `=== USER REQUEST (Format GYS Steel Signal) ===\n${message}\n\n`;
-    contentUserMsg += `Please generate a JSON object for the "GYS Steel Signal" newsletter based on the user's request and any provided news links. Write all content strictly in ENGLISH. Your output MUST be ONLY a raw JSON object.
-Structure:
+    const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    let contentUserMsg = `=== USER REQUEST (Format GYS Steel Signal) ===\nToday's date: ${today}\n${message}\n\n`;
+    contentUserMsg += `STEP 1: Search the web for TODAY's latest steel market news (Indonesian and global). Use queries like "Indonesia steel market news today", "harga baja Indonesia terbaru", "steel price Asia today". Find at least 2 real, currently accessible news articles.\n\n`;
+    contentUserMsg += `STEP 2: Based ONLY on what you actually found in your web search, generate a JSON for the "GYS Steel Signal" newsletter. Write all content strictly in ENGLISH.\n\n`;
+    contentUserMsg += `CRITICAL URL RULE: The "sourceLinks" array MUST contain ONLY real URLs you actually visited and verified. DO NOT invent or guess URLs. If no real URLs found, return sourceLinks as [].\n\n`;
+    contentUserMsg += `Output ONLY a raw JSON object (no markdown, no code blocks).`;
+    contentUserMsg += `\nStructure:`;
 {
   "headline": "String - Main news headline (max 80 chars)",
   "summaryParagraphs": ["String - Paragraph 1", "String - Paragraph 2"],
@@ -1711,9 +1715,10 @@ Structure:
 
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-      systemPrompt: "You are an expert market intelligence analyst. You output ONLY valid raw JSON.",
+      systemPrompt: `You are an expert market intelligence analyst for Garuda Yamato Steel (GYS). Today is ${today}. You MUST search the web for TODAY's latest real news before generating content. You output ONLY valid raw JSON. Never invent news or URLs.`,
       messages: history,
       userContent: contentUserMsg,
+      capabilities: bot.capabilities || { webSearch: true },
       timeout: 120000,
       maxTokens: 4000,
     });
