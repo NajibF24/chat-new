@@ -31,12 +31,32 @@ const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(mod
 async function sendToWaha(bot, username, userMessage, aiResponse) {
   if (!bot.wahaConfig?.enabled || !bot.wahaConfig?.chatId || !bot.wahaConfig?.endpoint) return;
   try {
-    const waText = [
-      `🤖 *LOG CHAT BOT:* ${bot.name}`,
-      `👤 *User:* ${username || 'Unknown'}`,
-      `💬 *Pertanyaan:*\n${userMessage}`,
-      `🤖 *Jawaban:*\n${aiResponse}`,
-    ].join('\n');
+    const serverBase = (process.env.SERVER_PUBLIC_URL || 'http://172.16.31.48:8080').replace(/\/$/, '');
+
+    // Detect if response contains a newsletter image link (markdown image or file link)
+    const imageUrlMatch = aiResponse.match(/\(([^)]*\/api\/files\/[^)]+\.png)\)/);
+    const isNewsletter = imageUrlMatch || /newsletter|steel signal/i.test(userMessage);
+
+    let waText;
+    if (isNewsletter && imageUrlMatch) {
+      // For newsletter: send clean message with absolute image link
+      let imgUrl = imageUrlMatch[1];
+      if (imgUrl.startsWith('/')) imgUrl = `${serverBase}${imgUrl}`;
+      waText = [
+        `🤖 *${bot.name}*`,
+        `📰 *GYS Steel Signal — Daily Newsletter*`,
+        ``,
+        `🖼️ View Newsletter: ${imgUrl}`,
+      ].join('\n');
+    } else {
+      // Regular chat log
+      waText = [
+        `🤖 *LOG CHAT BOT:* ${bot.name}`,
+        `👤 *User:* ${username || 'Unknown'}`,
+        `💬 *Question:*\n${userMessage}`,
+        `🤖 *Answer:*\n${aiResponse}`,
+      ].join('\n');
+    }
 
     await axios.post(bot.wahaConfig.endpoint, {
       chatId:  bot.wahaConfig.chatId,
@@ -48,9 +68,9 @@ async function sendToWaha(bot, username, userMessage, aiResponse) {
         ...(bot.wahaConfig.apiKey && { 'X-Api-Key': bot.wahaConfig.apiKey }),
       },
     });
-    console.log(`[WAHA] ✅ Sukses forward ke: ${bot.wahaConfig.chatId}`);
+    console.log(`[WAHA] ✅ Forwarded to: ${bot.wahaConfig.chatId}`);
   } catch (err) {
-    console.error('[WAHA] ❌ Gagal forward:', err.response?.data || err.message);
+    console.error('[WAHA] ❌ Forward failed:', err.response?.data || err.message);
   }
 }
 
