@@ -14,10 +14,11 @@ import chatRoutes      from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes     from './routes/embed.js';
 import pptxRoutes      from './routes/pptx.js';
-import wahaRoutes      from './routes/waha.js'; // 🔹 NEW: WAHA webhook
+import wahaRoutes, { handleBaileysMessage } from './routes/waha.js';
 import newsletterRoutes from './routes/newsletter.js';
 
-import { startWahaScheduler } from './services/wahaScheduler.js'; // 🔹 UPDATED scheduler
+import { startWahaScheduler } from './services/wahaScheduler.js';
+import BaileysService from './services/baileys.service.js';
 import CleanupService from './services/cleanup.service.js';
 
 dotenv.config();
@@ -149,9 +150,49 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  // 🔹 Start WAHA flexible scheduler
+
+  // 🔹 Start Baileys WhatsApp service
+  BaileysService.init().then(() => {
+    // Register incoming message handler after Baileys is initialized
+    BaileysService.setMessageHandler(handleBaileysMessage);
+  }).catch(err => {
+    console.error('❌ Baileys init failed:', err.message);
+  });
+
+  // 🔹 Start WhatsApp Scheduler
   startWahaScheduler();
-  
+
   // 🔹 Start File Cleanup Scheduler
   CleanupService.start();
 });
+
+// ── Baileys Admin Endpoints ─────────────────────────────────────────
+app.get('/api/admin/baileys/status', (req, res) => {
+  res.json({
+    status: BaileysService.getStatus(),
+    connected: BaileysService.isConnected(),
+  });
+});
+
+app.get('/api/admin/baileys/qr', (req, res) => {
+  const qr = BaileysService.getQRBase64();
+  if (!qr) {
+    const status = BaileysService.getStatus();
+    return res.status(404).json({
+      error: status === 'connected' ? 'Already connected — no QR needed' : 'QR not ready yet, wait a moment',
+      status,
+    });
+  }
+  // Return as HTML page with QR image for easy scanning
+  res.send(`<!DOCTYPE html>
+<html><head><title>GYS WhatsApp QR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111;color:#fff;font-family:sans-serif}
+h1{color:#25D366}p{color:#aaa;font-size:14px}img{border-radius:12px;max-width:300px}</style>
+</head><body>
+<h1>📱 Scan QR Code</h1>
+<p>WhatsApp → Linked Devices → Link a Device</p>
+<img src="${qr}" alt="QR Code" />
+<p style="margin-top:16px;color:#666">Refresh page if QR expires</p>
+</body></html>`);
+});

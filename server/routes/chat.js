@@ -1,7 +1,6 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import axios from 'axios';
 import AICoreService from '../services/ai-core.service.js';
 import { generateImage } from '../services/image.service.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -10,6 +9,7 @@ import Bot from '../models/Bot.js';
 import Chat from '../models/Chat.js';
 import Thread from '../models/Thread.js';
 import AuditService from '../services/audit.service.js';
+import BaileysService from '../services/baileys.service.js';
 import AIProviderService, { normalizeUsage } from '../services/ai-provider.service.js';
 
 const router = express.Router();
@@ -29,28 +29,19 @@ const isReasoningModel = (model = '') => /^o\d/.test(model) || /^gpt-5/.test(mod
 
 // ── Helper: kirim ke WAHA WhatsApp ───────────────────────────
 async function sendToWaha(bot, username, userMessage, aiResponse) {
-  if (!bot.wahaConfig?.enabled || !bot.wahaConfig?.chatId || !bot.wahaConfig?.endpoint) return;
+  if (!bot.wahaConfig?.enabled || !bot.wahaConfig?.chatId) return;
   try {
     const waText = [
       `🤖 *LOG CHAT BOT:* ${bot.name}`,
       `👤 *User:* ${username || 'Unknown'}`,
-      `💬 *Pertanyaan:*\n${userMessage}`,
-      `🤖 *Jawaban:*\n${aiResponse}`,
+      `💬 *Question:*\n${userMessage}`,
+      `🤖 *Answer:*\n${aiResponse}`,
     ].join('\n');
 
-    await axios.post(bot.wahaConfig.endpoint, {
-      chatId:  bot.wahaConfig.chatId,
-      text:    waText,
-      session: bot.wahaConfig.session || 'default',
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(bot.wahaConfig.apiKey && { 'X-Api-Key': bot.wahaConfig.apiKey }),
-      },
-    });
-    console.log(`[WAHA] ✅ Sukses forward ke: ${bot.wahaConfig.chatId}`);
+    await BaileysService.sendText(bot.wahaConfig.chatId, waText);
+    console.log(`[WAHA] ✅ Forwarded to: ${bot.wahaConfig.chatId}`);
   } catch (err) {
-    console.error('[WAHA] ❌ Gagal forward:', err.response?.data || err.message);
+    console.error('[WAHA] ❌ Forward failed:', err.message);
   }
 }
 
