@@ -1643,7 +1643,8 @@ const PptxService = {
       slidesWithImages.forEach((sd, idx) => {
         const layout = (sd.layout || "CONTENT").toUpperCase();
         const isCover = layout === "TITLE" || layout === "CLOSING" || layout === "THANKYOU" || layout === "THANK_YOU";
-    const slide = pptx.addSlide(isCover ? "COVER" : "CONTENT");
+        const slide = pptx.addSlide(isCover ? "COVER" : "CONTENT");
+        slideLayoutMap.push(isCover ? "slideLayout1.xml" : "slideLayout2.xml");
         const pageLabel = `${idx + 1} / ${total}`;
         slideCount++;
 
