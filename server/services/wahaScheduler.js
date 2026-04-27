@@ -73,8 +73,8 @@ async function sendWahaMessage(wahaConfig, chatId, text) {
   }
 }
 
-// ── Send IMAGE via WAHA API ─────────────────────────────────
-async function sendWahaImage(wahaConfig, chatId, imagePath, caption) {
+// ── Send IMAGE via WAHA API (with text fallback for free WEBJS engine) ────
+async function sendWahaImage(wahaConfig, chatId, imagePath, caption, publicImageUrl) {
   if (!wahaConfig.endpoint || !chatId) return;
 
   const sendUrl = wahaConfig.endpoint.replace(/\/$/, '') + '/api/sendImage';
@@ -105,7 +105,17 @@ async function sendWahaImage(wahaConfig, chatId, imagePath, caption) {
     await axios.post(sendUrl, payload, { headers, timeout: 60000 });
     console.log(`[WahaScheduler] ✅ Sent IMAGE to ${chatId}`);
   } catch (err) {
-    console.error(`[WahaScheduler] ❌ Failed to send IMAGE to ${chatId}:`, err.response?.data?.message || err.message);
+    const errMsg = err.response?.data?.message || err.message || '';
+    const isPlusOnly = errMsg.toLowerCase().includes('plus') || errMsg.toLowerCase().includes('only in plus');
+
+    if (isPlusOnly && publicImageUrl) {
+      // ── Fallback: send as text with clickable URL ──────────────
+      console.warn(`[WahaScheduler] ⚠️ sendImage requires WAHA Plus. Falling back to text+URL for ${chatId}`);
+      const fallbackText = `${caption}\n\n🖼️ *GYS Steel Signal Newsletter:*\n${publicImageUrl}`;
+      await sendWahaMessage(wahaConfig, chatId, fallbackText);
+    } else {
+      console.error(`[WahaScheduler] ❌ Failed to send IMAGE to ${chatId}:`, errMsg);
+    }
   }
 }
 
@@ -140,6 +150,7 @@ async function fireSchedule(bot, schedule) {
 
   let isImage = false;
   let imagePath = '';
+  let publicImageUrl = '';
   let formattedMsg = '';
 
   if (isNewsletterCommand(prompt)) {
@@ -148,6 +159,15 @@ async function fireSchedule(bot, schedule) {
       isImage = true;
       imagePath = path.join(process.cwd(), 'data', 'files', result.fileName);
       
+      // Build public URL so fallback text message has a clickable link
+      const wahaEndpoint = bot.wahaConfig?.endpoint || '';
+      // Derive server base from WAHA endpoint host, or use env, or use relative
+      const serverBase = process.env.SERVER_PUBLIC_URL 
+        || process.env.PUBLIC_URL
+        || wahaEndpoint.replace(/\/waha.*$/i, '').replace(/:\d+/, ':5000')
+        || 'http://localhost:5000';
+      publicImageUrl = `${serverBase}${result.fileUrl}`;
+
       let sourceLinks = '';
       if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
         sourceLinks = '\n\n🔗 *Sumber Referensi:*\n' + newsletterData.sourceLinks.map(l => `- ${l}`).join('\n');
@@ -183,7 +203,7 @@ async function fireSchedule(bot, schedule) {
   // Send to all resolved targets
   for (const target of targets) {
     if (isImage && imagePath) {
-      await sendWahaImage(wahaConfig, target.chatId, imagePath, formattedMsg);
+      await sendWahaImage(wahaConfig, target.chatId, imagePath, formattedMsg, publicImageUrl);
     } else {
       await sendWahaMessage(wahaConfig, target.chatId, formattedMsg);
     }
@@ -192,7 +212,7 @@ async function fireSchedule(bot, schedule) {
   // Send to legacy chatId if no new targets configured
   if (targets.length === 0 && legacyChatId) {
     if (isImage && imagePath) {
-      await sendWahaImage(wahaConfig, legacyChatId, imagePath, formattedMsg);
+      await sendWahaImage(wahaConfig, legacyChatId, imagePath, formattedMsg, publicImageUrl);
     } else {
       await sendWahaMessage(wahaConfig, legacyChatId, formattedMsg);
     }
