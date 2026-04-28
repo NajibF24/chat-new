@@ -2371,16 +2371,16 @@ function AdminDashboard({ user, handleLogout }) {
                       const isSupported = cap.providers.includes(currentProvider);
                       const isOn = botForm.capabilities?.[cap.id] || false;
                       return (
-                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 bg-gray-50' : isOn ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
+                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800' : isOn ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-gray-200 dark:hover:border-gray-600'}`}>
                           <div className="flex items-start gap-3">
                             <span className="text-xl">{cap.icon}</span>
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className="font-semibold text-sm text-gray-800">{cap.label}</p>
-                                {!isSupported && <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-semibold">Not available for {currentProvider}</span>}
+                                <p className="font-semibold text-sm text-gray-800 dark:text-gray-100">{cap.label}</p>
+                                {!isSupported && <span className="text-[9px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 px-1.5 py-0.5 rounded font-semibold">Not available for {currentProvider}</span>}
                               </div>
-                              <p className="text-xs text-gray-400 mt-0.5">{cap.desc}</p>
-                              <div className="flex gap-1 mt-1">{cap.providers.map(p => <span key={p} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold">{AI_PROVIDERS[p]?.icon} {p}</span>)}</div>
+                              <p className="text-xs text-gray-400 dark:text-gray-300 mt-0.5">{cap.desc}</p>
+                              <div className="flex gap-1 mt-1">{cap.providers.map(p => <span key={p} className="text-[9px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-semibold">{AI_PROVIDERS[p]?.icon} {p}</span>)}</div>
                             </div>
                           </div>
                           <button type="button" disabled={!isSupported} onClick={() => setBotForm(f => ({ ...f, capabilities: { ...f.capabilities, [cap.id]: !isOn } }))}
@@ -2417,8 +2417,8 @@ function AdminDashboard({ user, handleLogout }) {
                           key={m.id}
                           className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
                             botForm.knowledgeMode === m.id
-                              ? 'border-primary bg-primary/5'
-                              : 'border-gray-100 hover:border-gray-200'
+                              ? 'border-primary bg-primary/5 dark:bg-primary/20'
+                              : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600'
                           }`}
                         >
                           <input
@@ -2430,7 +2430,7 @@ function AdminDashboard({ user, handleLogout }) {
                             className="accent-primary-dark"
                           />
                           <div>
-                            <div className="text-sm font-semibold text-gray-800">{m.label}</div>
+                            <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{m.label}</div>
                             <div className="text-xs text-gray-400">{m.desc}</div>
                           </div>
                         </label>
