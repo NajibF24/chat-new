@@ -38,6 +38,9 @@ class CleanupService {
           fs.stat(filePath, (err, stats) => {
             if (err) return;
 
+            // Lewati direktori — hanya hapus file biasa
+            if (stats.isDirectory()) return;
+
             // Hapus file jika umur modifikasinya lebih dari 14 hari
             if (now - stats.mtimeMs > this.retentionMs) {
               fs.unlink(filePath, err => {

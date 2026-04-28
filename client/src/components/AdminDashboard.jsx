@@ -57,7 +57,10 @@ const AI_PROVIDERS = {
     ],
     capabilities: [],
   },
-  custom: { label: 'Custom / OpenAI-Compatible', icon: '⚙️', models: [], capabilities: [] },
+  custom:    { label: 'Custom / OpenAI-Compatible', icon: '⚙️', models: [], capabilities: [],
+    description: 'Azure OpenAI, AWS Bedrock, Ollama, Groq, LM Studio, etc.' },
+  external:  { label: 'External Bot / HTTP Proxy', icon: '🌐', models: [], capabilities: [],
+    description: 'Proxy to any bot endpoint — portal provides UI only, no portal tokens used.' },
 };
 
 const TIER_STYLE = {
@@ -117,9 +120,12 @@ const initialBotState = {
     model: 'gpt-4o',
     apiKey: '',
     endpoint: '',
-    apiVersion: '',     // ← PATCH: Azure API version
+    apiVersion: '',
     temperature: 0.1,
-    maxTokens: 8000
+    maxTokens: 8000,
+    apiKeyHeader: 'Authorization',
+    requestFormat: 'openai',
+    responseField: '',
   },
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
   smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', sheetIds: [], sheetLabels: [] },
@@ -409,9 +415,396 @@ function DetailPanel({ detail, action }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// GATEWAY TAB COMPONENT
+// ─────────────────────────────────────────────────────────────
+function SyntaxCode({ code, lang = 'bash' }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="relative rounded-xl overflow-hidden border border-gray-700/40 shadow-md">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#1a1b26]">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-500/70" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
+            <div className="w-3 h-3 rounded-full bg-green-500/70" />
+          </div>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{lang}</span>
+        </div>
+        <button onClick={handleCopy}
+          className={`flex items-center gap-1 px-3 py-1 text-[10px] font-bold rounded-lg transition-colors ${copied ? 'bg-green-600/30 text-green-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-400'}`}>
+          {copied ? '✅ Copied!' : '⎘ Copy'}
+        </button>
+      </div>
+      <pre className="p-4 text-xs text-gray-100 font-mono leading-relaxed overflow-x-auto bg-[#1a1b26] max-h-64 whitespace-pre">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function GatewayTab({ bots, baseUrl }) {
+  const [selectedBot, setSelectedBot] = useState(null);
+  const [codeTab, setCodeTab] = useState('curl');
+  const [testMessage, setTestMessage] = useState('Hello, can you help me?');
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [revealedKey, setRevealedKey] = useState({});
+  const [copiedKey, setCopiedKey] = useState({});
+
+  const externalBots = bots.filter(b => b.aiProvider?.provider === 'external');
+  const activeBotId  = selectedBot?._id || bots[0]?._id || '';
+  const activeBot    = selectedBot || bots[0] || null;
+
+
+  const handleRevealKey = async (bot) => {
+    try {
+      const res = await axios.get(`/api/admin/bots/${bot._id}/api-key`);
+      setRevealedKey(p => ({ ...p, [bot._id]: res.data.botApiKey || '' }));
+    } catch { alert('Failed to retrieve key'); }
+  };
+
+  const handleCopyKey = async (key, id) => {
+    await navigator.clipboard.writeText(key);
+    setCopiedKey(p => ({ ...p, [id]: true }));
+    setTimeout(() => setCopiedKey(p => ({ ...p, [id]: false })), 2000);
+  };
+
+  const handleTest = async () => {
+    if (!activeBot || !testMessage.trim()) return;
+    setTesting(true); setTestResult(null);
+    try {
+      const keyRes = await axios.get(`/api/admin/bots/${activeBot._id}/api-key`);
+      const key = keyRes.data.botApiKey;
+      if (!key) { setTestResult({ ok: false, message: 'Bot has no API key. Generate one first in bot settings.' }); return; }
+      const res = await axios.post('/api/chat/external', { message: testMessage, botId: activeBot._id }, { headers: { 'x-api-key': key } });
+      setTestResult({ ok: true, message: res.data.response });
+    } catch (err) {
+      setTestResult({ ok: false, message: err.response?.data?.error || err.message });
+    } finally { setTesting(false); }
+  };
+
+  const curlCode = activeBot ? `curl -X POST "${baseUrl}/api/chat/external" \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: YOUR_BOT_API_KEY" \\
+  -d '{
+    "botId": "${activeBot._id}",
+    "message": "Hello, can you help me?",
+    "threadId": null
+  }'` : '# Select a bot above';
+
+  const pythonCode = activeBot ? `import requests
+
+response = requests.post(
+    "${baseUrl}/api/chat/external",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_BOT_API_KEY",
+    },
+    json={
+        "botId": "${activeBot._id}",
+        "message": "Hello, can you help me?",
+        "threadId": None,  # Pass thread ID for conversation continuity
+    }
+)
+
+data = response.json()
+print(data["response"])` : '# Select a bot above';
+
+  const jsCode = activeBot ? `const response = await fetch("${baseUrl}/api/chat/external", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_BOT_API_KEY",
+  },
+  body: JSON.stringify({
+    botId: "${activeBot._id}",
+    message: "Hello, can you help me?",
+    threadId: null, // Pass thread ID for conversation continuity
+  }),
+});
+
+const { response: text, threadId } = await response.json();
+console.log(text);` : '// Select a bot above';
+
+  const tsCode = activeBot ? `interface ChatResponse {
+  response: string;
+  threadId: string;
+  botId: string;
+}
+
+async function chatWithBot(message: string, threadId?: string): Promise<ChatResponse> {
+  const res = await fetch("${baseUrl}/api/chat/external", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": "YOUR_BOT_API_KEY",
+    },
+    body: JSON.stringify({
+      botId: "${activeBot._id}",
+      message,
+      threadId: threadId ?? null,
+    }),
+  });
+  if (!res.ok) throw new Error(\`HTTP error \${res.status}\`);
+  return res.json();
+}
+
+// Usage
+const { response, threadId } = await chatWithBot("Hello!");
+console.log(response);` : '// Select a bot above';
+
+  const codeMap = { curl: curlCode, python: pythonCode, javascript: jsCode, typescript: tsCode };
+  const codeLang = { curl: 'bash', python: 'python', javascript: 'javascript', typescript: 'typescript' };
+
+  return (
+    <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-blue-900 rounded-2xl p-6 text-white shadow-lg">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-2xl flex-shrink-0">🌐</div>
+          <div>
+            <h2 className="text-xl font-bold">API Gateway</h2>
+            <p className="text-indigo-200 text-sm mt-1">Use your portal bots as an external API. Any system can send messages and receive AI responses via HTTP.</p>
+            <div className="flex gap-2 mt-3 flex-wrap">
+              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">✅ REST API</span>
+              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">🔐 API Key Auth</span>
+              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">💬 Thread Support</span>
+              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">📄 Multi-language Examples</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left: Bot selector + API keys */}
+        <div className="space-y-4">
+          {/* Portal API Keys Panel */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+              <h3 className="font-bold text-sm text-gray-800">🔑 Portal API Keys</h3>
+              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">{bots.length} bots</span>
+            </div>
+            <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
+              {bots.map(bot => (
+                <div key={bot._id}
+                  onClick={() => setSelectedBot(bot)}
+                  className={`p-3 cursor-pointer hover:bg-gray-50 transition-colors ${activeBotId === bot._id ? 'bg-indigo-50 border-l-2 border-indigo-500' : ''}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{bot.avatar?.emoji || '🤖'}</span>
+                      <span className="text-xs font-bold text-gray-800 truncate max-w-[100px]">{bot.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {bot.aiProvider?.provider === 'external' && (
+                        <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold">🌐 EXT</span>
+                      )}
+                      {bot.botApiKey
+                        ? <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-bold">✅ KEY</span>
+                        : <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold">⚠️ NO KEY</span>
+                      }
+                    </div>
+                  </div>
+                  {bot.botApiKey && activeBotId === bot._id && (
+                    <div className="flex gap-1 mt-1.5">
+                      {revealedKey[bot._id] ? (
+                        <>
+                          <code className="flex-1 text-[9px] font-mono bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg break-all border border-emerald-200">
+                            {revealedKey[bot._id]}
+                          </code>
+                          <button onClick={e => { e.stopPropagation(); handleCopyKey(revealedKey[bot._id], bot._id); }}
+                            className={`flex-shrink-0 text-[9px] px-2 py-1 rounded-lg font-bold transition-colors ${copiedKey[bot._id] ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                            {copiedKey[bot._id] ? '✓' : '⎘'}
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={e => { e.stopPropagation(); handleRevealKey(bot); }}
+                          className="text-[9px] px-2 py-1 bg-blue-50 text-blue-700 rounded-lg font-bold hover:bg-blue-100 transition-colors">
+                          👁 Reveal Key
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {bots.length === 0 && (
+                <div className="p-6 text-center text-sm text-gray-400">No bots yet. Create one in the Bots tab.</div>
+              )}
+            </div>
+          </div>
+
+          {/* External Integrations Monitor */}
+          {externalBots.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-50">
+                <h3 className="font-bold text-sm text-gray-800">🌐 External Integrations</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">Bots using an external HTTP endpoint</p>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {externalBots.map(bot => (
+                  <div key={bot._id} className="p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-800">{bot.avatar?.emoji || '🤖'} {bot.name}</span>
+                      <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold border border-indigo-200">🌐 PROXY</span>
+                    </div>
+                    <div className="text-[9px] font-mono bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 text-gray-500 truncate">
+                      {bot.aiProvider?.endpoint || 'No URL configured'}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                        {bot.aiProvider?.apiKeyHeader === 'Authorization' ? 'Bearer' : bot.aiProvider?.apiKeyHeader || 'Authorization'}
+                      </span>
+                      <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                        {bot.aiProvider?.requestFormat || 'openai'} format
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Documentation + Test */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Bot selector for docs */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-sm font-bold text-gray-700">📖 Usage Documentation</span>
+              <select
+                value={activeBotId}
+                onChange={e => setSelectedBot(bots.find(b => b._id === e.target.value) || null)}
+                className="ml-auto text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400 bg-gray-50">
+                {bots.map(b => <option key={b._id} value={b._id}>{b.avatar?.emoji || '🤖'} {b.name}</option>)}
+              </select>
+            </div>
+
+            {/* Info boxes */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Endpoint</p>
+                <code className="text-[10px] font-mono text-gray-700 break-all">{baseUrl}/api/chat/external</code>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Method</p>
+                <code className="text-[10px] font-mono text-emerald-700 font-bold">POST</code>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Auth Header</p>
+                <code className="text-[10px] font-mono text-indigo-700">x-api-key: YOUR_KEY</code>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Bot ID</p>
+                <code className="text-[10px] font-mono text-gray-600 break-all">{activeBotId || '—'}</code>
+              </div>
+            </div>
+
+            {/* Code tabs */}
+            <div className="flex gap-1.5 mb-3 flex-wrap">
+              {[
+                { id: 'curl',       label: '⬛ cURL',      badge: null },
+                { id: 'python',     label: '🐍 Python',    badge: null },
+                { id: 'javascript', label: '🟨 JavaScript', badge: null },
+                { id: 'typescript', label: '🔷 TypeScript', badge: 'TS' },
+              ].map(t => (
+                <button key={t.id} onClick={() => setCodeTab(t.id)}
+                  className={`relative px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border-2 ${codeTab === t.id ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
+                  {t.label}
+                  {t.badge && <span className="absolute -top-1.5 -right-1 bg-blue-500 text-white text-[8px] font-black px-1 py-0.5 rounded-full">{t.badge}</span>}
+                </button>
+              ))}
+            </div>
+
+            <SyntaxCode code={codeMap[codeTab]} lang={codeLang[codeTab]} />
+
+            {/* Response schema */}
+            <div className="mt-3">
+              <p className="text-[10px] font-bold text-gray-500 mb-1.5">📤 Response Schema</p>
+              <SyntaxCode lang="json" code={`{
+  "response": "AI bot's reply text here",
+  "threadId": "67abc123...",   // Use this to continue the conversation
+  "botId": "${activeBotId || 'bot-id'}"
+}`} />
+            </div>
+          </div>
+
+          {/* Live Test Panel */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50">
+              <h3 className="font-bold text-sm text-gray-800">🧪 Live Test Panel</h3>
+              <p className="text-[10px] text-gray-400 mt-0.5">Test your bot's external API directly from here</p>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex gap-2">
+                <select
+                  value={activeBotId}
+                  onChange={e => setSelectedBot(bots.find(b => b._id === e.target.value) || null)}
+                  className="text-xs border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-400 bg-gray-50 flex-shrink-0">
+                  {bots.map(b => <option key={b._id} value={b._id}>{b.avatar?.emoji || '🤖'} {b.name}</option>)}
+                </select>
+                <input
+                  className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-400 transition-colors"
+                  placeholder="Type a test message..."
+                  value={testMessage}
+                  onChange={e => setTestMessage(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleTest()}
+                />
+                <button onClick={handleTest} disabled={testing || !activeBot?.botApiKey}
+                  className="flex-shrink-0 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5">
+                  {testing ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Testing...</> : '▶ Send'}
+                </button>
+              </div>
+
+              {!activeBot?.botApiKey && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-[10px] text-amber-700 font-medium">
+                  ⚠️ This bot has no API Key. Go to Bots tab → Edit bot → generate a key first.
+                </div>
+              )}
+
+              {testResult && (
+                <div className={`rounded-xl border p-3 ${testResult.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                  <p className="text-[10px] font-bold mb-1.5 ${testResult.ok ? 'text-emerald-700' : 'text-red-700'}">{testResult.ok ? '✅ Response:' : '❌ Error:'}</p>
+                  <p className={`text-xs leading-relaxed ${testResult.ok ? 'text-emerald-800' : 'text-red-800'}`}>{testResult.message}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Reference */}
+          <div className="bg-gradient-to-br from-slate-50 to-gray-50 border border-gray-200 rounded-2xl p-4">
+            <h3 className="font-bold text-sm text-gray-800 mb-3">📚 Request Body Reference</h3>
+            <SyntaxCode lang="json" code={`{
+  "botId":    "${activeBotId || 'your-bot-id'}",  // Required — Bot ID from the panel
+  "message":  "User's message text",               // Required
+  "threadId": null,                                 // Optional — pass previous threadId to continue
+  "history":  []                                    // Optional — manual history override
+}`} />
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+              <div className="bg-white border border-gray-100 rounded-xl p-2.5">
+                <p className="font-bold text-gray-600 mb-1">Rate Limits</p>
+                <p className="text-gray-400">Same as portal chat limits. No separate rate limit for external API.</p>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-xl p-2.5">
+                <p className="font-bold text-gray-600 mb-1">Security</p>
+                <p className="text-gray-400">API Keys are scoped per-bot. Regenerate anytime in bot settings.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────
 function AdminDashboard({ user, handleLogout }) {
+
   const navigate = useNavigate();
   const [activeTab, setActiveTab]   = useState('dashboard');
   const [stats, setStats]           = useState(null);
@@ -590,13 +983,16 @@ function AdminDashboard({ user, handleLogout }) {
       pptTemplateFileId: bot.pptTemplateFileId || null,
 
       aiProvider: {
-        provider:    bot.aiProvider?.provider    || 'openai',
-        model:       bot.aiProvider?.model       || 'gpt-4o',
-        apiKey:      bot.aiProvider?.apiKey      || '',
-        endpoint:    bot.aiProvider?.endpoint    || '',
-        apiVersion:  bot.aiProvider?.apiVersion  || '',   // ← PATCH: map apiVersion
-        temperature: bot.aiProvider?.temperature ?? 0.1,
-        maxTokens:   bot.aiProvider?.maxTokens   ?? 2000,
+        provider:      bot.aiProvider?.provider      || 'openai',
+        model:         bot.aiProvider?.model         || 'gpt-4o',
+        apiKey:        bot.aiProvider?.apiKey        || '',
+        endpoint:      bot.aiProvider?.endpoint      || '',
+        apiVersion:    bot.aiProvider?.apiVersion    || '',
+        temperature:   bot.aiProvider?.temperature   ?? 0.1,
+        maxTokens:     bot.aiProvider?.maxTokens     ?? 2000,
+        apiKeyHeader:  bot.aiProvider?.apiKeyHeader  || 'Authorization',
+        requestFormat: bot.aiProvider?.requestFormat || 'openai',
+        responseField: bot.aiProvider?.responseField || '',
       },
 
       capabilities: {
@@ -797,7 +1193,8 @@ function AdminDashboard({ user, handleLogout }) {
               { id: 'users',     icon: '👥', label: 'User Access', show: user?.isAdmin },
               { id: 'chats',     icon: '💬', label: 'Chat Logs',   show: user?.isAdmin },
               { id: 'tokens',    icon: '🪙', label: 'Token Usage',  show: user?.isAdmin },
-              { id: 'audit',     icon: '🕵️', label: 'Audit Trail', show: user?.isAdmin },
+              { id: 'audit',    icon: '🕵️', label: 'Audit Trail', show: user?.isAdmin },
+              { id: 'gateway',  icon: '🌐', label: 'API Gateway', show: user?.isAdmin },
             ].filter(t => t.show).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
@@ -1652,21 +2049,141 @@ function AdminDashboard({ user, handleLogout }) {
                     <div className="grid grid-cols-2 gap-2">
                       {Object.entries(AI_PROVIDERS).map(([key, prov]) => (
                         <button key={key} type="button" onClick={() => setBotForm(f => {
-                          // Auto-disable capabilities not supported by the new provider
                           const newCaps = { ...f.capabilities };
-                          ALL_CAPABILITIES.forEach(cap => {
-                            if (!cap.providers.includes(key)) newCaps[cap.id] = false;
-                          });
+                          ALL_CAPABILITIES.forEach(cap => { if (!cap.providers.includes(key)) newCaps[cap.id] = false; });
                           return { ...f, aiProvider: { ...f.aiProvider, provider: key, model: prov.models[0]?.id || '' }, capabilities: newCaps };
                         })}
                           className={`p-3.5 rounded-xl border-2 text-left transition-all ${currentProvider === key ? 'border-primary-dark bg-primary/5 shadow-sm' : 'border-gray-100 hover:border-gray-200 bg-white'}`}>
                           <div className="text-xl mb-1">{prov.icon}</div>
                           <div className="text-xs font-bold text-gray-800">{prov.label}</div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">{prov.models.length > 0 ? `${prov.models.length} models` : 'Custom endpoint'}</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            {prov.description || (prov.models.length > 0 ? `${prov.models.length} models` : 'Custom endpoint')}
+                          </div>
+                          {currentProvider === key && (
+                            <div className="mt-1.5">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary text-white">
+                                ✓ Selected
+                              </span>
+                            </div>
+                          )}
                         </button>
                       ))}
                     </div>
                   </div>
+
+                  {/* External Provider config (shown only for external) */}
+                  {currentProvider === 'external' && (
+                    <div className="space-y-4 bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-2xl p-5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🌐</span>
+                        <div>
+                          <p className="text-sm font-bold text-indigo-900">External Bot Configuration</p>
+                          <p className="text-[10px] text-indigo-600">Portal forwards messages to your external bot. No portal AI tokens consumed.</p>
+                        </div>
+                      </div>
+
+                      {/* Endpoint URL */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">Endpoint URL <span className="text-red-500">*</span></label>
+                        <input
+                          autoComplete="off"
+                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none"
+                          placeholder="https://your-bot.company.com/api/chat"
+                          value={botForm.aiProvider?.endpoint || ''}
+                          onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, endpoint: e.target.value } }))}
+                        />
+                        <p className="text-[10px] text-indigo-500 mt-1">The URL where the portal will POST your users' messages.</p>
+                      </div>
+
+                      {/* API Key */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">API Key / Token</label>
+                        <input type="text" autoComplete="off" readOnly onFocus={e => e.target.removeAttribute('readOnly')}
+                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
+                          placeholder="sk-... or any token your external bot uses"
+                          value={botForm.aiProvider?.apiKey || ''}
+                          onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))}
+                        />
+                      </div>
+
+                      {/* API Key Header */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">API Key Header</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {['Authorization', 'X-Api-Key', 'api-key', 'Custom'].map(h => (
+                            <button key={h} type="button"
+                              onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKeyHeader: h } }))}
+                              className={`px-3 py-2 rounded-xl border-2 text-xs font-semibold transition-all ${
+                                botForm.aiProvider?.apiKeyHeader === h
+                                  ? 'border-indigo-500 bg-indigo-600 text-white'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300'
+                              }`}>
+                              {h === 'Authorization' ? 'Bearer Token' : h}
+                              {h === 'Authorization' && <div className="text-[9px] opacity-70 font-normal mt-0.5">Authorization: Bearer {'{key}'}</div>}
+                              {h === 'X-Api-Key' && <div className="text-[9px] opacity-70 font-normal mt-0.5">X-Api-Key: {'{key}'}</div>}
+                              {h === 'api-key' && <div className="text-[9px] opacity-70 font-normal mt-0.5">api-key: {'{key}'}</div>}
+                              {h === 'Custom' && <div className="text-[9px] opacity-70 font-normal mt-0.5">Any custom header name</div>}
+                            </button>
+                          ))}
+                        </div>
+                        {botForm.aiProvider?.apiKeyHeader === 'Custom' && (
+                          <input
+                            autoComplete="off"
+                            className="w-full mt-2 bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
+                            placeholder="e.g. X-Custom-Token"
+                            value={botForm.aiProvider?.customHeaderName || ''}
+                            onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, customHeaderName: e.target.value, apiKeyHeader: e.target.value } }))}
+                          />
+                        )}
+                      </div>
+
+                      {/* Request Format */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">Request Format</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { id: 'openai', label: 'OpenAI-Compatible', desc: '{ "messages": [...] }', icon: '🟢' },
+                            { id: 'simple', label: 'Simple JSON', desc: '{ "message": "...", "system": "...", "history": [...] }', icon: '📦' },
+                          ].map(f => (
+                            <button key={f.id} type="button"
+                              onClick={() => setBotForm(frm => ({ ...frm, aiProvider: { ...frm.aiProvider, requestFormat: f.id } }))}
+                              className={`p-3 rounded-xl border-2 text-left transition-all ${
+                                botForm.aiProvider?.requestFormat === f.id
+                                  ? 'border-indigo-500 bg-indigo-600 text-white'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300'
+                              }`}>
+                              <div className="text-base mb-1">{f.icon}</div>
+                              <div className="text-xs font-bold">{f.label}</div>
+                              <div className="text-[9px] opacity-70 font-mono mt-0.5 break-all">{f.desc}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Response Field */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">Response Field (optional)</label>
+                        <input
+                          autoComplete="off"
+                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
+                          placeholder="Leave blank for auto-detect (answer, response, text, output...)"
+                          value={botForm.aiProvider?.responseField || ''}
+                          onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, responseField: e.target.value } }))}
+                        />
+                        <p className="text-[10px] text-indigo-500 mt-1">Dot-notation path to extract text from response, e.g. <code className="bg-indigo-100 px-1 rounded">data.answer</code> or <code className="bg-indigo-100 px-1 rounded">choices.0.message.content</code>. Leave blank to auto-detect.</p>
+                      </div>
+
+                      {/* Info box */}
+                      <div className="bg-white/60 border border-indigo-100 rounded-xl p-3 text-[10px] text-indigo-700 space-y-1">
+                        <p className="font-bold">📋 How this works:</p>
+                        <p>1. User sends a message in the portal chat</p>
+                        <p>2. Portal POSTs the message to your Endpoint URL with the API Key</p>
+                        <p>3. Your external bot processes and returns a response</p>
+                        <p>4. Portal displays the response to the user</p>
+                        <p className="font-semibold text-indigo-800 mt-1">✅ No OpenAI/Anthropic/Gemini tokens from this portal are used.</p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Model list (non-custom providers) */}
                   {availableModels.length > 0 && (
@@ -2605,8 +3122,14 @@ function AdminDashboard({ user, handleLogout }) {
         </div>
       )}
 
+      {/* ════════════════ API GATEWAY TAB ════════════════ */}
+      {activeTab === 'gateway' && user?.isAdmin && (
+        <GatewayTab bots={bots} baseUrl={typeof window !== 'undefined' ? window.location.origin : ''} />
+      )}
+
       {avatarPickerBot && <AvatarPicker bot={avatarPickerBot} onSave={handleAvatarSaved} onClose={() => setAvatarPickerBot(null)} />}
       {embedBot && <EmbedCodeModal bot={embedBot} onClose={() => setEmbedBot(null)} />}
+
     </div>
   );
 }

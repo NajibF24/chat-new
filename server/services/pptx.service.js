@@ -245,14 +245,17 @@ function addLeftAccent(slide, pptx, GYS, y = 0.85, h = 4.3) {
 
 function addSlideTitle(slide, GYS, title) {
   const titleStr  = String(title || '');
-  // ✅ v1.5.0: tighter box (w=8.0 to leave room for badge) + stricter scaling
+  // ✅ v1.5.3: fix overlap and vertical alignment.
+  // Template logo in slideLayout2.xml requires text box to start further right (x: 1.6)
+  // and lower down (y: 0.22) to align properly.
   const titleSize = calcFontSize(titleStr, 45, 22, 13);
   slide.addText(titleStr, {
-    x: 1.6, y: 0.10, w: 7.3, h: 0.62,
+    x: 1.6, y: 0.22, w: 7.3, h: 0.40,
     fontSize: titleSize, bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle, autoFit: true,
   });
 }
+
 
 // ────────────────────────────────────────────────────────────
 // IMAGE_SLIDE layout

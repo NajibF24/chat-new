@@ -608,12 +608,15 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
       createdBy: req.user._id,   // ✅ Simpan siapa yang buat
       botApiKey: '',             // ✅ Tidak auto-generate
       aiProvider: {
-        provider:    aiProvider?.provider    || 'openai',
-        model:       aiProvider?.model       || 'gpt-4.1',
-        apiKey:      aiProvider?.apiKey      || '',
-        endpoint:    aiProvider?.endpoint    || '',
-        temperature: aiProvider?.temperature ?? 0.1,
-        maxTokens:   aiProvider?.maxTokens   ?? 2000,
+        provider:      aiProvider?.provider      || 'openai',
+        model:         aiProvider?.model         || 'gpt-4.1',
+        apiKey:        aiProvider?.apiKey        || '',
+        endpoint:      aiProvider?.endpoint      || '',
+        temperature:   aiProvider?.temperature   ?? 0.1,
+        maxTokens:     aiProvider?.maxTokens     ?? 2000,
+        apiKeyHeader:  aiProvider?.apiKeyHeader  || 'Authorization',
+        requestFormat: aiProvider?.requestFormat || 'openai',
+        responseField: aiProvider?.responseField || '',
       },
       capabilities: sanitizeCapabilities(capabilities),
       wahaConfig: wahaConfigCreate,
@@ -787,9 +790,12 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
         apiKey: aiProvider.apiKey === '***'
           ? existing.aiProvider?.apiKey
           : (aiProvider.apiKey || ''),
-        endpoint:    aiProvider.endpoint    || '',
-        temperature: aiProvider.temperature ?? 0.1,
-        maxTokens:   aiProvider.maxTokens   ?? 2000,
+        endpoint:      aiProvider.endpoint      || '',
+        temperature:   aiProvider.temperature   ?? 0.1,
+        maxTokens:     aiProvider.maxTokens     ?? 2000,
+        apiKeyHeader:  aiProvider.apiKeyHeader  || existing.aiProvider?.apiKeyHeader  || 'Authorization',
+        requestFormat: aiProvider.requestFormat || existing.aiProvider?.requestFormat || 'openai',
+        responseField: aiProvider.responseField ?? existing.aiProvider?.responseField ?? '',
       };
     }
 

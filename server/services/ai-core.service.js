@@ -28,6 +28,7 @@ import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
 import DocService             from './doc.service.js';
 import ExcelService           from './excel.service.js';
+import NewsletterService      from './newsletter.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
@@ -543,6 +544,13 @@ export function isExcelCommand(text) {
   if (!text) return false;
   return /\b(excel|xlsx|spreadsheet|tabel)\b/i.test(text) || text.toLowerCase().includes('/excel');
 }
+
+export function isNewsletterCommand(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return lower.includes('/newsletter') || lower.includes('signal') || lower.includes('newsletter');
+}
+
 
 
 // ─────────────────────────────────────────────────────────────
@@ -1123,6 +1131,10 @@ class AICoreService {
         return this._handleExcelCommand({ userId, botId, bot, message, threadId, history, attachedFile });
       }
 
+      if (isNewsletterCommand(message)) {
+        return this._handleNewsletterCommand({ userId, botId, bot, message, threadId, history, attachedFile });
+      }
+
     // ── ✅ NEW: Image Generation Handler ───────────────────────
     // Skip if user attached a file — they want to analyze it, not generate a new image
     if (isImageGenerationRequest(message) && !attachedFile) {
@@ -1670,7 +1682,82 @@ class AICoreService {
     }
   }
 
-  async _handleExcelCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+  
+  async generateNewsletterDataCore({ bot, message, history = [] }) {
+    console.log('[NEWSLETTER CORE] Generating GYS Steel Signal Image...');
+
+    const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    let contentUserMsg = `=== USER REQUEST (Format GYS Steel Signal) ===\nToday's date: ${today}\n${message}\n\n`;
+    contentUserMsg += `STEP 1: Search the web for TODAY's latest steel market news (Indonesian and global). Use queries like "Indonesia steel market news today", "harga baja Indonesia terbaru", "steel price Asia today". Find at least 2 real, currently accessible news articles.\n\n`;
+    contentUserMsg += `STEP 2: Based ONLY on what you actually found in your web search, generate a JSON for the "GYS Steel Signal" newsletter. Write all content strictly in ENGLISH.\n\n`;
+    contentUserMsg += `CRITICAL URL RULE: The "sourceLinks" array MUST contain ONLY real URLs you actually visited and verified. DO NOT invent or guess URLs. If no real URLs found, return sourceLinks as [].\n\n`;
+    const jsonSchema = '{\n  "headline": "String - Main news headline (max 80 chars)",\n  "summaryParagraphs": ["String - Paragraph 1", "String - Paragraph 2"],\n  "keyPoints": [\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" }\n  ],\n  "implicationIntro": "String - Short intro to implications",\n  "implicationCustomer": "String - Customer behavior implication",\n  "implicationSupplier": "String - Supplier behavior implication",\n  "implicationMarket": "String - Market narrative implication",\n  "actionSalesCheck": "String - Sales action check",\n  "actionSalesRec": "String - Sales recommended action",\n  "actionProcurementCheck": "String - Procurement action check",\n  "actionProcurementRec": "String - Procurement recommended action",\n  "managementTakeaway": "String - Strong management takeaway",\n  "sourceLinks": ["ONLY real verified URLs — leave empty array [] if none found"]\n}';
+    contentUserMsg += `Output ONLY a raw JSON object (no markdown, no code blocks).\nStructure:\n${jsonSchema}`;
+
+    const aiResponse = await AIProviderService.generateCompletion({
+      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      systemPrompt: `You are an expert market intelligence analyst for Garuda Yamato Steel (GYS). Today is ${today}. You MUST search the web for TODAY's latest real news before generating content. You output ONLY valid raw JSON. Never invent news or URLs.`,
+      messages: history,
+      userContent: contentUserMsg,
+      capabilities: bot.capabilities || { webSearch: true },
+      timeout: 120000,
+      maxTokens: 4000,
+    });
+
+    let rawJson = aiResponse.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    const jsonStart = rawJson.indexOf('{');
+    const jsonEnd = rawJson.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+    }
+    
+    const newsletterData = JSON.parse(rawJson);
+    const outputDir = path.join(process.cwd(), 'data', 'files');
+    const result = await NewsletterService.generateNewsletterImage({ data: newsletterData, outputDir });
+
+    // Build the Markdown: image is clickable (links to first source), then show all sources as real text links below
+    const firstLink = (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) ? newsletterData.sourceLinks[0] : null;
+    
+    // Image wrapped in link pointing to first source
+    const imageMarkdown = firstLink 
+      ? `[![GYS Steel Signal](${result.fileUrl})](${firstLink})`
+      : `![GYS Steel Signal](${result.fileUrl})`;
+
+    // Source links as real, clickable Markdown text below the image 
+    let sourceMarkdown = '';
+    if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
+      sourceMarkdown = '\n\n**Sources & References:**\n' +
+        newsletterData.sourceLinks.map(l => `- [${l}](${l})`).join('\n');
+    }
+
+    const responseMarkdown = imageMarkdown + sourceMarkdown;
+
+    return { result, responseMarkdown, newsletterData };
+  }
+
+  async _handleNewsletterCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      
+      const { result, responseMarkdown } = await this.generateNewsletterDataCore({ bot, message, history });
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [], // Do not attach file to avoid double rendering, Markdown handles the clickable image
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [],
+      };
+    } catch (error) {
+      console.error('❌ [NEWSLETTER Command]', error);
+      throw new Error(`Gagal membuat newsletter: ${error.message}`);
+    }
+  }
+
+async _handleExcelCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
       await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       console.log('[EXCEL] Generating Spreadsheet...');

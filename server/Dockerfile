@@ -9,7 +9,11 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    python3 \
+    make \
+    g++ \
+    git
 
 # 2. Set Environment Variables agar Puppeteer menggunakan Chromium bawaan Alpine
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
@@ -17,9 +21,13 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-# 3. Copy package files dan install dependencies 
+# 3. Copy package files dan install dependencies
+#    Baileys v7 depends on libsignal from a GitHub git repo.
+#    Force git to use HTTPS (not SSH) so Docker can clone without SSH keys.
 COPY package*.json ./
-RUN npm install --production
+RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    npm install --production --legacy-peer-deps
 
 # 4. Copy sisa 
 COPY . .
