@@ -201,16 +201,30 @@ async function connect() {
 
 // ─── Internal retry helper ──────────────────────────────────────────────────────────
 // Retries fn() up to maxAttempts times.
-// If 'No sessions' error, waits delayMs between attempts (sender keys may arrive later).
-// For other errors, fails immediately.
+// ⛔ IMMEDIATELY FAILS on 'forbidden' / 'not-authorized' — bot is not in group / kicked.
+//    Retrying these is pointless and wastes up to 10 minutes of log spam.
+// ⏳ Waits delayMs on 'No sessions' — sender keys may arrive later from WA servers.
 async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = {}) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await fn();
       return true;
     } catch (err) {
-      const isNoSessions = err.message?.includes('No sessions');
-      log(`❌ Failed to ${label} (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+      const msg          = err.message || '';
+      const isForbidden  = msg.toLowerCase().includes('forbidden') ||
+                           msg.toLowerCase().includes('not-authorized') ||
+                           msg.toLowerCase().includes('not a participant');
+      const isNoSessions = msg.includes('No sessions');
+
+      log(`❌ Failed to ${label} (attempt ${attempt}/${maxAttempts}): ${msg}`);
+
+      // ⛔ Hard permanent failure — don't retry, it'll never work
+      if (isForbidden) {
+        log(`⛔ ${label}: Permanently forbidden — bot may have been kicked from this group, or messaging is restricted. Stopping retries.`);
+        return false;
+      }
+
+      // ⏳ Soft failure — wait for sender key distribution
       if (isNoSessions && attempt < maxAttempts) {
         log(`⏳ No sessions — waiting ${delayMs / 1000}s for WhatsApp to distribute sender keys...`);
         await new Promise(r => setTimeout(r, delayMs));

@@ -227,17 +227,18 @@ router.post('/external', async (req, res) => {
     }
 
     // 3. Validasi message
-    const { message, username, history } = req.body;
+    const { message, username, history, forward_wa } = req.body;
     if (!message?.trim()) {
       return res.status(400).json({ error: 'Field "message" wajib diisi' });
     }
 
     const callerUsername = username || 'system.external';
-    const model          = bot.aiProvider?.model     || 'unknown';
-    const provider       = bot.aiProvider?.provider  || 'openai';
-    const maxTokens      = bot.aiProvider?.maxTokens ?? 2000;
+    // forward_wa: false by default — external API callers (curl, schedulers, apps)
+    // don't want to trigger WhatsApp group sends on every API call.
+    // Set forward_wa: true in request body to explicitly enable it.
+    const shouldForwardWA = forward_wa === true;
 
-    console.log(`[EXTERNAL] Bot: ${bot.name} | From: ${callerUsername} | Msg: ${message.substring(0, 80)}`);
+    console.log(`[EXTERNAL] Bot: ${bot.name} | From: ${callerUsername} | WA-forward: ${shouldForwardWA} | Msg: ${message.substring(0, 80)}`);
 
     // 4. Derive base URL for absolute file links (e.g. newsletter images)
     //    Use SERVER_PUBLIC_URL env var so nginx proxying doesn't strip the port
@@ -283,8 +284,10 @@ router.post('/external', async (req, res) => {
       `(${baseUrl}/api/files/`
     );
 
-    // 6. WAHA Forward (fire & forget)
-    sendToWaha(bot, callerUsername, message, responseText);
+    // 6. WAHA Forward (fire & forget) — only if caller explicitly requested it
+    if (shouldForwardWA) {
+      sendToWaha(bot, callerUsername, message, responseText);
+    }
 
     // 7. Response
     const responsePayload = {
