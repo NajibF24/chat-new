@@ -43,6 +43,17 @@ let status      = 'offline'; // 'offline' | 'connecting' | 'qr' | 'connected'
 let reconnectTimer = null;
 let connectedAt    = null;
 
+// ── syncFullHistory tracking ────────────────────────────────────────────────
+// CRITICAL BUG FIX: After QR scan, WhatsApp sends 'restartRequired' and Baileys
+// reconnects. On that reconnect, creds.me.id already exists → isNewSession=false
+// → syncFullHistory=false. The completing connection NEVER gets the full sync,
+// so group sender keys are never distributed → persistent 'not-acceptable'.
+//
+// Fix: use needsFullSync flag that persists across the restartRequired reconnect.
+// It's set when a new session is detected, and only cleared AFTER a successful
+// 'open' connection completes (meaning the full sync was actually delivered).
+let needsFullSync = false;
+
 // In-memory message store for getMessage callback (retransmit support)
 const msgStore = new Map();
 
@@ -82,11 +93,17 @@ async function connect() {
     const { version, isLatest } = await fetchLatestBaileysVersion();
     log(`Using WA v${version.join('.')} (latest: ${isLatest})`);
 
-    // On a FRESH link (no creds.me), enable syncFullHistory so WhatsApp distributes
-    // all group sender keys to this new linked device immediately.
+    // On a FRESH link (no creds.me), set needsFullSync so that BOTH this
+    // connection AND the restartRequired reconnect use syncFullHistory:true.
+    // The flag is only cleared after a successful 'open' connection.
     const isNewSession = !state.creds?.me?.id;
     if (isNewSession) {
-      log('🆕 New session — syncFullHistory enabled to fetch all group sender keys');
+      needsFullSync = true;
+      log('🆕 New session — will sync full history on this + next connection (restartRequired flow)');
+    }
+    const useFullSync = isNewSession || needsFullSync;
+    if (useFullSync && !isNewSession) {
+      log('🔄 Continuing post-QR full sync (restartRequired reconnect)...');
     }
 
     sock = _makeWASocket({
@@ -98,7 +115,7 @@ async function connect() {
       },
       printQRInTerminal: true,
       generateHighQualityLinkPreview: false,
-      syncFullHistory: isNewSession,
+      syncFullHistory: useFullSync,
       markOnlineOnConnect: false,
       browser: ['GYS Portal AI', 'Chrome', '120.0.0'],
 
@@ -172,6 +189,9 @@ async function connect() {
         status = 'connected';
         connectedAt = Date.now();
         log('✅ WhatsApp connected! Pre-warming group metadata cache in 15s...');
+        // Mark full sync as delivered — clear the flag so reconnects are fast
+        needsFullSync = false;
+        log('📋 syncFullHistory delivered — subsequent reconnects will use fast path.');
 
         // After 15s, fetch ALL groups and populate the metadata cache.
         // This ensures cachedGroupMetadata returns valid data immediately on
