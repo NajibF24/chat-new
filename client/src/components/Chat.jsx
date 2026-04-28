@@ -309,7 +309,7 @@ const Chat = ({ user, handleLogout }) => {
               className="h-8 w-auto object-contain"
               onError={e => { e.target.style.display = 'none'; }} />
             <div>
-              <h1 className="font-bold text-sm text-primary-dark tracking-wide">AI PORTAL</h1>
+              <h1 className="font-bold text-sm text-primary-dark dark:text-primary-light tracking-wide">AI PORTAL</h1>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
                 <span className="text-[10px] text-emerald-600 font-semibold">Online</span>
@@ -337,7 +337,7 @@ const Chat = ({ user, handleLogout }) => {
                   className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2.5 transition-all duration-150 ${
                     selectedBot?._id === bot._id
                       ? 'bg-primary-dark text-white shadow-sm'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
                   }`}>
                   <BotAvatar bot={bot} size="sm" />
                   <div className="flex-1 truncate min-w-0">
@@ -361,8 +361,8 @@ const Chat = ({ user, handleLogout }) => {
             </div>
 
             <button onClick={handleNewChat}
-              className="w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2 text-primary-dark hover:bg-primary/5 transition-colors border border-dashed border-primary/25 mb-2 group">
-              <span className="w-5 h-5 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">+</span>
+              className="w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2 text-primary-dark dark:text-primary-light hover:bg-primary/5 dark:hover:bg-primary/10 transition-colors border border-dashed border-primary/25 dark:border-primary/40 mb-2 group">
+              <span className="w-5 h-5 rounded-lg bg-primary/10 dark:bg-primary/20 flex items-center justify-center text-primary dark:text-primary-light font-bold text-sm group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">+</span>
               <span className="text-xs font-semibold">New Conversation</span>
             </button>
 
@@ -381,7 +381,7 @@ const Chat = ({ user, handleLogout }) => {
                   }`}
                 >
                   <button onClick={() => loadThread(t._id)} className="flex-1 min-w-0 text-left px-3 py-2">
-                    <span className={`block text-xs truncate font-medium ${currentThreadId === t._id ? 'text-primary-dark' : 'text-gray-600'}`}>
+                    <span className={`block text-xs truncate font-medium ${currentThreadId === t._id ? 'text-primary-dark dark:text-primary-light' : 'text-gray-600 dark:text-gray-400'}`}>
                       {t.title || 'Untitled Chat'}
                     </span>
                     <span className="text-[9px] text-gray-400 block mt-0.5 tabular-nums">
@@ -449,7 +449,7 @@ const Chat = ({ user, handleLogout }) => {
       {!isSidebarOpen && (
         <button
           onClick={() => setIsSidebarOpen(true)}
-          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 w-5 h-14 bg-white dark:bg-gray-800 border-r-0 border border-gray-200 dark:border-gray-700 rounded-r-xl items-center justify-center text-gray-400 hover:text-primary-dark hover:bg-primary/5 transition-all shadow-md"
+          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 w-5 h-14 bg-white dark:bg-gray-800 border-r-0 border border-gray-200 dark:border-gray-700 rounded-r-xl items-center justify-center text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-primary/5 dark:hover:bg-primary/10 transition-all shadow-md"
           title="Open sidebar"
         >
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -578,7 +578,7 @@ const Chat = ({ user, handleLogout }) => {
             }`}>
             <div className={`mx-auto transition-all duration-300 ${isSidebarOpen ? 'max-w-4xl' : 'max-w-5xl'}`}>
               {selectedFile && (
-                <div className="flex items-center gap-2 mb-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2 w-fit text-xs text-primary-dark font-medium">
+                <div className="flex items-center gap-2 mb-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2 w-fit text-xs text-primary-dark dark:text-primary-light font-medium">
                   {selectedFile.type?.startsWith('image/') ? (
                     <img
                       src={URL.createObjectURL(selectedFile)}
@@ -603,7 +603,7 @@ const Chat = ({ user, handleLogout }) => {
                   accept="image/*,.pdf,.docx,.xlsx,.xls,.txt,.csv,.pptx"
                 />
                 <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach file"
-                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-primary-dark hover:bg-gray-100 transition-colors mb-0.5">
+                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mb-0.5">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                 </button>
                 <div className="flex-1 max-h-52 overflow-y-auto">

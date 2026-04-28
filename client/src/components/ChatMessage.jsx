@@ -161,7 +161,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
             : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-tl-sm w-full min-w-0 shadow-sm'
         }`}>
 
-          <div className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800 dark:text-gray-200'}`}>
+          <div className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800 dark:text-gray-200 dark:prose-invert'}`}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
