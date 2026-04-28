@@ -116,9 +116,10 @@ async function fireSchedule(bot, schedule) {
       imagePath = path.join(process.cwd(), 'data', 'files', result.fileName);
       
       // Build public URL so fallback text message has a clickable link
-      // Priority: SERVER_PUBLIC_URL env var > PUBLIC_URL > default
-      const serverBase = (process.env.SERVER_PUBLIC_URL || process.env.PUBLIC_URL || 'http://172.16.31.48:8080').replace(/\/$/, '');
-      publicImageUrl = `${serverBase}${result.fileUrl}`;
+      // Priority: SERVER_PUBLIC_URL env var > PUBLIC_URL > safe fallback
+      const serverBase = (process.env.SERVER_PUBLIC_URL || process.env.PUBLIC_URL || '').replace(/\/$/, '');
+      if (!serverBase) console.warn('[WahaScheduler] ⚠️ SERVER_PUBLIC_URL not set — image links may not work!');
+      publicImageUrl = serverBase ? `${serverBase}${result.fileUrl}` : result.fileUrl;
 
       let sourceLinks = '';
       if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
