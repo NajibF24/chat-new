@@ -9,6 +9,8 @@ import { Line, Doughnut } from 'react-chartjs-2';
 import BotAvatar from './BotAvatar';
 import AvatarPicker from './AvatarPicker';
 import EmbedCodeModal from './EmbedCodeModal';
+import DarkModeToggle from './DarkModeToggle';
+import useDarkMode from '../hooks/useDarkMode';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, ArcElement, Filler);
 
@@ -806,6 +808,7 @@ console.log(response);` : '// Select a bot above';
 function AdminDashboard({ user, handleLogout }) {
 
   const navigate = useNavigate();
+  const { isDark, toggle: toggleDark } = useDarkMode();
   const [activeTab, setActiveTab]   = useState('dashboard');
   const [stats, setStats]           = useState(null);
   const [users, setUsers]           = useState([]);
@@ -1163,10 +1166,10 @@ function AdminDashboard({ user, handleLogout }) {
   // RENDER
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#F7F8FA] text-gray-900 font-sans">
+    <div className="min-h-screen bg-[#F7F8FA] dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans">
 
       {/* NAV */}
-      <nav className="bg-white border-b border-gray-100 sticky top-0 z-30 shadow-sm">
+      <nav className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <img src="/assets/gys-logo.webp" alt="GYS" className="h-9 w-auto" onError={e => e.target.style.display='none'} />
@@ -1182,7 +1185,8 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
             <span className="text-xs text-gray-400 hidden md:block px-2 border-l border-gray-100">Hi, {user.username}</span>
             <button onClick={() => navigate('/')} className="px-3 py-1.5 text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg border border-gray-200 font-medium transition-colors">← Back to Chat</button>
-            <button onClick={handleLogout} className="px-3 py-1.5 text-xs bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-200 font-medium transition-colors">Logout</button>
+            <DarkModeToggle isDark={isDark} toggle={toggleDark} />
+            <button onClick={handleLogout} className="px-3 py-1.5 text-xs bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-800 font-medium transition-colors">Logout</button>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6">
@@ -1222,7 +1226,7 @@ function AdminDashboard({ user, handleLogout }) {
                 { title: 'Total Chats',  value: stats.totalChats,   icon: '💬', gradient: 'from-violet-500 to-violet-600', light: 'bg-violet-50', text: 'text-violet-600' },
                 { title: 'Threads',      value: stats.totalThreads, icon: '📂', gradient: 'from-amber-500 to-amber-600',  light: 'bg-amber-50',  text: 'text-amber-600'  },
               ].map((s) => (
-                <div key={s.title} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all group">
+                <div key={s.title} className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-all group">
                   <div className="flex items-start justify-between mb-3">
                     <div className={`w-10 h-10 rounded-xl ${s.light} flex items-center justify-center text-xl group-hover:scale-110 transition-transform`}>{s.icon}</div>
                     <div className="w-1 h-8 rounded-full bg-gradient-to-b opacity-30 group-hover:opacity-60 transition-opacity" style={{ background: `linear-gradient(to bottom, var(--tw-gradient-from), var(--tw-gradient-to))` }} />

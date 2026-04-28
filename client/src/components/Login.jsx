@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import DarkModeToggle from './DarkModeToggle';
+import useDarkMode from '../hooks/useDarkMode';
 
 const Login = ({ setUser }) => {
   const [identifier, setIdentifier] = useState(''); // username OR email
   const [password, setPassword]     = useState('');
   const [error, setError]           = useState('');
   const [loading, setLoading]       = useState(false);
-
-  // STATE: Avatar Widget control (Digital Assistant)
-  const [isAvatarOpen, setIsAvatarOpen] = useState(false);
+  const { isDark, toggle: toggleDark } = useDarkMode();
 
   // Detect if input looks like an email
   const looksLikeEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -48,12 +48,17 @@ const Login = ({ setUser }) => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-steel-lightest font-sans p-4 relative overflow-hidden">
+    <div className="min-h-screen w-full flex items-center justify-center bg-steel-lightest dark:bg-gray-950 font-sans p-4 relative overflow-hidden">
+
+      {/* Dark mode toggle — top right */}
+      <div className="absolute top-4 right-4 z-30">
+        <DarkModeToggle isDark={isDark} toggle={toggleDark} />
+      </div>
 
       {/* =========================================
           MAIN LOGIN CARD (CENTERED)
           ========================================= */}
-      <div className="w-full max-w-md bg-white p-8 sm:p-10 rounded-2xl shadow-lg border border-steel-light/20 z-20">
+      <div className="w-full max-w-md bg-white dark:bg-gray-900 p-8 sm:p-10 rounded-2xl shadow-lg border border-steel-light/20 dark:border-gray-700 z-20">
 
         {/* Header & Logo Section */}
         <div className="flex flex-col items-center text-center mb-10">
@@ -70,14 +75,14 @@ const Login = ({ setUser }) => {
             <h1 id="logo-fallback" className="hidden text-5xl font-black text-primary tracking-tighter">GYS</h1>
           </div>
 
-          <h2 className="text-xl font-bold text-gray-800">PT Garuda Yamato Steel</h2>
+          <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">PT Garuda Yamato Steel</h2>
           <p className="text-steel text-xs font-bold uppercase tracking-[0.2em] mt-1.5">
             Internal AI Portal
           </p>
         </div>
 
-        <div className="mb-6 border-b border-steel-lightest pb-4">
-          <h3 className="text-lg font-bold text-gray-800 text-center">Sign In</h3>
+        <div className="mb-6 border-b border-steel-lightest dark:border-gray-700 pb-4">
+          <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 text-center">Sign In</h3>
           <p className="text-steel text-sm mt-1 text-center">Use your Active Directory account</p>
         </div>
 
@@ -103,7 +108,7 @@ const Login = ({ setUser }) => {
                 type="text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-steel-lightest/50 border border-steel-light/50 rounded-lg text-gray-800 placeholder-steel-light focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                className="w-full pl-10 pr-4 py-2.5 bg-steel-lightest/50 dark:bg-gray-800 border border-steel-light/50 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-100 placeholder-steel-light dark:placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                 placeholder="user.name or user@gyssteel.com"
                 required
                 autoFocus
@@ -128,7 +133,7 @@ const Login = ({ setUser }) => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-steel-lightest/50 border border-steel-light/50 rounded-lg text-gray-800 placeholder-steel-light focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                className="w-full pl-10 pr-4 py-2.5 bg-steel-lightest/50 dark:bg-gray-800 border border-steel-light/50 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-100 placeholder-steel-light dark:placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                 placeholder="••••••••"
                 required
                 autoComplete="current-password"

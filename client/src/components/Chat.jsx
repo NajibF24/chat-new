@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import ChatMessage from './ChatMessage';
 import ArtifactPanel from './ArtifactPanel';
 import BotAvatar from './BotAvatar';
+import DarkModeToggle from './DarkModeToggle';
+import useDarkMode from '../hooks/useDarkMode';
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -62,6 +64,7 @@ function generateTitle(lang, code) {
 // ─────────────────────────────────────────────────────────────
 const Chat = ({ user, handleLogout }) => {
   const navigate = useNavigate();
+  const { isDark, toggle: toggleDark } = useDarkMode();
 
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
@@ -287,20 +290,20 @@ const Chat = ({ user, handleLogout }) => {
   const visibleThreads = showAllThreads ? threads : threads.slice(0, MAX_THREADS_SHOWN);
 
   return (
-    <div className="flex h-screen bg-[#F7F8FA] text-gray-800 font-sans overflow-hidden">
+    <div className={`flex h-screen bg-[#F7F8FA] dark:bg-gray-950 text-gray-800 dark:text-gray-200 font-sans overflow-hidden`}>
 
       {/* ════════════════ SIDEBAR ════════════════ */}
       <aside className={`
         ${isSidebarOpen ? 'translate-x-0 w-72 xl:w-80' : '-translate-x-full w-0'}
         fixed lg:relative z-30 h-full
-        bg-white border-r border-gray-100
+        bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800
         flex flex-col flex-shrink-0
         transition-all duration-300 ease-in-out
         shadow-2xl lg:shadow-none
         overflow-hidden
       `}>
         {/* Header */}
-        <div className="px-4 xl:px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+        <div className="px-4 xl:px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <img src="/assets/gys-logo.webp" alt="GYS Logo"
               className="h-8 w-auto object-contain"
@@ -315,7 +318,7 @@ const Chat = ({ user, handleLogout }) => {
           </div>
           <button
             onClick={() => setIsSidebarOpen(false)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             title="Collapse sidebar"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -324,7 +327,7 @@ const Chat = ({ user, handleLogout }) => {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5 scrollbar-thin scrollbar-thumb-gray-200">
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
           {/* Assistants */}
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Assistants</p>
@@ -416,10 +419,10 @@ const Chat = ({ user, handleLogout }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-3 py-3 border-t border-gray-100 space-y-2 flex-shrink-0">
+        <div className="px-3 py-3 border-t border-gray-100 dark:border-gray-800 space-y-2 flex-shrink-0">
           {(user?.isAdmin || user?.isBotCreator) && (
             <button onClick={() => navigate('/admin')}
-              className="w-full flex items-center justify-center gap-2 py-2 bg-gray-50 hover:bg-primary-dark hover:text-white text-gray-600 text-xs font-bold rounded-xl border border-gray-200 transition-all">
+              className="w-full flex items-center justify-center gap-2 py-2 bg-gray-50 dark:bg-gray-800 hover:bg-primary-dark hover:text-white text-gray-600 dark:text-gray-300 text-xs font-bold rounded-xl border border-gray-200 dark:border-gray-700 transition-all">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -432,7 +435,7 @@ const Chat = ({ user, handleLogout }) => {
               {user?.username?.substring(0, 2).toUpperCase() || 'US'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-gray-800 truncate">{user?.username || 'User'}</p>
+              <p className="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">{user?.username || 'User'}</p>
               <button onClick={handleLogout}
                 className="text-[10px] text-red-400 hover:text-red-600 flex items-center gap-1 mt-0.5 font-medium transition-colors">
                 Sign Out
@@ -446,7 +449,7 @@ const Chat = ({ user, handleLogout }) => {
       {!isSidebarOpen && (
         <button
           onClick={() => setIsSidebarOpen(true)}
-          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 w-5 h-14 bg-white border-r-0 border border-gray-200 rounded-r-xl items-center justify-center text-gray-400 hover:text-primary-dark hover:bg-primary/5 transition-all shadow-md"
+          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 w-5 h-14 bg-white dark:bg-gray-800 border-r-0 border border-gray-200 dark:border-gray-700 rounded-r-xl items-center justify-center text-gray-400 hover:text-primary-dark hover:bg-primary/5 transition-all shadow-md"
           title="Open sidebar"
         >
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -457,14 +460,14 @@ const Chat = ({ user, handleLogout }) => {
 
       {/* ════════════════ MAIN AREA ════════════════ */}
       <div className="flex-1 flex min-w-0 overflow-hidden">
-        <main className="flex-1 flex flex-col h-full min-w-0 bg-[#F7F8FA]">
+        <main className="flex-1 flex flex-col h-full min-w-0 bg-[#F7F8FA] dark:bg-gray-950">
 
           {/* Top bar */}
-          <div className="h-14 border-b border-gray-100 bg-white/90 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 flex-shrink-0">
+          <div className="h-14 border-b border-gray-100 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 flex-shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 transition-colors flex-shrink-0"
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex-shrink-0"
               >
                 <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -474,8 +477,8 @@ const Chat = ({ user, handleLogout }) => {
                 <div className="flex items-center gap-2.5 min-w-0">
                   <BotAvatar bot={selectedBot} size="sm" />
                   <div className="min-w-0">
-                    <p className="font-bold text-sm text-gray-800 truncate leading-tight">{selectedBot.name}</p>
-                    <p className="text-[10px] text-gray-400 truncate">{selectedBot.description || 'AI Assistant'}</p>
+                    <p className="font-bold text-sm text-gray-800 dark:text-gray-100 truncate leading-tight">{selectedBot.name}</p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate">{selectedBot.description || 'AI Assistant'}</p>
                   </div>
                 </div>
               ) : (
@@ -490,8 +493,9 @@ const Chat = ({ user, handleLogout }) => {
                   <span className="hidden sm:inline">Close Panel</span>
                 </button>
               )}
+              <DarkModeToggle isDark={isDark} toggle={toggleDark} />
               <button onClick={handleNewChat}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-xl transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-bold rounded-xl transition-colors">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                 <span className="hidden sm:inline">New Chat</span>
               </button>
@@ -499,7 +503,7 @@ const Chat = ({ user, handleLogout }) => {
           </div>
 
           {/* Messages */}
-          <div className={`flex-1 overflow-y-auto py-6 scrollbar-thin scrollbar-thumb-gray-200 transition-all duration-300
+          <div className={`flex-1 overflow-y-auto py-6 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 transition-all duration-300
             ${isSidebarOpen
               ? 'px-4 lg:px-8 xl:px-20'
               : 'px-6 lg:px-16 xl:px-32 2xl:px-48'
@@ -509,10 +513,10 @@ const Chat = ({ user, handleLogout }) => {
                 <div className="mb-6">
                   <BotAvatar bot={selectedBot} size="xl" />
                 </div>
-                <h2 className="text-2xl xl:text-3xl font-bold text-gray-800 mb-2">
+                <h2 className="text-2xl xl:text-3xl font-bold text-gray-800 dark:text-gray-100 mb-2">
                   {selectedBot ? `Hello, I'm ${selectedBot.name}` : 'Select an Assistant'}
                 </h2>
-                <p className="text-sm text-gray-500 max-w-md mx-auto mb-8 leading-relaxed">
+                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto mb-8 leading-relaxed">
                   {selectedBot?.description || 'Ready to assist you with operations, data, and analysis.'}
                 </p>
                 {selectedBot && (
@@ -520,7 +524,7 @@ const Chat = ({ user, handleLogout }) => {
                     {(selectedBot.starterQuestions?.length > 0 ? selectedBot.starterQuestions : ['What is the project status?', 'Search data', 'Generate a report']).map((txt, i) => (
                       <button key={i}
                         onClick={() => { setInput(txt); setTimeout(() => handleSubmit({ preventDefault: () => {} }), 0); }}
-                        className="p-3.5 bg-white hover:bg-gray-50 border border-gray-200 hover:border-primary/30 rounded-xl text-sm text-gray-700 hover:text-primary-dark transition-all shadow-sm text-left font-medium hover:shadow-md group">
+                        className="p-3.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 hover:border-primary/30 rounded-xl text-sm text-gray-700 dark:text-gray-300 hover:text-primary-dark dark:hover:text-primary-light transition-all shadow-sm text-left font-medium hover:shadow-md group">
                         <span className="flex items-start gap-2">
                           <span className="text-primary/40 text-base leading-none group-hover:text-primary transition-colors flex-shrink-0">›</span>
                           <span>{txt}</span>
@@ -548,7 +552,7 @@ const Chat = ({ user, handleLogout }) => {
               <div className="flex justify-start py-3 max-w-4xl mx-auto">
                 <div className="flex items-end gap-2.5">
                   <BotAvatar bot={selectedBot} size="sm" />
-                  <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm flex items-center gap-3">
+                  <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm flex items-center gap-3">
                     <div className="flex items-center gap-1">
                       {[0, 200, 400].map((delay) => (
                         <span
@@ -567,7 +571,7 @@ const Chat = ({ user, handleLogout }) => {
           </div>
 
           {/* Input */}
-          <div className={`py-3 bg-white border-t border-gray-100 flex-shrink-0 transition-all duration-300
+          <div className={`py-3 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 flex-shrink-0 transition-all duration-300
             ${isSidebarOpen
               ? 'px-4 lg:px-8 xl:px-20'
               : 'px-6 lg:px-16 xl:px-32 2xl:px-48'
@@ -590,7 +594,7 @@ const Chat = ({ user, handleLogout }) => {
                   </button>
                 </div>
               )}
-              <div className="flex items-end gap-2 bg-white border border-gray-200 rounded-2xl shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 focus-within:shadow-md transition-all px-3 py-2.5">
+              <div className="flex items-end gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 focus-within:shadow-md transition-all px-3 py-2.5">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -615,7 +619,7 @@ const Chat = ({ user, handleLogout }) => {
                     placeholder={selectedBot ? `Message ${selectedBot.name}…` : 'Select an assistant first…'}
                     disabled={!selectedBot || loading}
                     rows={1}
-                    className="w-full bg-transparent text-gray-800 text-sm py-1 resize-none overflow-hidden focus:outline-none placeholder-gray-400"
+                    className="w-full bg-transparent text-gray-800 dark:text-gray-100 text-sm py-1 resize-none overflow-hidden focus:outline-none placeholder-gray-400 dark:placeholder-gray-500"
                   />
                 </div>
                 <button onClick={handleSubmit}
@@ -637,7 +641,7 @@ const Chat = ({ user, handleLogout }) => {
         {artifact && (
           <>
             <div onMouseDown={startDrag} onTouchStart={startDrag}
-              className="w-1 flex-shrink-0 bg-gray-200 hover:bg-primary/50 cursor-col-resize transition-colors" />
+              className="w-1 flex-shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-primary/50 cursor-col-resize transition-colors" />
             <div style={{ width: panelWidth, minWidth: PANEL_MIN_WIDTH }} className="flex-shrink-0 overflow-hidden">
               <ArtifactPanel artifact={artifact} onClose={closeArtifact} />
             </div>

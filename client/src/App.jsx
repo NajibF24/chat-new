@@ -115,11 +115,11 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-steel-50">
+      <div className="min-h-screen flex items-center justify-center bg-steel-50 dark:bg-gray-950">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <div className="text-xl text-steel-600">Loading...</div>
-          <div className="text-sm text-steel-500 mt-2">GYS Portal AI</div>
+          <div className="text-xl text-steel-600 dark:text-gray-300">Loading...</div>
+          <div className="text-sm text-steel-500 dark:text-gray-500 mt-2">GYS Portal AI</div>
         </div>
       </div>
     );

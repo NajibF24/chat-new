@@ -5,12 +5,12 @@
 /* 1. Pengaturan Dasar Body */
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  scroll-behavior: smooth; /* Menghaluskan pergerakan scroll */
+  scroll-behavior: smooth;
+  @apply bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* 2. Stabilisasi Gambar (Mencegah Glitch/Lompatan) */
@@ -18,20 +18,19 @@ img {
   display: block;
   max-width: 100%;
   height: auto;
-  /* Berikan rasio aspek standar agar kontainer tidak 0px saat loading */
   aspect-ratio: auto; 
   contain-intrinsic-size: 300px; 
 }
-/* Memastikan transisi render tidak kasar */
 .prose img {
   image-rendering: -webkit-optimize-contrast;
   backface-visibility: hidden;
 }
+
 /* 3. Animasi Shimmer (Efek Loading Halus) */
 .image-loading {
   position: relative;
   overflow: hidden;
-  background-color: #f3f4f6;
+  @apply bg-gray-100 dark:bg-gray-800;
 }
 
 .image-loading::after {
@@ -69,10 +68,15 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1; /* Warna steel-light */
+  @apply bg-gray-300 dark:bg-gray-700;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8; /* Warna primary-light */
+  @apply bg-gray-400 dark:bg-gray-600;
+}
+
+/* 5. Dark mode transition for all elements */
+*, *::before, *::after {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }

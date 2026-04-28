@@ -158,10 +158,10 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
         <div className={`px-4 py-3 shadow-sm transition-all ${
           isUser
             ? 'bg-primary-dark text-white rounded-2xl rounded-tr-sm max-w-[85%]'
-            : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-sm w-full min-w-0 shadow-sm'
+            : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-tl-sm w-full min-w-0 shadow-sm'
         }`}>
 
-          <div className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800'}`}>
+          <div className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800 dark:text-gray-200'}`}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -186,7 +186,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
 
                   return (
                     <code
-                      className={`${isUser ? 'bg-white/20 text-white' : 'bg-gray-100 text-primary-dark'} px-1.5 py-0.5 rounded text-xs font-mono`}
+                      className={`${isUser ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-700 text-primary-dark dark:text-primary-light'} px-1.5 py-0.5 rounded text-xs font-mono`}
                       {...props}>
                       {children}
                     </code>
@@ -235,17 +235,17 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
                 h3: ({ node, ...props }) => <h3 className="text-sm font-bold mt-2 mb-1" {...props} />,
                 strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
                 blockquote: ({ node, ...props }) => (
-                  <blockquote className={`border-l-4 pl-4 my-3 italic text-sm ${isUser ? 'border-white/40 text-white/80' : 'border-primary/30 text-gray-500'}`} {...props} />
+                  <blockquote className={`border-l-4 pl-4 my-3 italic text-sm ${isUser ? 'border-white/40 text-white/80' : 'border-primary/30 text-gray-500 dark:text-gray-400'}`} {...props} />
                 ),
 
                 table: ({ node, ...props }) => (
-                  <div className={`overflow-x-auto my-4 rounded-xl border shadow-sm w-full ${isUser ? 'border-white/20' : 'border-gray-100'}`}>
-                    <table className={`w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-gray-100'}`} {...props} />
+                  <div className={`overflow-x-auto my-4 rounded-xl border shadow-sm w-full ${isUser ? 'border-white/20' : 'border-gray-100 dark:border-gray-700'}`}>
+                    <table className={`w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-gray-100 dark:divide-gray-700'}`} {...props} />
                   </div>
                 ),
-                thead: ({ node, ...props }) => <thead className={`${isUser ? 'bg-white/10' : 'bg-gray-50'} font-semibold`} {...props} />,
+                thead: ({ node, ...props }) => <thead className={`${isUser ? 'bg-white/10' : 'bg-gray-50 dark:bg-gray-700'} font-semibold`} {...props} />,
                 th: ({ node, ...props }) => <th className="px-4 py-2.5 text-left text-xs font-bold uppercase tracking-wider whitespace-nowrap" {...props} />,
-                tr: ({ node, ...props }) => <tr className={`transition-colors ${isUser ? 'hover:bg-white/5' : 'hover:bg-gray-50/80'}`} {...props} />,
+                tr: ({ node, ...props }) => <tr className={`transition-colors ${isUser ? 'hover:bg-white/5' : 'hover:bg-gray-50/80 dark:hover:bg-gray-700/50'}`} {...props} />,
                 td: ({ node, ...props }) => <td className="px-4 py-2.5 border-r last:border-r-0 text-sm" {...props} />,
                 a: ({ node, ...props }) => <a className={`underline font-medium hover:opacity-80 text-sm ${isUser ? 'text-white' : 'text-primary'}`} target="_blank" rel="noreferrer" {...props} />,
               }}
@@ -256,14 +256,14 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
 
           {/* Attachments */}
           {message.attachedFiles && message.attachedFiles.length > 0 && (
-            <div className={`mt-3 pt-3 border-t ${isUser ? 'border-white/20' : 'border-gray-100'}`}>
+            <div className={`mt-3 pt-3 border-t ${isUser ? 'border-white/20' : 'border-gray-100 dark:border-gray-700'}`}>
               <div className="grid grid-cols-1 gap-2.5">
                 {message.attachedFiles.map((file, idx) => {
                   const fileName = file.name?.toLowerCase() || '';
                   const isImage  = file.type === 'image' || /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
                   const fullPath = getFileUrl(file.path);
                   return (
-                    <div key={idx} className={`rounded-xl border overflow-hidden ${isUser ? 'bg-white/10 border-white/20' : 'bg-gray-50 border-gray-100'}`}>
+                    <div key={idx} className={`rounded-xl border overflow-hidden ${isUser ? 'bg-white/10 border-white/20' : 'bg-gray-50 dark:bg-gray-700 border-gray-100 dark:border-gray-600'}`}>
                       {isImage ? (
                         <div className="cursor-pointer group" onClick={() => window.open(fullPath, '_blank')}>
                           <div style={{ minHeight: '120px' }} className="flex items-center justify-center overflow-hidden">
@@ -299,7 +299,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
           )}
 
           {/* Timestamp */}
-          <div className={`text-[10px] mt-2 text-right tabular-nums ${isUser ? 'text-white/40' : 'text-gray-400'}`}>
+          <div className={`text-[10px] mt-2 text-right tabular-nums ${isUser ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
             {new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
