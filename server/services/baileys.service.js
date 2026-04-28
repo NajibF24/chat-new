@@ -16,6 +16,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   isJidGroup,
+  proto,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import fs from 'fs';
@@ -43,6 +44,11 @@ let qrRaw = null;       // raw QR string (for terminal)
 let qrBase64 = null;    // base64 PNG (for admin UI)
 let status = 'offline'; // 'offline' | 'connecting' | 'qr' | 'connected'
 let reconnectTimer = null;
+let connectedAt = null; // timestamp when connection was established
+
+// In-memory store for sent messages (needed for retry requests / No sessions fix)
+// Key: msgId → WAProto.IWebMessageInfo
+const msgStore = new Map();
 
 // Registered incoming message handler (set by waha.js or server.js)
 let _messageHandler = null;
@@ -82,6 +88,14 @@ async function connect() {
       syncFullHistory: false,
       markOnlineOnConnect: false,
       browser: ['GYS Portal AI', 'Chrome', '120.0.0'],
+      // ✅ FIX: Required for WhatsApp to retry message delivery
+      // Without this, group sends fail with 'No sessions' error
+      // because sender keys haven't been distributed yet
+      getMessage: async (key) => {
+        const stored = msgStore.get(key.id);
+        if (stored) return stored.message;
+        return proto.Message.fromObject({ conversation: '(retry)' });
+      },
     });
 
     // ── Save credentials on update ──────────────────────────────────────────
@@ -113,7 +127,10 @@ async function connect() {
         qrRaw = null;
         qrBase64 = null;
         status = 'connected';
-        log('✅ WhatsApp connected!');
+        connectedAt = Date.now();
+        log('✅ WhatsApp connected! Waiting 15s for session keys to propagate...');
+        // Give WhatsApp time to distribute sender keys to this new linked device
+        setTimeout(() => log('✅ Session warmup complete — ready to send messages.'), 15000);
       }
 
       if (connection === 'close') {
@@ -146,6 +163,14 @@ async function connect() {
       if (type !== 'notify') return;
 
       for (const msg of messages) {
+        // Store all messages for getMessage callback (retry support)
+        if (msg.key?.id) msgStore.set(msg.key.id, msg);
+        // Keep store bounded
+        if (msgStore.size > 500) {
+          const firstKey = msgStore.keys().next().value;
+          msgStore.delete(firstKey);
+        }
+
         // Skip own outbound messages
         if (msg.key.fromMe) continue;
 
@@ -209,19 +234,34 @@ const BaileysService = {
       log(`⚠️  Cannot send text — not connected (status: ${status})`);
       return false;
     }
-    try {
-      // Force group metadata sync if it's a group, helps avoid 'forbidden' due to desync
-      if (jid.endsWith('@g.us')) {
-        await sock.groupMetadata(jid).catch(() => {});
-      }
-      
-      await sock.sendMessage(jid, { text });
-      log(`✅ Text sent to ${jid}`);
-      return true;
-    } catch (err) {
-      log(`❌ Failed to send text to ${jid}:`, err.message);
-      return false;
+
+    // If recently connected (<30s), wait for sender keys to propagate
+    const msSinceConnect = connectedAt ? Date.now() - connectedAt : Infinity;
+    if (msSinceConnect < 30000) {
+      const waitMs = 30000 - msSinceConnect;
+      log(`⏳ Waiting ${Math.ceil(waitMs / 1000)}s for session warmup...`);
+      await new Promise(r => setTimeout(r, waitMs));
     }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (jid.endsWith('@g.us')) {
+          await sock.groupMetadata(jid).catch(() => {});
+        }
+        await sock.sendMessage(jid, { text });
+        log(`✅ Text sent to ${jid}`);
+        return true;
+      } catch (err) {
+        log(`❌ Failed to send text to ${jid} (attempt ${attempt}/3): ${err.message}`);
+        if (attempt < 3 && err.message?.includes('No sessions')) {
+          log(`🔄 Retrying in 10s...`);
+          await new Promise(r => setTimeout(r, 10000));
+        } else {
+          return false;
+        }
+      }
+    }
+    return false;
   },
 
   // ── Send image from file path ─────────────────────────────────────────────
@@ -230,29 +270,43 @@ const BaileysService = {
       log(`⚠️  Cannot send image — not connected (status: ${status})`);
       return false;
     }
-    try {
-      if (!fs.existsSync(imagePath)) {
-        log(`❌ Image file not found: ${imagePath}`);
-        return false;
-      }
-      
-      // Force group metadata sync if it's a group
-      if (jid.endsWith('@g.us')) {
-        await sock.groupMetadata(jid).catch(() => {});
-      }
-
-      const buffer = fs.readFileSync(imagePath);
-      await sock.sendMessage(jid, {
-        image: buffer,
-        caption,
-        mimetype: 'image/png',
-      });
-      log(`✅ Image sent to ${jid}`);
-      return true;
-    } catch (err) {
-      log(`❌ Failed to send image to ${jid}:`, err.message);
+    if (!fs.existsSync(imagePath)) {
+      log(`❌ Image file not found: ${imagePath}`);
       return false;
     }
+
+    // If recently connected (<30s), wait for sender keys to propagate
+    const msSinceConnect = connectedAt ? Date.now() - connectedAt : Infinity;
+    if (msSinceConnect < 30000) {
+      const waitMs = 30000 - msSinceConnect;
+      log(`⏳ Waiting ${Math.ceil(waitMs / 1000)}s for session warmup...`);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+
+    const buffer = fs.readFileSync(imagePath);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (jid.endsWith('@g.us')) {
+          await sock.groupMetadata(jid).catch(() => {});
+        }
+        await sock.sendMessage(jid, {
+          image: buffer,
+          caption,
+          mimetype: 'image/png',
+        });
+        log(`✅ Image sent to ${jid}`);
+        return true;
+      } catch (err) {
+        log(`❌ Failed to send image to ${jid} (attempt ${attempt}/3): ${err.message}`);
+        if (attempt < 3 && err.message?.includes('No sessions')) {
+          log(`🔄 Retrying in 10s...`);
+          await new Promise(r => setTimeout(r, 10000));
+        } else {
+          return false;
+        }
+      }
+    }
+    return false;
   },
 
   // ── Disconnect & clear session ────────────────────────────────────────────
