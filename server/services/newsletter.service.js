@@ -14,7 +14,6 @@ export default {
 
     // Logo: primary = server/assets/ (git-tracked, always inside Docker)
     const logoPath = path.join(process.cwd(), 'assets', 'gys-logo.webp');
-    // Fallback: data/ (auto-copied by server.js), then client/public
     const logoPathAlt = path.join(process.cwd(), 'data', 'gys-logo.webp');
     const logoPathAlt2 = path.join(process.cwd(), '../client/public/assets/gys-logo.webp');
     let logoBase64 = '';
@@ -33,6 +32,18 @@ export default {
     const logoHtml = logoBase64 
       ? `<img src="${logoBase64}" alt="GYS Logo" style="height: 60px;">` 
       : `<div class="logo-text">GYS</div><div class="logo-sub">GARUDA YAMATO STEEL</div>`;
+
+    // Steel texture background image
+    const steelTexturePath = path.join(process.cwd(), 'assets', 'steel-texture.png');
+    let steelTextureBase64 = '';
+    if (fs.existsSync(steelTexturePath)) {
+      const steelBuf = fs.readFileSync(steelTexturePath);
+      steelTextureBase64 = 'data:image/png;base64,' + steelBuf.toString('base64');
+      console.log('[NEWSLETTER] Steel texture loaded');
+    }
+
+    // SVG lobster/claw icon (replaces emoji which doesn't render on Alpine Linux)
+    const clawIcon = `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path d="M19.5 9.5c-.17 0-.34.01-.5.04V6c0-1.1-.9-2-2-2h-2V2c0-.55-.45-1-1-1s-1 .45-1 1v2h-2V2c0-.55-.45-1-1-1s-1 .45-1 1v2H7c-1.1 0-2 .9-2 2v3.54c-.16-.03-.33-.04-.5-.04C3.02 9.5 1 11.52 1 14s2.02 4.5 4.5 4.5c.17 0 .34-.01.5-.04V20c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2v-1.54c.16.03.33.04.5.04 2.48 0 4.5-2.02 4.5-4.5s-2.02-4.5-4.5-4.5zM4.5 16.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5zm15 0c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
 
     const icons = {
       traffic: `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2C8.13 2 5 5.13 5 9v6c0 3.87 3.13 7 7 7s7-3.13 7-7V9c0-3.87-3.13-7-7-7zm0 4.5c.83 0 1.5.67 1.5 1.5S12.83 9.5 12 9.5 10.5 8.83 10.5 8 11.17 6.5 12 6.5zm0 5.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5.67-1.5 1.5-1.5zm0 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>`,
@@ -62,7 +73,7 @@ export default {
       margin: 0;
       padding: 0;
       font-family: 'Inter', sans-serif;
-      background-color: #F0F2F1;
+      background-color: #E8EAEB;
       color: #1F2937;
       width: 900px;
       min-height: 100vh;
@@ -70,24 +81,18 @@ export default {
       position: relative;
       display: flex;
       flex-direction: column;
-      /* Steel brushed-metal texture via CSS gradient overlay */
-      background-image:
-        repeating-linear-gradient(
-          90deg,
-          rgba(180,185,190,0.04) 0px,
-          rgba(220,225,228,0.06) 1px,
-          transparent 1px,
-          transparent 4px
-        ),
-        repeating-linear-gradient(
-          0deg,
-          rgba(160,165,170,0.03) 0px,
-          rgba(200,205,210,0.04) 1px,
-          transparent 1px,
-          transparent 8px
-        ),
-        linear-gradient(180deg, #F0F2F1 0%, #E8EAEB 100%);
+      ${steelTextureBase64 ? `background-image: url('${steelTextureBase64}'); background-size: cover; background-repeat: repeat;` : ''}
     }
+    /* Semi-transparent overlay so steel texture is visible but not overwhelming */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(245, 247, 246, 0.82);
+      z-index: 0;
+      pointer-events: none;
+    }
+    body > * { position: relative; z-index: 1; }
     
     /* Header Section */
     .header {
@@ -133,34 +138,17 @@ export default {
 
     .main-content { padding: 30px 40px; display: flex; flex-direction: column; gap: 20px; flex: 1; }
     
-    /* Steel texture overlay on content boxes */
-    .box::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      border-radius: 12px;
-      background:
-        repeating-linear-gradient(
-          90deg,
-          rgba(180,185,190,0.03) 0px,
-          rgba(220,225,228,0.04) 1px,
-          transparent 1px,
-          transparent 3px
-        );
-      pointer-events: none;
-      z-index: 0;
-    }
-    .box > * { position: relative; z-index: 1; }
-    
-    /* Box Styles */
+    /* Box Styles — slightly transparent white so steel texture peeks through */
     .box {
-      background: white;
+      background: rgba(255, 255, 255, 0.92);
       border-radius: 12px;
       box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
       padding: 25px;
       position: relative;
       border: 1px solid #E5E7EB;
+      backdrop-filter: blur(2px);
     }
+
     
     .section-header { display: flex; align-items: center; margin-bottom: 15px; }
     .section-icon { width: 32px; height: 32px; background: #ECFDF5; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-right: 12px; border: 2px solid #059669; }
@@ -233,7 +221,7 @@ export default {
         <div class="meta-item"><span class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#A7F3D0" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> ${timeStr}</div>
       </div>
     </div>
-    <div class="watermark">Generated by | GYS Open Claw 🦞</div>
+    <div class="watermark">Generated by | GYS Open Claw ${clawIcon}</div>
   </div>
 
   <div class="main-content">
@@ -356,7 +344,7 @@ export default {
       <span>From data to decision. From signal to action.</span>
     </div>
     <div class="footer-right">
-      <div>Generated by | GYS Open Claw 🦞</div>
+      <div>Generated by | GYS Open Claw ${clawIcon}</div>
       <div>${dateStr} | ${timeStr}</div>
     </div>
   </div>
