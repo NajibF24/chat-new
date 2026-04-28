@@ -173,6 +173,26 @@ h1{color:#25D366}p{color:#aaa;font-size:14px}img{border-radius:12px;max-width:30
 </body></html>`);
 });
 
+// ── GET /api/admin/baileys/groups — list all groups the bot has joined ─────────
+// Use this to find the correct group JID and verify bot membership.
+// Fields: id (JID to use in wahaConfig), name, size (member count),
+//         announce (true = only admins can send → bot cannot send if not admin)
+app.get('/api/admin/baileys/groups', async (req, res) => {
+  if (!BaileysService.isConnected()) {
+    return res.status(503).json({ error: 'WhatsApp not connected', status: BaileysService.getStatus() });
+  }
+  try {
+    const groups = await BaileysService.getGroups();
+    res.json({
+      total: groups.length,
+      groups,
+      hint: 'Copy the "id" field into the wahaConfig.targets[].chatId in your bot settings.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use((req, res)       => res.status(404).json({ error: 'Endpoint Not Found' }));
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err);

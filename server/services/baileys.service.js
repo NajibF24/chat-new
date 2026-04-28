@@ -213,10 +213,9 @@ async function connect() {
   }
 }
 
-// ─── Internal retry helper ──────────────────────────────────────────────────────────
-// Retries fn() up to maxAttempts times.
-// ⛔ IMMEDIATELY FAILS on 'forbidden' / 'not-authorized' — bot is not in group / kicked.
-//    Retrying these is pointless and wastes up to 10 minutes of log spam.
+// ─── Internal retry helper ─────────────────────────────────────────────────────────────
+// ⛔ IMMEDIATELY FAILS on permanent errors (forbidden/not-acceptable/not-authorized).
+//    Bot is not in group, or group doesn't exist — retrying wastes time.
 // ⏳ Waits delayMs on 'No sessions' — sender keys may arrive later from WA servers.
 async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = {}) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -224,17 +223,19 @@ async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = 
       await fn();
       return true;
     } catch (err) {
-      const msg          = err.message || '';
-      const isForbidden  = msg.toLowerCase().includes('forbidden') ||
-                           msg.toLowerCase().includes('not-authorized') ||
-                           msg.toLowerCase().includes('not a participant');
-      const isNoSessions = msg.includes('No sessions');
+      const msg               = err.message || '';
+      const msgLower          = msg.toLowerCase();
+      const isPermanentFail   = msgLower.includes('forbidden') ||
+                                msgLower.includes('not-authorized') ||
+                                msgLower.includes('not a participant') ||
+                                msgLower.includes('not-acceptable');   // bot not in group
+      const isNoSessions      = msg.includes('No sessions');
 
       log(`❌ Failed to ${label} (attempt ${attempt}/${maxAttempts}): ${msg}`);
 
-      // ⛔ Hard permanent failure — don't retry, it'll never work
-      if (isForbidden) {
-        log(`⛔ ${label}: Permanently forbidden — bot may have been kicked from this group, or messaging is restricted. Stopping retries.`);
+      // ⛔ Hard permanent failure — retrying will NEVER fix this
+      if (isPermanentFail) {
+        log(`⛔ ${label}: Permanent failure (${msg}). Bot is likely not a member of this group. Use GET /api/admin/baileys/groups to see which groups the bot has joined.`);
         return false;
       }
 
@@ -333,6 +334,29 @@ const BaileysService = {
       await sock.sendMessage(jid, { image: buffer, caption, mimetype: 'image/png' });
       log(`✅ Image sent to ${jid}`);
     });
+  },
+
+  // ── List all groups the bot is currently a member of ──────────────────
+  // Use this to find the correct group JID / verify membership.
+  // Returns array of { id, subject, size } sorted by name.
+  async getGroups() {
+    if (!this.isConnected()) return [];
+    try {
+      const groups = await sock.groupFetchAllParticipating();
+      return Object.values(groups)
+        .map(g => ({
+          id:         g.id,
+          name:       g.subject || '(no name)',
+          size:       g.participants?.length || 0,
+          creation:   g.creation,
+          restricted: g.restrict || false,
+          announce:   g.announce || false,  // announce=true means only admins can send
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (err) {
+      log(`❌ getGroups failed: ${err.message}`);
+      return [];
+    }
   },
 
   // ── Disconnect & clear session ────────────────────────────────────────────
