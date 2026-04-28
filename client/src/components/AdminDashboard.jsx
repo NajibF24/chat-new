@@ -9,6 +9,8 @@ import { Line, Doughnut } from 'react-chartjs-2';
 import BotAvatar from './BotAvatar';
 import AvatarPicker from './AvatarPicker';
 import EmbedCodeModal from './EmbedCodeModal';
+import DarkModeToggle from './DarkModeToggle';
+import useDarkMode from '../hooks/useDarkMode';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, ArcElement, Filler);
 
@@ -806,6 +808,7 @@ console.log(response);` : '// Select a bot above';
 function AdminDashboard({ user, handleLogout }) {
 
   const navigate = useNavigate();
+  const { isDark, toggle: toggleDark } = useDarkMode();
   const [activeTab, setActiveTab]   = useState('dashboard');
   const [stats, setStats]           = useState(null);
   const [users, setUsers]           = useState([]);
@@ -1163,10 +1166,10 @@ function AdminDashboard({ user, handleLogout }) {
   // RENDER
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#F7F8FA] text-gray-900 font-sans">
+    <div className="min-h-screen bg-[#F7F8FA] dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans">
 
       {/* NAV */}
-      <nav className="bg-white border-b border-gray-100 sticky top-0 z-30 shadow-sm">
+      <nav className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <img src="/assets/gys-logo.webp" alt="GYS" className="h-9 w-auto" onError={e => e.target.style.display='none'} />
@@ -1182,7 +1185,8 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
             <span className="text-xs text-gray-400 hidden md:block px-2 border-l border-gray-100">Hi, {user.username}</span>
             <button onClick={() => navigate('/')} className="px-3 py-1.5 text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg border border-gray-200 font-medium transition-colors">← Back to Chat</button>
-            <button onClick={handleLogout} className="px-3 py-1.5 text-xs bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-200 font-medium transition-colors">Logout</button>
+            <DarkModeToggle isDark={isDark} toggle={toggleDark} />
+            <button onClick={handleLogout} className="px-3 py-1.5 text-xs bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-800 font-medium transition-colors">Logout</button>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6">
@@ -1222,7 +1226,7 @@ function AdminDashboard({ user, handleLogout }) {
                 { title: 'Total Chats',  value: stats.totalChats,   icon: '💬', gradient: 'from-violet-500 to-violet-600', light: 'bg-violet-50', text: 'text-violet-600' },
                 { title: 'Threads',      value: stats.totalThreads, icon: '📂', gradient: 'from-amber-500 to-amber-600',  light: 'bg-amber-50',  text: 'text-amber-600'  },
               ].map((s) => (
-                <div key={s.title} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all group">
+                <div key={s.title} className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-all group">
                   <div className="flex items-start justify-between mb-3">
                     <div className={`w-10 h-10 rounded-xl ${s.light} flex items-center justify-center text-xl group-hover:scale-110 transition-transform`}>{s.icon}</div>
                     <div className="w-1 h-8 rounded-full bg-gradient-to-b opacity-30 group-hover:opacity-60 transition-opacity" style={{ background: `linear-gradient(to bottom, var(--tw-gradient-from), var(--tw-gradient-to))` }} />
@@ -1944,21 +1948,21 @@ function AdminDashboard({ user, handleLogout }) {
       {/* BOT MODAL */}
       {showBotModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center flex-shrink-0 bg-gray-50/50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center flex-shrink-0 bg-gray-50/50 dark:bg-gray-800/50">
               <div className="flex items-center gap-3">
                 <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
                 <div>
-                  <h3 className="font-bold text-gray-800 text-sm">{editingBot ? `Edit — ${editingBot.name}` : 'Create New Bot'}</h3>
+                  <h3 className="font-bold text-gray-800 dark:text-gray-100 text-sm">{editingBot ? `Edit — ${editingBot.name}` : 'Create New Bot'}</h3>
                   <p className="text-[10px] text-gray-400">{editingBot ? 'Configure an existing bot' : 'Create a new AI assistant with full capabilities'}</p>
                 </div>
               </div>
-              <button onClick={() => setShowBotModal(false)} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+              <button onClick={() => setShowBotModal(false)} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
 
-            <div className="flex border-b border-gray-100 bg-white px-4 overflow-x-auto flex-shrink-0">
+            <div className="flex border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 overflow-x-auto flex-shrink-0">
               {[
                 { id: 'basic',        label: 'Basic',        icon: '📝' },
                 { id: 'ai',           label: 'AI & Model',   icon: '🤖' },
@@ -1967,7 +1971,7 @@ function AdminDashboard({ user, handleLogout }) {
                 { id: 'integrations', label: 'Integrations', icon: '🔌' },
               ].map(t => (
                 <button key={t.id} onClick={() => setBotModalTab(t.id)}
-                  className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${botModalTab === t.id ? 'border-primary-dark text-primary-dark' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                  className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${botModalTab === t.id ? 'border-primary-dark dark:border-primary-light text-primary-dark dark:text-primary-light' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
                   {t.icon} {t.label}
                 </button>
               ))}
@@ -1978,13 +1982,13 @@ function AdminDashboard({ user, handleLogout }) {
               {/* BASIC TAB */}
               {botModalTab === 'basic' && (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
                     <div className="relative cursor-pointer group/av" onClick={() => editingBot && setAvatarPickerBot(editingBot)}>
                       <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
                       {editingBot && <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center"><span className="text-white text-[8px] font-bold">EDIT</span></div>}
                     </div>
                     <div>
-                      <p className="font-semibold text-sm text-gray-800">Bot Avatar</p>
+                      <p className="font-semibold text-sm text-gray-800 dark:text-gray-100">Bot Avatar</p>
                       <p className="text-xs text-gray-400 mt-0.5">Upload an image, choose an emoji, or pick an icon</p>
                       {editingBot
                         ? <button type="button" onClick={() => setAvatarPickerBot(editingBot)} className="mt-2 px-3 py-1.5 text-xs rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-semibold transition-colors">🎨 Edit Avatar</button>
@@ -1994,28 +1998,28 @@ function AdminDashboard({ user, handleLogout }) {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Bot Name *</label>
-                      <input className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 focus:ring-2 focus:ring-primary/10 outline-none transition-all" placeholder="e.g. HR Assistant" value={botForm.name} onChange={e => setBotForm({...botForm, name: e.target.value})} />
+                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 focus:ring-2 focus:ring-primary/10 outline-none transition-all" placeholder="e.g. HR Assistant" value={botForm.name} onChange={e => setBotForm({...botForm, name: e.target.value})} />
                     </div>
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Description</label>
-                      <input className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none transition-all" placeholder="Short description for the sidebar" value={botForm.description} onChange={e => setBotForm({...botForm, description: e.target.value})} />
+                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" placeholder="Short description for the sidebar" value={botForm.description} onChange={e => setBotForm({...botForm, description: e.target.value})} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Persona (optional)</label>
-                      <input className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none transition-all" placeholder="e.g. Expert HR Consultant" value={botForm.persona} onChange={e => setBotForm({...botForm, persona: e.target.value})} />
+                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" placeholder="e.g. Expert HR Consultant" value={botForm.persona} onChange={e => setBotForm({...botForm, persona: e.target.value})} />
                     </div>
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Tone / Communication Style</label>
-                      <select className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none" value={botForm.tone} onChange={e => setBotForm({...botForm, tone: e.target.value})}>
+                      <select className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none" value={botForm.tone} onChange={e => setBotForm({...botForm, tone: e.target.value})}>
                         {TONE_OPTIONS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                       </select>
                     </div>
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">System Prompt / Bot Instructions</label>
-                    <textarea className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm h-36 font-mono focus:border-primary/40 outline-none resize-none transition-all" placeholder="e.g. You are an HR assistant..." value={botForm.prompt} onChange={e => setBotForm({...botForm, prompt: e.target.value})} />
+                    <textarea className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm text-gray-800 dark:text-gray-100 h-36 font-mono focus:border-primary/40 outline-none resize-none transition-all" placeholder="e.g. You are an HR assistant..." value={botForm.prompt} onChange={e => setBotForm({...botForm, prompt: e.target.value})} />
                     <p className="text-[10px] text-gray-400 mt-1">💡 This prompt defines the bot's personality, tasks, and boundaries</p>
                   </div>
                   <div>
@@ -2026,7 +2030,7 @@ function AdminDashboard({ user, handleLogout }) {
                     <div className="space-y-2">
                       {botForm.starterQuestions.map((q, i) => (
                         <div key={i} className="flex gap-2">
-                          <input className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none transition-all" value={q} onChange={e => updateQuestion(i, e.target.value)} placeholder={`Question ${i+1}...`} />
+                          <input className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" value={q} onChange={e => updateQuestion(i, e.target.value)} placeholder={`Question ${i+1}...`} />
                           <button onClick={() => removeQuestion(i)} className="text-red-400 hover:text-red-600 font-bold px-2 transition-colors">✕</button>
                         </div>
                       ))}
@@ -2053,9 +2057,9 @@ function AdminDashboard({ user, handleLogout }) {
                           ALL_CAPABILITIES.forEach(cap => { if (!cap.providers.includes(key)) newCaps[cap.id] = false; });
                           return { ...f, aiProvider: { ...f.aiProvider, provider: key, model: prov.models[0]?.id || '' }, capabilities: newCaps };
                         })}
-                          className={`p-3.5 rounded-xl border-2 text-left transition-all ${currentProvider === key ? 'border-primary-dark bg-primary/5 shadow-sm' : 'border-gray-100 hover:border-gray-200 bg-white'}`}>
+                          className={`p-3.5 rounded-xl border-2 text-left transition-all ${currentProvider === key ? 'border-primary-dark dark:border-primary-light bg-primary/5 dark:bg-primary/20 shadow-sm' : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600 bg-white dark:bg-gray-800'}`}>
                           <div className="text-xl mb-1">{prov.icon}</div>
-                          <div className="text-xs font-bold text-gray-800">{prov.label}</div>
+                          <div className="text-xs font-bold text-gray-800 dark:text-gray-100">{prov.label}</div>
                           <div className="text-[10px] text-gray-400 mt-0.5">
                             {prov.description || (prov.models.length > 0 ? `${prov.models.length} models` : 'Custom endpoint')}
                           </div>
@@ -2367,16 +2371,16 @@ function AdminDashboard({ user, handleLogout }) {
                       const isSupported = cap.providers.includes(currentProvider);
                       const isOn = botForm.capabilities?.[cap.id] || false;
                       return (
-                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 bg-gray-50' : isOn ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
+                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800' : isOn ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-gray-200 dark:hover:border-gray-600'}`}>
                           <div className="flex items-start gap-3">
                             <span className="text-xl">{cap.icon}</span>
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className="font-semibold text-sm text-gray-800">{cap.label}</p>
-                                {!isSupported && <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-semibold">Not available for {currentProvider}</span>}
+                                <p className="font-semibold text-sm text-gray-800 dark:text-gray-100">{cap.label}</p>
+                                {!isSupported && <span className="text-[9px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 px-1.5 py-0.5 rounded font-semibold">Not available for {currentProvider}</span>}
                               </div>
-                              <p className="text-xs text-gray-400 mt-0.5">{cap.desc}</p>
-                              <div className="flex gap-1 mt-1">{cap.providers.map(p => <span key={p} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold">{AI_PROVIDERS[p]?.icon} {p}</span>)}</div>
+                              <p className="text-xs text-gray-400 dark:text-gray-300 mt-0.5">{cap.desc}</p>
+                              <div className="flex gap-1 mt-1">{cap.providers.map(p => <span key={p} className="text-[9px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-semibold">{AI_PROVIDERS[p]?.icon} {p}</span>)}</div>
                             </div>
                           </div>
                           <button type="button" disabled={!isSupported} onClick={() => setBotForm(f => ({ ...f, capabilities: { ...f.capabilities, [cap.id]: !isOn } }))}
@@ -2413,8 +2417,8 @@ function AdminDashboard({ user, handleLogout }) {
                           key={m.id}
                           className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
                             botForm.knowledgeMode === m.id
-                              ? 'border-primary bg-primary/5'
-                              : 'border-gray-100 hover:border-gray-200'
+                              ? 'border-primary bg-primary/5 dark:bg-primary/20'
+                              : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600'
                           }`}
                         >
                           <input
@@ -2426,7 +2430,7 @@ function AdminDashboard({ user, handleLogout }) {
                             className="accent-primary-dark"
                           />
                           <div>
-                            <div className="text-sm font-semibold text-gray-800">{m.label}</div>
+                            <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{m.label}</div>
                             <div className="text-xs text-gray-400">{m.desc}</div>
                           </div>
                         </label>
