@@ -75,6 +75,19 @@ async function connect() {
     const { version, isLatest } = await fetchLatestBaileysVersion();
     log(`Using WA v${version.join('.')} (latest: ${isLatest})`);
 
+    // ── Detect new vs existing session ──────────────────────────────────────
+    // On a FRESH link (no creds.me = no registered account yet) we enable
+    // syncFullHistory so WhatsApp distributes ALL group sender keys to this
+    // new linked device. Without this, every group send fails with 'No sessions'
+    // until organic message exchange happens — same issue as WhatsApp Web fresh login.
+    //
+    // On RECONNECTS (creds already registered) we keep syncFullHistory: false
+    // for fast startup — sender keys are already cached in session files.
+    const isNewSession = !state.creds?.me?.id;
+    if (isNewSession) {
+      log('🆕 New session detected — enabling syncFullHistory to obtain group sender keys...');
+    }
+
     sock = _makeWASocket({
       version,
       logger,
@@ -82,14 +95,15 @@ async function connect() {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
       },
-      printQRInTerminal: true,          // QR also prints in docker logs
+      printQRInTerminal: true,
       generateHighQualityLinkPreview: false,
-      syncFullHistory: false,
+      // ✅ KEY FIX: sync full history on new sessions so sender keys for ALL groups
+      // are distributed to this device immediately after linking.
+      // On reconnects this is false (fast path — keys are already stored).
+      syncFullHistory: isNewSession,
       markOnlineOnConnect: false,
       browser: ['GYS Portal AI', 'Chrome', '120.0.0'],
-      // ✅ FIX: Required for WhatsApp to retry message delivery
-      // Without this, group sends fail with 'No sessions' error
-      // because sender keys haven't been distributed yet
+      // Required for WhatsApp to retry message delivery (retransmit requests)
       getMessage: async (key) => {
         const stored = msgStore.get(key.id);
         if (stored) return stored.message;
@@ -237,22 +251,28 @@ async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = 
 }
 
 // ─── Force sender key sync for a group ─────────────────────────────────────────────
-// 'No sessions' in group sends = Baileys hasn't exchanged Signal prekeys with
-// all group participants. This fetches group metadata (triggering Baileys to
-// cache participant list) and then calls assertSessions() to explicitly
-// establish Signal sessions with each participant.
+// 'No sessions' = Baileys doesn't have group sender keys yet.
+// Fix: fetch group metadata → assert Signal sessions with participants
+//      → send 'composing' presence (stimulates WA to push pending key distributions).
 //
-// This is more effective than just groupMetadata() alone.
+// This is what production Baileys bots do. syncFullHistory:true on first connect
+// is the more reliable long-term fix; this is the per-send fallback.
 async function forceGroupKeySync(jid) {
   if (!sock || !jid.endsWith('@g.us')) return;
   try {
     const metadata = await sock.groupMetadata(jid);
+
+    // 1. assertSessions: establish Signal prekey sessions with all participants
     if (typeof sock.assertSessions === 'function') {
       const participantIds = (metadata?.participants || []).map(p => p.id).filter(Boolean);
       if (participantIds.length > 0) {
         await sock.assertSessions(participantIds, false).catch(() => {});
       }
     }
+
+    // 2. Presence update: stimulates WhatsApp to distribute pending sender keys
+    await sock.sendPresenceUpdate('composing', jid).catch(() => {});
+    await sock.sendPresenceUpdate('paused',    jid).catch(() => {});
   } catch (_) {}
 }
 
