@@ -43,7 +43,7 @@ export default {
     }
 
     // SVG lobster/claw icon (replaces emoji which doesn't render on Alpine Linux)
-    const clawIcon = `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path d="M19.5 9.5c-.17 0-.34.01-.5.04V6c0-1.1-.9-2-2-2h-2V2c0-.55-.45-1-1-1s-1 .45-1 1v2h-2V2c0-.55-.45-1-1-1s-1 .45-1 1v2H7c-1.1 0-2 .9-2 2v3.54c-.16-.03-.33-.04-.5-.04C3.02 9.5 1 11.52 1 14s2.02 4.5 4.5 4.5c.17 0 .34-.01.5-.04V20c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2v-1.54c.16.03.33.04.5.04 2.48 0 4.5-2.02 4.5-4.5s-2.02-4.5-4.5-4.5zM4.5 16.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5zm15 0c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+    const clawIcon = `<svg viewBox="0 0 64 64" width="18" height="18" style="vertical-align: middle; margin-left: 4px;"><path fill="#E74C3C" d="M32 58c-2 0-4-1-5-3l-3-8c-1-2 0-4 1-5l4-3c-3-1-5-4-5-7v-4c0-2-2-4-4-4h-2c-3 0-5-2-6-5l-2-6c0-2 0-4 2-5l6-3c2-1 4 0 5 1l2 4 2-2c1-2 3-3 5-3s4 1 5 3l2 2 2-4c1-2 3-2 5-1l6 3c2 1 2 3 2 5l-2 6c-1 3-3 5-6 5h-2c-2 0-4 2-4 4v4c0 3-2 6-5 7l4 3c1 1 2 3 1 5l-3 8c-1 2-3 3-5 3z"/><circle fill="#fff" cx="26" cy="22" r="3"/><circle fill="#fff" cx="38" cy="22" r="3"/><circle fill="#222" cx="26" cy="22" r="1.5"/><circle fill="#222" cx="38" cy="22" r="1.5"/><path fill="none" stroke="#C0392B" stroke-width="2" d="M28 34c0 0 4 3 8 0"/></svg>`;
 
     const icons = {
       traffic: `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2C8.13 2 5 5.13 5 9v6c0 3.87 3.13 7 7 7s7-3.13 7-7V9c0-3.87-3.13-7-7-7zm0 4.5c.83 0 1.5.67 1.5 1.5S12.83 9.5 12 9.5 10.5 8.83 10.5 8 11.17 6.5 12 6.5zm0 5.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5.67-1.5 1.5-1.5zm0 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>`,
@@ -88,7 +88,7 @@ export default {
       content: '';
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(245, 247, 246, 0.82);
+      background: rgba(245, 247, 246, 0.72);
       z-index: 0;
       pointer-events: none;
     }
@@ -140,7 +140,7 @@ export default {
     
     /* Box Styles — slightly transparent white so steel texture peeks through */
     .box {
-      background: rgba(255, 255, 255, 0.92);
+      background: rgba(255, 255, 255, 0.88);
       border-radius: 12px;
       box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
       padding: 25px;
