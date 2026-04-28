@@ -253,7 +253,7 @@ function ApiKeyWidget({ botId, hasKey }) {
           )}
           {isVisible && (
             <button type="button" onClick={handleCopy}
-              className={`px-2.5 py-2 rounded-lg font-semibold text-xs transition-colors border ${copied ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:bg-slate-900/50'}`}>
+              className={`px-2.5 py-2 rounded-lg font-semibold text-xs transition-colors border ${copied ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700'}`}>
               {copied ? '✅ Copied' : '📋 Copy'}
             </button>
           )}
@@ -599,7 +599,7 @@ console.log(response);` : '// Select a bot above';
               {bots.map(bot => (
                 <div key={bot._id}
                   onClick={() => setSelectedBot(bot)}
-                  className={`p-3 cursor-pointer hover:bg-gray-50 dark:bg-slate-900/50 transition-colors ${activeBotId === bot._id ? 'bg-indigo-50 dark:bg-indigo-900/30 border-l-2 border-indigo-500' : ''}`}>
+                  className={`p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors ${activeBotId === bot._id ? 'bg-indigo-50 dark:bg-indigo-900/30 border-l-2 border-indigo-500' : ''}`}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2">
                       <span className="text-base">{bot.avatar?.emoji || '🤖'}</span>
@@ -1188,7 +1188,7 @@ function AdminDashboard({ user, handleLogout }) {
               System Online
             </div>
             <span className="text-xs text-gray-400 hidden md:block px-2 border-l border-gray-100 dark:border-slate-700">Hi, {user.username}</span>
-            <button onClick={() => navigate('/')} className="px-3 py-1.5 text-xs bg-gray-50 dark:bg-slate-900/50 hover:bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-slate-700 font-medium transition-colors">← Back to Chat</button>
+            <button onClick={() => navigate('/')} className="px-3 py-1.5 text-xs bg-gray-50 dark:bg-slate-900/50 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-slate-700 font-medium transition-colors">← Back to Chat</button>
             <DarkModeToggle isDark={isDark} toggle={toggleDark} />
             <button onClick={handleLogout} className="px-3 py-1.5 text-xs bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-800 font-medium transition-colors">Logout</button>
           </div>
@@ -1347,7 +1347,7 @@ function AdminDashboard({ user, handleLogout }) {
                         <h3 className="font-bold text-gray-800 dark:text-gray-100 truncate text-sm">{bot.name}</h3>
                         <p className="text-xs text-gray-400 truncate mt-0.5">{bot.description || 'No description'}</p>
                       </div>
-                      <button onClick={() => handleEditBot(bot)} className="flex-shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-primary-dark bg-gray-50 dark:bg-slate-900/50 hover:bg-gray-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-gray-100 dark:border-slate-700 transition-all">Edit</button>
+                      <button onClick={() => handleEditBot(bot)} className="flex-shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-primary-dark bg-gray-50 dark:bg-slate-900/50 hover:bg-gray-100 dark:hover:bg-slate-700 px-2.5 py-1 rounded-lg border border-gray-100 dark:border-slate-700 transition-all">Edit</button>
                     </div>
 
                     <div className="flex flex-wrap gap-1.5 mb-3">
@@ -1406,7 +1406,7 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-slate-900/50/80 text-gray-400 uppercase text-[10px] tracking-wider">
+                <thead className="bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-gray-500 uppercase text-[10px] tracking-wider">
                   <tr>
                     <th className="px-6 py-3.5 text-left font-semibold">User</th>
                     <th className="px-6 py-3.5 text-left font-semibold">Role</th>
@@ -1417,7 +1417,7 @@ function AdminDashboard({ user, handleLogout }) {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                   {users.map(u => (
-                    <tr key={u._id} className="hover:bg-gray-50 dark:bg-slate-900/50/60 transition-colors">
+                    <tr key={u._id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                       <td className="px-6 py-3.5">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-xs font-bold text-primary-dark">{u.username.substring(0, 2).toUpperCase()}</div>
@@ -1469,7 +1469,7 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
 
             {/* Search & Filter Bar */}
-            <div className="px-6 py-3 border-b border-gray-50 bg-gray-50 dark:bg-slate-900/50/40 flex flex-wrap gap-2 items-center flex-shrink-0">
+            <div className="px-6 py-3 border-b border-gray-50 bg-gray-50 dark:bg-slate-900/60 flex flex-wrap gap-2 items-center flex-shrink-0">
               {/* Text search */}
               <div className="relative flex-1 min-w-[180px]">
                 <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1559,7 +1559,7 @@ function AdminDashboard({ user, handleLogout }) {
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                     {chatLogs.map(log => (
-                      <tr key={log._id} className="hover:bg-gray-50 dark:bg-slate-900/50/60 transition-colors">
+                      <tr key={log._id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                         <td className="px-5 py-2.5 text-gray-400 whitespace-nowrap tabular-nums">{new Date(log.createdAt).toLocaleString('id-ID')}</td>
                         <td className="px-5 py-2.5 font-medium text-gray-700 dark:text-gray-200">{log.userId?.username || '—'}</td>
                         <td className="px-5 py-2.5 text-primary font-semibold">{log.botId?.name || 'System'}</td>
@@ -1576,8 +1576,8 @@ function AdminDashboard({ user, handleLogout }) {
             <div className="px-5 py-3.5 border-t border-gray-50 flex justify-between items-center text-xs text-gray-400 flex-shrink-0">
               <span>Page {logPage} of {logTotalPages}</span>
               <div className="flex gap-1.5">
-                <button disabled={logPage === 1} onClick={() => setLogPage(p => p - 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:bg-slate-900/50 disabled:opacity-40 font-medium transition-colors">← Prev</button>
-                <button disabled={logPage === logTotalPages} onClick={() => setLogPage(p => p + 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:bg-slate-900/50 disabled:opacity-40 font-medium transition-colors">Next →</button>
+                <button disabled={logPage === 1} onClick={() => setLogPage(p => p - 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">← Prev</button>
+                <button disabled={logPage === logTotalPages} onClick={() => setLogPage(p => p + 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">Next →</button>
               </div>
             </div>
           </div>
@@ -1646,7 +1646,7 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
-                      <thead className="bg-gray-50 dark:bg-slate-900/50/80 text-gray-400 uppercase text-[10px] tracking-wider">
+                      <thead className="bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-gray-500 uppercase text-[10px] tracking-wider">
                         <tr>
                           <th className="px-5 py-3 text-left font-semibold">#</th>
                           <th className="px-5 py-3 text-left font-semibold">User</th>
@@ -1667,7 +1667,7 @@ function AdminDashboard({ user, handleLogout }) {
                           const avg = u.messageCount > 0 ? Math.round(u.totalTokens / u.messageCount) : 0;
                           const cost = u.costUSD || 0;
                           return (
-                            <tr key={String(u.userId)} className="hover:bg-gray-50 dark:bg-slate-900/50/60 transition-colors">
+                            <tr key={String(u.userId)} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                               <td className="px-5 py-3 text-gray-400 font-mono">{idx + 1}</td>
                               <td className="px-5 py-3">
                                 <div className="font-semibold text-gray-800 dark:text-gray-100">{u.username || '—'}</div>
@@ -1781,7 +1781,7 @@ function AdminDashboard({ user, handleLogout }) {
                 <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Audit Trail</h2>
                 <p className="text-sm text-gray-400 mt-0.5">{auditTotal.toLocaleString()} total log entries</p>
               </div>
-              <button onClick={fetchAuditLogs} className="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-sm font-medium rounded-xl hover:bg-gray-50 dark:bg-slate-900/50 transition-colors flex items-center gap-1.5 text-gray-600 dark:text-gray-300 self-start">
+              <button onClick={fetchAuditLogs} className="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-sm font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 text-gray-600 dark:text-gray-300 self-start">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 Refresh
               </button>
@@ -1832,7 +1832,7 @@ function AdminDashboard({ user, handleLogout }) {
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8" /><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" /></svg>
                     Search
                   </button>
-                  <button onClick={handleAuditReset} className="px-3 py-2 bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 text-xs font-medium rounded-xl hover:bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors">Reset</button>
+                  <button onClick={handleAuditReset} className="px-3 py-2 bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 text-xs font-medium rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400 transition-colors">Reset</button>
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-gray-100 dark:border-slate-700">
@@ -1882,7 +1882,7 @@ function AdminDashboard({ user, handleLogout }) {
                         const hasWarning = log.detail?.emptyResponse || log.detail?.warning;
                         return (
                           <React.Fragment key={log._id}>
-                            <tr className={`hover:bg-gray-50 dark:bg-slate-900/50/60 transition-colors cursor-pointer ${isExpanded ? 'bg-gray-50 dark:bg-slate-900/50/80' : ''} ${hasWarning ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
+                            <tr className={`hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer ${isExpanded ? 'bg-gray-50 dark:bg-slate-900' : ''} ${hasWarning ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
                               onClick={() => setAuditExpanded(isExpanded ? null : log._id)}>
                               <td className="px-4 py-3 whitespace-nowrap font-mono text-[10px] text-gray-400">
                                 <div className="font-medium text-gray-600 dark:text-gray-300">{new Date(log.createdAt).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
@@ -1935,11 +1935,11 @@ function AdminDashboard({ user, handleLogout }) {
                 </div>
               )}
               {auditLogs.length > 0 && (
-                <div className="px-5 py-3.5 border-t border-gray-50 flex justify-between items-center text-xs text-gray-400 bg-gray-50 dark:bg-slate-900/50/30">
+                <div className="px-5 py-3.5 border-t border-gray-50 flex justify-between items-center text-xs text-gray-400 bg-gray-50 dark:bg-slate-900/60">
                   <span>Showing {auditLogs.length} of {auditTotal.toLocaleString()} entries · Page {auditPage} of {auditTotalPages}</span>
                   <div className="flex gap-1.5">
-                    <button disabled={auditPage === 1} onClick={() => setAuditPage(p => p - 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:bg-slate-900/50 disabled:opacity-40 font-medium transition-colors">← Prev</button>
-                    <button disabled={auditPage === auditTotalPages} onClick={() => setAuditPage(p => p + 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:bg-slate-900/50 disabled:opacity-40 font-medium transition-colors">Next →</button>
+                    <button disabled={auditPage === 1} onClick={() => setAuditPage(p => p - 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">← Prev</button>
+                    <button disabled={auditPage === auditTotalPages} onClick={() => setAuditPage(p => p + 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">Next →</button>
                   </div>
                 </div>
               )}
@@ -1952,7 +1952,7 @@ function AdminDashboard({ user, handleLogout }) {
       {showBotModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center flex-shrink-0 bg-gray-50 dark:bg-slate-900/50/50 dark:bg-gray-800/50">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center flex-shrink-0 bg-gray-50 dark:bg-gray-800/50">
               <div className="flex items-center gap-3">
                 <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
                 <div>
@@ -1960,7 +1960,7 @@ function AdminDashboard({ user, handleLogout }) {
                   <p className="text-[10px] text-gray-400">{editingBot ? 'Configure an existing bot' : 'Create a new AI assistant with full capabilities'}</p>
                 </div>
               </div>
-              <button onClick={() => setShowBotModal(false)} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-gray-800 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-200 transition-colors">
+              <button onClick={() => setShowBotModal(false)} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-200 transition-colors">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
@@ -3088,7 +3088,7 @@ function AdminDashboard({ user, handleLogout }) {
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-6 border border-gray-100 dark:border-slate-700">
             <div className="flex justify-between items-center mb-5">
               <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg">{editingUser ? 'Edit User' : 'Add User'}</h3>
-              <button onClick={() => setShowUserModal(false)} className="text-gray-400 hover:text-gray-600 dark:text-gray-300 w-8 h-8 rounded-xl hover:bg-gray-100 dark:bg-slate-800 flex items-center justify-center transition-all">
+              <button onClick={() => setShowUserModal(false)} className="text-gray-400 hover:text-gray-600 dark:text-gray-300 w-8 h-8 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700 flex items-center justify-center transition-all">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
