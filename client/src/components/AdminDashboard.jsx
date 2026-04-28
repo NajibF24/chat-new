@@ -2850,7 +2850,7 @@ function AdminDashboard({ user, handleLogout }) {
                             </div>
 
                             {/* Info box */}
-                            <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-xl px-3 py-2 text-[10px] text-green-800 space-y-0.5">
+                            <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-xl px-3 py-2 text-[10px] text-green-800 dark:text-green-300 space-y-0.5">
                               <p className="font-bold">💡 How It Works:</p>
                               <p>• <strong>Webhook ON</strong>: Bot responds to incoming messages in real-time (set URL in WAHA)</p>
                               <p>• <strong>@tag Only</strong>: Bot in groups only responds when @mentioned</p>
@@ -2893,16 +2893,16 @@ function AdminDashboard({ user, handleLogout }) {
                     };
 
                     return (
-                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white'}`}>
+                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
                         {/* Header + toggle */}
                         <div className="flex justify-between items-center mb-3">
                           <div className="flex items-center gap-2">
                             <span className="text-lg">📊</span>
-                            <span className="font-semibold text-sm text-gray-800">Smartsheet Integration</span>
+                            <span className="font-semibold text-sm text-gray-800 dark:text-white">Smartsheet Integration</span>
                           </div>
                           <button type="button"
                             onClick={() => setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, enabled: !config.enabled } }))}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200'}`}>
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`}>
                             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
@@ -2911,7 +2911,7 @@ function AdminDashboard({ user, handleLogout }) {
                           <div className="space-y-3">
                             {/* API Key */}
                             <input type="password" placeholder="API Key (override .env)" autoComplete="new-password"
-                              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors"
+                              className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors dark:text-white"
                               value={config.apiKey || ''}
                               onChange={e => setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, apiKey: e.target.value } }))} />
 
@@ -2928,7 +2928,7 @@ function AdminDashboard({ user, handleLogout }) {
                               </div>
 
                               {sheetIds.length === 0 && (
-                                <div className="text-[10px] text-gray-400 italic bg-gray-50 border border-dashed border-gray-200 rounded-xl p-3 text-center">
+                                <div className="text-[10px] text-gray-400 italic bg-gray-50 dark:bg-slate-900 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl p-3 text-center">
                                   No sheets configured. Click <strong>+ Add Sheet</strong> to add a Smartsheet ID.
                                 </div>
                               )}
@@ -2938,11 +2938,11 @@ function AdminDashboard({ user, handleLogout }) {
                                   <div key={idx} className="flex gap-1.5 items-center">
                                     <div className="flex-1 flex gap-1.5">
                                       <input type="text" placeholder={`Sheet ID #${idx + 1} (numeric)`}
-                                        className="flex-1 bg-white border border-gray-200 rounded-xl p-2 text-xs font-mono outline-none focus:border-primary/40 transition-colors"
+                                        className="flex-1 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2 text-xs font-mono outline-none focus:border-primary/40 transition-colors dark:text-white"
                                         value={id}
                                         onChange={e => updateSheetId(idx, e.target.value)} />
                                       <input type="text" placeholder="Label (optional)"
-                                        className="w-28 bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-primary/40 transition-colors"
+                                        className="w-28 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2 text-xs outline-none focus:border-primary/40 transition-colors dark:text-white"
                                         value={sheetLabels[idx] || ''}
                                         onChange={e => updateSheetLabel(idx, e.target.value)} />
                                     </div>
@@ -2957,7 +2957,7 @@ function AdminDashboard({ user, handleLogout }) {
 
                               {sheetIds.length > 0 && (
                                 <p className="text-[9px] text-gray-400 mt-1.5">
-                                  💡 Bot will search across <strong>all {sheetIds.length} sheet{sheetIds.length !== 1 ? 's' : ''}</strong> when answering questions. Find Sheet ID in the Smartsheet URL: <code className="bg-gray-100 px-1 rounded">…smartsheet.com/sheets/<strong>SHEET_ID</strong></code>
+                                  💡 Bot will search across <strong>all {sheetIds.length} sheet{sheetIds.length !== 1 ? 's' : ''}</strong> when answering questions. Find Sheet ID in the Smartsheet URL: <code className="bg-gray-100 dark:bg-slate-700 px-1 rounded">…smartsheet.com/sheets/<strong>SHEET_ID</strong></code>
                                 </p>
                               )}
                             </div>
@@ -2975,11 +2975,11 @@ function AdminDashboard({ user, handleLogout }) {
                     const configKey = `${intg.key}Config`;
                     const config = botForm[configKey] || {};
                     return (
-                      <div key={intg.key} className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white'}`}>
+                      <div key={intg.key} className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
                         <div className="flex justify-between items-center mb-3">
-                          <div className="flex items-center gap-2"><span className="text-lg">{intg.icon}</span><span className="font-semibold text-sm text-gray-800">{intg.label}</span></div>
+                          <div className="flex items-center gap-2"><span className="text-lg">{intg.icon}</span><span className="font-semibold text-sm text-gray-800 dark:text-white">{intg.label}</span></div>
                           <button type="button" onClick={() => setBotForm(f => ({ ...f, [configKey]: { ...f[configKey], enabled: !config.enabled } }))}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200'}`}>
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`}>
                             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
@@ -2987,7 +2987,7 @@ function AdminDashboard({ user, handleLogout }) {
                           <div className="space-y-2">
                             {intg.fields.map(field => (
                               <input key={field.key} type={field.type} placeholder={field.label} autoComplete="new-password"
-                                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors"
+                                className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors dark:text-white"
                                 value={config[field.key] || ''} onChange={e => setBotForm(f => ({ ...f, [configKey]: { ...f[configKey], [field.key]: e.target.value } }))} />
                             ))}
                           </div>
@@ -3000,23 +3000,23 @@ function AdminDashboard({ user, handleLogout }) {
                   {(() => {
                     const config = botForm.onedriveConfig || {};
                     return (
-                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-sky-200 bg-sky-50/30' : 'border-gray-100 bg-white'}`}>
+                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-sky-200 bg-sky-50/30 dark:border-sky-800 dark:bg-sky-900/30' : 'border-gray-100 bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
                         <div className="flex justify-between items-center mb-3">
-                          <div className="flex items-center gap-2"><span className="text-lg">☁️</span><span className="font-semibold text-sm text-gray-800">OneDrive / SharePoint Integration</span></div>
+                          <div className="flex items-center gap-2"><span className="text-lg">☁️</span><span className="font-semibold text-sm text-gray-800 dark:text-white">OneDrive / SharePoint Integration</span></div>
                           <button type="button" onClick={() => { setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, enabled: !config.enabled } })); setOnedriveTestState(null); }}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-sky-600' : 'bg-gray-200'}`}>
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-sky-600' : 'bg-gray-200 dark:bg-slate-700'}`}>
                             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
                         {config.enabled && (
                           <div className="space-y-3">
-                            <div className="bg-sky-50 border border-sky-100 rounded-xl px-3 py-2 text-[10px] text-sky-700">
+                            <div className="bg-sky-50 dark:bg-sky-900/40 border border-sky-100 dark:border-sky-800/50 rounded-xl px-3 py-2 text-[10px] text-sky-700 dark:text-sky-300">
                               📋 Bot will read files from your OneDrive/SharePoint folder. Use <strong>Application permissions</strong> in Azure AD.
                             </div>
                             <div>
                               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Folder URL</label>
                               <input type="text" placeholder="https://company.sharepoint.com/..." autoComplete="off"
-                                className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors"
+                                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors dark:text-white"
                                 value={config.folderUrl || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, folderUrl: e.target.value } }))} />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
@@ -3024,7 +3024,7 @@ function AdminDashboard({ user, handleLogout }) {
                                 <div key={field}>
                                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">{field === 'tenantId' ? 'Tenant ID' : 'Client ID'}</label>
                                   <input type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autoComplete="off"
-                                    className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs font-mono outline-none focus:border-sky-400 transition-colors"
+                                    className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono outline-none focus:border-sky-400 transition-colors dark:text-white"
                                     value={config[field] || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, [field]: e.target.value } }))} />
                                 </div>
                               ))}
@@ -3032,22 +3032,22 @@ function AdminDashboard({ user, handleLogout }) {
                             <div>
                               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Client Secret</label>
                               <input type="password" placeholder="Client Secret Value" autoComplete="new-password"
-                                className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors"
+                                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors dark:text-white"
                                 value={config.clientSecret || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, clientSecret: e.target.value } }))} />
                             </div>
-                            <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-[10px] text-amber-700 space-y-0.5">
+                            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-800/50 rounded-xl px-3 py-2 text-[10px] text-amber-700 dark:text-amber-400 space-y-0.5">
                               <p className="font-bold">⚠️ Required Azure App Permissions:</p>
-                              <p>✅ <code className="bg-amber-100 px-1 rounded">Files.Read.All</code> — Application</p>
-                              <p>✅ <code className="bg-amber-100 px-1 rounded">Sites.Read.All</code> — Application</p>
+                              <p>✅ <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">Files.Read.All</code> — Application</p>
+                              <p>✅ <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">Sites.Read.All</code> — Application</p>
                             </div>
-                            <div className="pt-1 border-t border-gray-100">
+                            <div className="pt-1 border-t border-gray-100 dark:border-slate-700">
                               <button type="button" onClick={handleTestOneDrive}
                                 disabled={onedriveTestState === 'testing' || !config.folderUrl || !config.tenantId || !config.clientId || !config.clientSecret}
                                 className="px-4 py-2 bg-sky-600 text-white text-xs font-semibold rounded-xl hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
                                 {onedriveTestState === 'testing' ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Testing...</> : '🔌 Test OneDrive Connection'}
                               </button>
                               {onedriveTestState && onedriveTestState !== 'testing' && (
-                                <div className={`mt-2 p-3 rounded-xl text-xs font-medium border ${onedriveTestState.ok ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                                <div className={`mt-2 p-3 rounded-xl text-xs font-medium border ${onedriveTestState.ok ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-100 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/30 border-red-100 dark:border-red-800/50 text-red-700 dark:text-red-400'}`}>
                                   {onedriveTestState.ok ? <div><p className="font-bold">✅ Connection successful!</p>{onedriveTestState.fileCount !== undefined && <p>📁 {onedriveTestState.fileCount} file(s) found</p>}</div> : <div><p className="font-bold">❌ Connection failed</p><p>{onedriveTestState.message}</p></div>}
                                 </div>
                               )}
