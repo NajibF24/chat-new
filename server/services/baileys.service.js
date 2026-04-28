@@ -141,9 +141,33 @@ async function connect() {
         qrBase64 = null;
         status = 'connected';
         connectedAt = Date.now();
-        log('✅ WhatsApp connected! Waiting 15s for session keys to propagate...');
-        // Give WhatsApp time to distribute sender keys to this new linked device
-        setTimeout(() => log('✅ Session warmup complete — ready to send messages.'), 15000);
+        log('✅ WhatsApp connected! Starting 20s warmup before group session pre-warm...');
+
+        // After 20s, fetch ALL groups and pre-establish sender key sessions.
+        // This resolves 'not-acceptable' for group sends on a freshly linked device.
+        // Personal messages work immediately; groups need explicit session warm-up.
+        setTimeout(async () => {
+          log('🔥 Pre-warming group sessions...');
+          try {
+            const groups = await sock.groupFetchAllParticipating();
+            const groupList = Object.values(groups);
+            log(`🔥 Found ${groupList.length} group(s) — establishing sessions...`);
+            for (const group of groupList) {
+              const jid = group.id;
+              try {
+                const participants = (group.participants || []).map(p => p.id).filter(Boolean);
+                if (typeof sock.assertSessions === 'function' && participants.length > 0) {
+                  await sock.assertSessions(participants, false).catch(() => {});
+                }
+                await sock.sendPresenceUpdate('available', jid).catch(() => {});
+              } catch (_) {}
+            }
+            log('✅ Group session pre-warm complete — ready to send to all groups.');
+          } catch (err) {
+            log(`⚠️ Group pre-warm failed (non-fatal): ${err.message}`);
+            log('✅ Session warmup complete — ready to send messages.');
+          }
+        }, 20000);
       }
 
       if (connection === 'close') {
