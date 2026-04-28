@@ -24,32 +24,39 @@ import path from 'path';
 import pino from 'pino';
 import QRCode from 'qrcode';
 
-// ─── ESM/CJS interop: Baileys is a CJS module ───────────────────────────────
-// If named imports fail (makeWASocket is not a function), fall back to this:
+// ─── ESM/CJS interop ─────────────────────────────────────────────────────────
 let _makeWASocket = makeWASocket;
 if (typeof _makeWASocket !== 'function') {
-  // CJS default export wraps everything in module.exports
-  const baileysMod = makeWASocket; // the whole module object
+  const baileysMod = makeWASocket;
   _makeWASocket = baileysMod.default || baileysMod.makeWASocket || baileysMod;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const SESSION_PATH = path.join(process.cwd(), 'data', 'baileys-session');
-const logger = pino({ level: 'silent' }); // suppress Baileys verbose logs
+const logger = pino({ level: 'silent' });
 
 // ─── State ───────────────────────────────────────────────────────────────────
-let sock = null;
-let qrRaw = null;       // raw QR string (for terminal)
-let qrBase64 = null;    // base64 PNG (for admin UI)
-let status = 'offline'; // 'offline' | 'connecting' | 'qr' | 'connected'
+let sock        = null;
+let qrRaw       = null;
+let qrBase64    = null;
+let status      = 'offline'; // 'offline' | 'connecting' | 'qr' | 'connected'
 let reconnectTimer = null;
-let connectedAt = null; // timestamp when connection was established
+let connectedAt    = null;
 
-// In-memory store for sent messages (needed for retry requests / No sessions fix)
-// Key: msgId → WAProto.IWebMessageInfo
+// In-memory message store for getMessage callback (retransmit support)
 const msgStore = new Map();
 
-// Registered incoming message handler (set by waha.js or server.js)
+// ─── Group metadata cache ─────────────────────────────────────────────────────
+// CRITICAL: cachedGroupMetadata is the documented Baileys fix for 'not-acceptable'
+// on group sends. Without it, Baileys fetches group metadata on every single
+// message, which creates timing issues and causes WhatsApp servers to reject
+// the sender key distribution message.
+//
+// With this cache, Baileys can instantly look up group participants and correctly
+// build the encrypted group message including sender-key-distribution for new devices.
+const groupMetaCache = new Map();
+
+// Registered incoming message handler
 let _messageHandler = null;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -75,17 +82,11 @@ async function connect() {
     const { version, isLatest } = await fetchLatestBaileysVersion();
     log(`Using WA v${version.join('.')} (latest: ${isLatest})`);
 
-    // ── Detect new vs existing session ──────────────────────────────────────
-    // On a FRESH link (no creds.me = no registered account yet) we enable
-    // syncFullHistory so WhatsApp distributes ALL group sender keys to this
-    // new linked device. Without this, every group send fails with 'No sessions'
-    // until organic message exchange happens — same issue as WhatsApp Web fresh login.
-    //
-    // On RECONNECTS (creds already registered) we keep syncFullHistory: false
-    // for fast startup — sender keys are already cached in session files.
+    // On a FRESH link (no creds.me), enable syncFullHistory so WhatsApp distributes
+    // all group sender keys to this new linked device immediately.
     const isNewSession = !state.creds?.me?.id;
     if (isNewSession) {
-      log('🆕 New session detected — enabling syncFullHistory to obtain group sender keys...');
+      log('🆕 New session — syncFullHistory enabled to fetch all group sender keys');
     }
 
     sock = _makeWASocket({
@@ -97,13 +98,21 @@ async function connect() {
       },
       printQRInTerminal: true,
       generateHighQualityLinkPreview: false,
-      // ✅ KEY FIX: sync full history on new sessions so sender keys for ALL groups
-      // are distributed to this device immediately after linking.
-      // On reconnects this is false (fast path — keys are already stored).
       syncFullHistory: isNewSession,
       markOnlineOnConnect: false,
       browser: ['GYS Portal AI', 'Chrome', '120.0.0'],
-      // Required for WhatsApp to retry message delivery (retransmit requests)
+
+      // ── CRITICAL FIX: cachedGroupMetadata ──────────────────────────────────
+      // This is the documented Baileys fix for 'not-acceptable' on group sends.
+      // Baileys calls this before encrypting group messages to get the participant
+      // list needed to build sender-key-distribution messages.
+      // Without this, Baileys does a live fetch that can fail/time out, causing
+      // WhatsApp to reject the message with 'not-acceptable'.
+      cachedGroupMetadata: async (jid) => {
+        return groupMetaCache.get(jid) || undefined;
+      },
+
+      // Required for WhatsApp to handle retransmit requests
       getMessage: async (key) => {
         const stored = msgStore.get(key.id);
         if (stored) return stored.message;
@@ -114,19 +123,40 @@ async function connect() {
     // ── Save credentials on update ──────────────────────────────────────────
     sock.ev.on('creds.update', saveCreds);
 
+    // ── Keep group metadata cache in sync ───────────────────────────────────
+    sock.ev.on('groups.update', (updates) => {
+      for (const update of updates) {
+        if (!update.id) continue;
+        const existing = groupMetaCache.get(update.id) || {};
+        groupMetaCache.set(update.id, { ...existing, ...update });
+      }
+    });
+
+    sock.ev.on('group-participants.update', ({ id, participants, action }) => {
+      const meta = groupMetaCache.get(id);
+      if (!meta) return;
+      if (action === 'remove') {
+        meta.participants = (meta.participants || []).filter(
+          p => !participants.includes(p.id)
+        );
+      } else if (action === 'add') {
+        for (const jid of participants) {
+          if (!meta.participants?.find(p => p.id === jid)) {
+            meta.participants = [...(meta.participants || []), { id: jid }];
+          }
+        }
+      }
+      groupMetaCache.set(id, meta);
+    });
+
     // ── Connection state changes ────────────────────────────────────────────
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
-      // New QR code
       if (qr) {
         qrRaw = qr;
         status = 'qr';
-        try {
-          qrBase64 = await QRCode.toDataURL(qr);
-        } catch (_) {
-          qrBase64 = null;
-        }
+        try { qrBase64 = await QRCode.toDataURL(qr); } catch (_) { qrBase64 = null; }
         log('📱 QR Code ready — scan from WhatsApp → Linked Devices → Link a Device');
         log('   Or visit: GET /api/admin/baileys/qr');
       }
@@ -141,33 +171,25 @@ async function connect() {
         qrBase64 = null;
         status = 'connected';
         connectedAt = Date.now();
-        log('✅ WhatsApp connected! Starting 20s warmup before group session pre-warm...');
+        log('✅ WhatsApp connected! Pre-warming group metadata cache in 15s...');
 
-        // After 20s, fetch ALL groups and pre-establish sender key sessions.
-        // This resolves 'not-acceptable' for group sends on a freshly linked device.
-        // Personal messages work immediately; groups need explicit session warm-up.
+        // After 15s, fetch ALL groups and populate the metadata cache.
+        // This ensures cachedGroupMetadata returns valid data immediately on
+        // the first send, preventing 'not-acceptable' from live-fetch failures.
         setTimeout(async () => {
-          log('🔥 Pre-warming group sessions...');
+          log('🔥 Fetching group metadata to populate cache...');
           try {
             const groups = await sock.groupFetchAllParticipating();
             const groupList = Object.values(groups);
-            log(`🔥 Found ${groupList.length} group(s) — establishing sessions...`);
             for (const group of groupList) {
-              const jid = group.id;
-              try {
-                const participants = (group.participants || []).map(p => p.id).filter(Boolean);
-                if (typeof sock.assertSessions === 'function' && participants.length > 0) {
-                  await sock.assertSessions(participants, false).catch(() => {});
-                }
-                await sock.sendPresenceUpdate('available', jid).catch(() => {});
-              } catch (_) {}
+              groupMetaCache.set(group.id, group);
             }
-            log('✅ Group session pre-warm complete — ready to send to all groups.');
+            log(`✅ Cache populated: ${groupList.length} group(s) ready. Bot can now send to groups.`);
           } catch (err) {
-            log(`⚠️ Group pre-warm failed (non-fatal): ${err.message}`);
-            log('✅ Session warmup complete — ready to send messages.');
+            log(`⚠️ Group cache warm-up failed (non-fatal): ${err.message}`);
+            log('✅ Session warmup complete.');
           }
-        }, 20000);
+        }, 15000);
       }
 
       if (connection === 'close') {
@@ -180,14 +202,12 @@ async function connect() {
 
         if (code === DisconnectReason.loggedOut) {
           log('⚠️  Logged out! Deleting session — you must scan QR again.');
-          // Delete session so next connect triggers new QR
           try {
             const files = await fsPromises.readdir(SESSION_PATH);
             await Promise.all(files.map(f => fsPromises.unlink(path.join(SESSION_PATH, f))));
           } catch (_) {}
           reconnectTimer = setTimeout(connect, 3000);
         } else {
-          // Normal disconnect — reconnect after delay
           const delay = 5000;
           log(`🔄 Reconnecting in ${delay / 1000}s...`);
           reconnectTimer = setTimeout(connect, delay);
@@ -200,18 +220,14 @@ async function connect() {
       if (type !== 'notify') return;
 
       for (const msg of messages) {
-        // Store all messages for getMessage callback (retry support)
         if (msg.key?.id) msgStore.set(msg.key.id, msg);
-        // Keep store bounded
         if (msgStore.size > 500) {
           const firstKey = msgStore.keys().next().value;
           msgStore.delete(firstKey);
         }
 
-        // Skip own outbound messages
         if (msg.key.fromMe) continue;
 
-        // Skip non-text messages (images, stickers, etc.)
         const text =
           msg.message?.conversation ||
           msg.message?.extendedTextMessage?.text ||
@@ -237,37 +253,56 @@ async function connect() {
   }
 }
 
-// ─── Internal retry helper ─────────────────────────────────────────────────────────────
-// ⛔ IMMEDIATELY FAILS on permanent errors (forbidden/not-acceptable/not-authorized).
-//    Bot is not in group, or group doesn't exist — retrying wastes time.
-// ⏳ Waits delayMs on 'No sessions' — sender keys may arrive later from WA servers.
-async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = {}) {
+// ─── Send helper: refresh group metadata before retry ────────────────────────
+async function refreshGroupCache(jid) {
+  if (!sock || !jid.endsWith('@g.us')) return;
+  try {
+    const meta = await sock.groupMetadata(jid);
+    if (meta) groupMetaCache.set(jid, meta);
+  } catch (_) {}
+}
+
+// ─── Internal retry helper ────────────────────────────────────────────────────
+// Error classification:
+//   'forbidden' / 'not-authorized' / 'not a participant'
+//     → PERMANENT: bot is kicked/not a member, stop immediately.
+//
+//   'not-acceptable'
+//     → SOFT: sender key not yet distributed (WA multi-device timing issue).
+//       Retry with group cache refresh between attempts.
+//
+//   'No sessions'
+//     → SOFT: Signal prekey sessions not established yet, retry with delay.
+async function sendWithRetry(label, fn, jid, { maxAttempts = 5, delayMs = 10000 } = {}) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await fn();
       return true;
     } catch (err) {
-      const msg               = err.message || '';
-      const msgLower          = msg.toLowerCase();
-      const isPermanentFail   = msgLower.includes('forbidden') ||
-                                msgLower.includes('not-authorized') ||
-                                msgLower.includes('not a participant') ||
-                                msgLower.includes('not-acceptable');   // bot not in group
-      const isNoSessions      = msg.includes('No sessions');
+      const msg      = err.message || '';
+      const msgLower = msg.toLowerCase();
 
       log(`❌ Failed to ${label} (attempt ${attempt}/${maxAttempts}): ${msg}`);
 
-      // ⛔ Hard permanent failure — retrying will NEVER fix this
-      if (isPermanentFail) {
-        log(`⛔ ${label}: Permanent failure (${msg}). Bot is likely not a member of this group. Use GET /api/admin/baileys/groups to see which groups the bot has joined.`);
+      // ⛔ PERMANENT — retrying will never help
+      if (
+        msgLower.includes('forbidden') ||
+        msgLower.includes('not-authorized') ||
+        msgLower.includes('not a participant')
+      ) {
+        log(`⛔ ${label}: Bot is not a member of this group or messaging is restricted. Stopping.`);
         return false;
       }
 
-      // ⏳ Soft failure — wait for sender key distribution
-      if (isNoSessions && attempt < maxAttempts) {
-        log(`⏳ No sessions — waiting ${delayMs / 1000}s for WhatsApp to distribute sender keys...`);
+      if (attempt >= maxAttempts) return false;
+
+      // ⏳ SOFT — refresh state and retry
+      if (msgLower.includes('not-acceptable') || msg.includes('No sessions')) {
+        log(`⏳ ${label}: Refreshing group cache and retrying in ${delayMs / 1000}s...`);
+        await refreshGroupCache(jid);
         await new Promise(r => setTimeout(r, delayMs));
       } else {
+        // Unknown error — don't retry
         return false;
       }
     }
@@ -275,58 +310,28 @@ async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = 
   return false;
 }
 
-// ─── Force sender key sync for a group ─────────────────────────────────────────────
-// 'No sessions' = Baileys doesn't have group sender keys yet.
-// Fix: fetch group metadata → assert Signal sessions with participants
-//      → send 'composing' presence (stimulates WA to push pending key distributions).
-//
-// This is what production Baileys bots do. syncFullHistory:true on first connect
-// is the more reliable long-term fix; this is the per-send fallback.
-async function forceGroupKeySync(jid) {
-  if (!sock || !jid.endsWith('@g.us')) return;
-  try {
-    const metadata = await sock.groupMetadata(jid);
-
-    // 1. assertSessions: establish Signal prekey sessions with all participants
-    if (typeof sock.assertSessions === 'function') {
-      const participantIds = (metadata?.participants || []).map(p => p.id).filter(Boolean);
-      if (participantIds.length > 0) {
-        await sock.assertSessions(participantIds, false).catch(() => {});
-      }
-    }
-
-    // 2. Presence update: stimulates WhatsApp to distribute pending sender keys
-    await sock.sendPresenceUpdate('composing', jid).catch(() => {});
-    await sock.sendPresenceUpdate('paused',    jid).catch(() => {});
-  } catch (_) {}
-}
-
-
+// ─── Public API ──────────────────────────────────────────────────────────────
 const BaileysService = {
 
-  // Initialize and connect
   async init() {
     log('🚀 Starting WhatsApp Baileys service...');
     await connect();
   },
 
-  // Register incoming message handler
-  // fn({ msg, text, sock }) — called for each incoming text message
   setMessageHandler(fn) {
     _messageHandler = fn;
   },
 
-  // Connection status
   isConnected() {
     return status === 'connected' && sock !== null;
   },
 
   getStatus() {
-    return status; // 'offline' | 'connecting' | 'qr' | 'connected'
+    return status;
   },
 
   getQRBase64() {
-    return qrBase64; // base64 PNG string or null
+    return qrBase64;
   },
 
   // ── Send text ─────────────────────────────────────────────────────────────
@@ -336,10 +341,9 @@ const BaileysService = {
       return false;
     }
     return sendWithRetry(`send text to ${jid}`, async () => {
-      await forceGroupKeySync(jid);   // establishes Signal sessions with all group participants
       await sock.sendMessage(jid, { text });
       log(`✅ Text sent to ${jid}`);
-    });
+    }, jid);
   },
 
   // ── Send image from file path ─────────────────────────────────────────────
@@ -354,19 +358,20 @@ const BaileysService = {
     }
     const buffer = fs.readFileSync(imagePath);
     return sendWithRetry(`send image to ${jid}`, async () => {
-      await forceGroupKeySync(jid);   // establishes Signal sessions with all group participants
       await sock.sendMessage(jid, { image: buffer, caption, mimetype: 'image/png' });
       log(`✅ Image sent to ${jid}`);
-    });
+    }, jid);
   },
 
-  // ── List all groups the bot is currently a member of ──────────────────
-  // Use this to find the correct group JID / verify membership.
-  // Returns array of { id, subject, size } sorted by name.
+  // ── List all groups the bot has joined ────────────────────────────────────
   async getGroups() {
     if (!this.isConnected()) return [];
     try {
       const groups = await sock.groupFetchAllParticipating();
+      // Also update local cache
+      for (const [jid, meta] of Object.entries(groups)) {
+        groupMetaCache.set(jid, meta);
+      }
       return Object.values(groups)
         .map(g => ({
           id:         g.id,
@@ -374,7 +379,7 @@ const BaileysService = {
           size:       g.participants?.length || 0,
           creation:   g.creation,
           restricted: g.restrict || false,
-          announce:   g.announce || false,  // announce=true means only admins can send
+          announce:   g.announce || false,
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
     } catch (err) {
@@ -391,6 +396,7 @@ const BaileysService = {
     } catch (_) {}
     status = 'offline';
     sock = null;
+    groupMetaCache.clear();
     log('👋 Logged out');
   },
 
