@@ -32,17 +32,36 @@ function pushHistory(botId, chatId, role, content) {
 }
 
 // ── Check if this group message should be responded to ─────────────
-function shouldRespond(wahaConfig, target, messageBody, isGroup) {
-  if (!isGroup) return true;
-  if (!target?.tagOnly) return true;
+// For GROUP messages: only respond when bot is explicitly @mentioned
+// (Groups require a tag by default. Set replyAll=true in target config to reply to all messages)
+function shouldRespond(wahaConfig, target, mentionedJid, isGroup) {
+  if (!isGroup) return true; // Always respond in private/DM chats
+
+  // Always require mentions in groups by default to prevent spamming
+  // If explicitly configured to replyAll, bypass the mention requirement
+  if (target?.replyAll === true) return true;
+
+  // Check if the bot's own JID is in the mentionedJid list sent by WhatsApp
+  const botJid = wahaConfig.botJid || '';
   const botPhone = (wahaConfig.botPhoneNumber || '').replace(/\D/g, '');
-  if (!botPhone) return true;
-  const bodyLower = (messageBody || '').toLowerCase();
-  return bodyLower.includes('@' + botPhone) || bodyLower.includes(botPhone);
+
+  if (mentionedJid && mentionedJid.length > 0) {
+    // mentionedJid entries look like "628xxx@s.whatsapp.net"
+    const isMentioned = mentionedJid.some(jid => {
+      const jidPhone = jid.replace(/\D/g, '').replace(/^0/, '62');
+      return jid === botJid ||
+             (botPhone && jidPhone.includes(botPhone)) ||
+             (botPhone && botPhone.includes(jidPhone));
+    });
+    if (isMentioned) return true;
+  }
+
+  console.log(`[WA] Group msg ignored — bot not @mentioned (mentionedJid: ${JSON.stringify(mentionedJid)})`);
+  return false;
 }
 
 // ── Core message processor (shared by Baileys events + legacy webhook) ──
-export async function processIncomingMessage({ botId, fromId, msgBody, isGroup, sourceIp, sourceHeaders }) {
+export async function processIncomingMessage({ botId, fromId, msgBody, isGroup, mentionedJid = [], sourceIp, sourceHeaders }) {
   try {
     if (!msgBody?.trim()) return;
 
@@ -63,8 +82,7 @@ export async function processIncomingMessage({ botId, fromId, msgBody, isGroup, 
       return;
     }
 
-    if (!shouldRespond(wahaConfig, target, msgBody, isGroup)) {
-      console.log(`[WA] Ignoring group message (not tagged): ${fromId}`);
+    if (!shouldRespond(wahaConfig, target, mentionedJid, isGroup)) {
       return;
     }
 
@@ -129,7 +147,7 @@ export async function processIncomingMessage({ botId, fromId, msgBody, isGroup, 
 // ── Baileys incoming message handler ──────────────────────────────
 // Called by BaileysService for every incoming message.
 // Routes the message to the correct bot based on wahaConfig targets.
-export async function handleBaileysMessage({ msg, text, sock }) {
+export async function handleBaileysMessage({ msg, text, sock, mentionedJid = [] }) {
   try {
     const fromId  = msg.key.remoteJid || '';   // e.g. "628xxx@s.whatsapp.net" or "120363...@g.us"
     const isGroup = fromId.endsWith('@g.us');
@@ -156,6 +174,7 @@ export async function handleBaileysMessage({ msg, text, sock }) {
           fromId,
           msgBody:       text,
           isGroup,
+          mentionedJid,
           sourceIp:      '127.0.0.1',
           sourceHeaders: {},
         });

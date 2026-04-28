@@ -243,9 +243,15 @@ async function connect() {
 
           if (!text.trim()) continue;
 
+          // Extract @mention JID list (provided by WA in extendedTextMessage context)
+          const mentionedJid =
+            msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ||
+            msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo?.mentionedJid ||
+            [];
+
           if (_messageHandler) {
             try {
-              await _messageHandler({ msg, text, sock });
+              await _messageHandler({ msg, text, sock, mentionedJid });
             } catch (err) {
               log('❌ Message handler error:', err.message);
             }

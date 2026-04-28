@@ -19,31 +19,31 @@ const AI_PROVIDERS = {
   openai: {
     label: 'OpenAI', icon: '🟢',
     models: [
-      { id: 'gpt-5.2',               label: 'GPT-5.2',               tier: 'flagship'  },
-      { id: 'gpt-5.1',               label: 'GPT-5.1',               tier: 'flagship'  },
-      { id: 'gpt-5',                 label: 'GPT-5',                 tier: 'flagship'  },
-      { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            tier: 'efficient' },
-      { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            tier: 'efficient' },
-      { id: 'gpt-4o',                label: 'GPT-4o',                tier: 'stable'    },
-      { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           tier: 'efficient' },
-      { id: 'gpt-4.1',               label: 'GPT-4.1',               tier: 'stable'    },
-      { id: 'gpt-4.1-mini',          label: 'GPT-4.1 Mini',          tier: 'efficient' },
-      { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          tier: 'efficient' },
-      { id: 'o3',                    label: 'o3 (Reasoning)',         tier: 'reasoning' },
-      { id: 'o4-mini',               label: 'o4-mini (Reasoning)',    tier: 'reasoning' },
-      { id: 'o3-mini',               label: 'o3-mini (Reasoning)',    tier: 'reasoning' },
-      { id: 'gpt-4-turbo',           label: 'GPT-4 Turbo',           tier: 'legacy'    },
-      { id: 'gpt-4',                 label: 'GPT-4',                 tier: 'legacy'    },
-      { id: 'gpt-3.5-turbo',         label: 'GPT-3.5 Turbo',         tier: 'legacy'    },
-      { id: 'gpt-3.5-turbo-16k',     label: 'GPT-3.5 Turbo 16K',     tier: 'legacy'    },
+      { id: 'gpt-5.2', label: 'GPT-5.2', tier: 'flagship' },
+      { id: 'gpt-5.1', label: 'GPT-5.1', tier: 'flagship' },
+      { id: 'gpt-5', label: 'GPT-5', tier: 'flagship' },
+      { id: 'gpt-5-mini', label: 'GPT-5 Mini', tier: 'efficient' },
+      { id: 'gpt-5-nano', label: 'GPT-5 Nano', tier: 'efficient' },
+      { id: 'gpt-4o', label: 'GPT-4o', tier: 'stable' },
+      { id: 'gpt-4o-mini', label: 'GPT-4o Mini', tier: 'efficient' },
+      { id: 'gpt-4.1', label: 'GPT-4.1', tier: 'stable' },
+      { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', tier: 'efficient' },
+      { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano', tier: 'efficient' },
+      { id: 'o3', label: 'o3 (Reasoning)', tier: 'reasoning' },
+      { id: 'o4-mini', label: 'o4-mini (Reasoning)', tier: 'reasoning' },
+      { id: 'o3-mini', label: 'o3-mini (Reasoning)', tier: 'reasoning' },
+      { id: 'gpt-4-turbo', label: 'GPT-4 Turbo', tier: 'legacy' },
+      { id: 'gpt-4', label: 'GPT-4', tier: 'legacy' },
+      { id: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo', tier: 'legacy' },
+      { id: 'gpt-3.5-turbo-16k', label: 'GPT-3.5 Turbo 16K', tier: 'legacy' },
     ],
     capabilities: ['webSearch', 'codeInterpreter', 'imageGeneration', 'canvas', 'fileSearch'],
   },
   anthropic: {
     label: 'Anthropic (Claude)', icon: '🟠',
     models: [
-      { id: 'claude-opus-4-6',           label: 'Claude Opus 4.6',  tier: 'flagship'  },
-      { id: 'claude-sonnet-4-6',         label: 'Claude Sonnet 4.6',tier: 'flagship'  },
+      { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', tier: 'flagship' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tier: 'flagship' },
       { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', tier: 'efficient' },
     ],
     capabilities: ['fileSearch'],
@@ -51,63 +51,67 @@ const AI_PROVIDERS = {
   google: {
     label: 'Google Gemini', icon: '🔵',
     models: [
-      { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   tier: 'flagship'  },
+      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', tier: 'flagship' },
       { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'efficient' },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', tier: 'stable'    },
-      { id: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro',   tier: 'stable'    },
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', tier: 'stable'    },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', tier: 'stable' },
+      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro', tier: 'stable' },
+      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', tier: 'stable' },
     ],
     capabilities: [],
   },
-  custom:    { label: 'Custom / OpenAI-Compatible', icon: '⚙️', models: [], capabilities: [],
-    description: 'Azure OpenAI, AWS Bedrock, Ollama, Groq, LM Studio, etc.' },
-  external:  { label: 'External Bot / HTTP Proxy', icon: '🌐', models: [], capabilities: [],
-    description: 'Proxy to any bot endpoint — portal provides UI only, no portal tokens used.' },
+  custom: {
+    label: 'Custom / OpenAI-Compatible', icon: '⚙️', models: [], capabilities: [],
+    description: 'Azure OpenAI, AWS Bedrock, Ollama, Groq, LM Studio, etc.'
+  },
+  external: {
+    label: 'External Bot / HTTP Proxy', icon: '🌐', models: [], capabilities: [],
+    description: 'Proxy to any bot endpoint — portal provides UI only, no portal tokens used.'
+  },
 };
 
 const TIER_STYLE = {
-  flagship:  'bg-amber-50 text-amber-700 border border-amber-200',
-  efficient: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  reasoning: 'bg-violet-50 text-violet-700 border border-violet-200',
-  stable:    'bg-blue-50 text-blue-700 border border-blue-200',
-  legacy:    'bg-gray-100 text-gray-500 border border-gray-200',
+  flagship: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700',
+  efficient: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700',
+  reasoning: 'bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-700',
+  stable: 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700',
+  legacy: 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-slate-700',
 };
 
 const TIER_GROUP_LABEL = {
-  flagship:  '⭐ Flagship',
+  flagship: '⭐ Flagship',
   efficient: '⚡ Efficient',
   reasoning: '🧠 Reasoning',
-  stable:    '✅ Stable',
-  legacy:    '🕰 Legacy',
+  stable: '✅ Stable',
+  legacy: '🕰 Legacy',
 };
 
 const ALL_CAPABILITIES = [
-  { id: 'webSearch',       icon: '🌐', label: 'Web Search',        desc: 'Bot can browse the internet for up-to-date information', providers: ['openai'] },
-  { id: 'codeInterpreter', icon: '💻', label: 'Code Interpreter',  desc: 'Bot can write and execute Python code', providers: ['openai'] },
-  { id: 'imageGeneration', icon: '🎨', label: 'Image Generation',  desc: 'Bot can create images using DALL-E', providers: ['openai'] },
-  { id: 'canvas',          icon: '📝', label: 'Canvas Mode',       desc: 'Interactive document editing and canvas mode', providers: ['openai'] },
-  { id: 'fileSearch',      icon: '📂', label: 'File Search (RAG)', desc: 'Semantic search across the entire knowledge base', providers: ['openai', 'anthropic'] },
+  { id: 'webSearch', icon: '🌐', label: 'Web Search', desc: 'Bot can browse the internet for up-to-date information', providers: ['openai'] },
+  { id: 'codeInterpreter', icon: '💻', label: 'Code Interpreter', desc: 'Bot can write and execute Python code', providers: ['openai'] },
+  { id: 'imageGeneration', icon: '🎨', label: 'Image Generation', desc: 'Bot can create images using DALL-E', providers: ['openai'] },
+  { id: 'canvas', icon: '📝', label: 'Canvas Mode', desc: 'Interactive document editing and canvas mode', providers: ['openai'] },
+  { id: 'fileSearch', icon: '📂', label: 'File Search (RAG)', desc: 'Semantic search across the entire knowledge base', providers: ['openai', 'anthropic'] },
 ];
 
 const KNOWLEDGE_MODES = [
   { id: 'relevant', label: '🎯 Relevant Only', desc: 'Inject knowledge only when relevant' },
-  { id: 'always',   label: '📚 Always',        desc: 'Always inject all knowledge' },
-  { id: 'disabled', label: '🚫 Disabled',       desc: 'Do not use knowledge base' },
+  { id: 'always', label: '📚 Always', desc: 'Always inject all knowledge' },
+  { id: 'disabled', label: '🚫 Disabled', desc: 'Do not use knowledge base' },
 ];
 
 const TONE_OPTIONS = [
   { id: 'professional', label: '👔 Professional' },
-  { id: 'friendly',     label: '😊 Friendly' },
-  { id: 'formal',       label: '🎩 Formal' },
-  { id: 'concise',      label: '⚡ Concise' },
-  { id: 'detailed',     label: '📖 Detailed' },
-  { id: 'custom',       label: '✏️ Custom' },
+  { id: 'friendly', label: '😊 Friendly' },
+  { id: 'formal', label: '🎩 Formal' },
+  { id: 'concise', label: '⚡ Concise' },
+  { id: 'detailed', label: '📖 Detailed' },
+  { id: 'custom', label: '✏️ Custom' },
 ];
 
 const SUPPORTED_FILE_TYPES = '.pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.md';
 const FILE_TYPE_ICON = { pdf: '📕', docx: '📘', doc: '📘', xlsx: '📗', xls: '📗', pptx: '📙', ppt: '📙', txt: '📄', csv: '📊', md: '📝' };
 const getFileIcon = (name = '') => FILE_TYPE_ICON[name.split('.').pop()?.toLowerCase()] || '📄';
-const fmtSize = (b) => !b ? '0 B' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
+const fmtSize = (b) => !b ? '0 B' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 
 // ── PATCH SECTION 4: apiVersion added to initialBotState ─────
 const initialBotState = {
@@ -130,8 +134,8 @@ const initialBotState = {
     responseField: '',
   },
   capabilities: { webSearch: false, codeInterpreter: false, imageGeneration: false, canvas: false, fileSearch: false },
-  smartsheetConfig:  { enabled: false, apiKey: '', sheetId: '', sheetIds: [], sheetLabels: [] },
-  kouventaConfig:    { enabled: false, apiKey: '', endpoint: '' },
+  smartsheetConfig: { enabled: false, apiKey: '', sheetId: '', sheetIds: [], sheetLabels: [] },
+  kouventaConfig: { enabled: false, apiKey: '', endpoint: '' },
   azureSearchConfig: { enabled: false, apiKey: '', endpoint: '' },
   wahaConfig: {
     enabled: false,
@@ -161,9 +165,9 @@ function groupModelsByTier(models) {
 // API KEY WIDGET
 // ─────────────────────────────────────────────────────────────
 function ApiKeyWidget({ botId, hasKey }) {
-  const [state,    setState]    = useState('hidden');
+  const [state, setState] = useState('hidden');
   const [keyValue, setKeyValue] = useState('');
-  const [copied,   setCopied]   = useState(false);
+  const [copied, setCopied] = useState(false);
   const [serverHasKey, setServerHasKey] = useState(hasKey);
 
   const hideTimer = useRef(null);
@@ -210,23 +214,23 @@ function ApiKeyWidget({ botId, hasKey }) {
   const isVisible = state === 'visible';
 
   return (
-    <div className="border border-gray-200 bg-gray-50 rounded-xl p-4 space-y-3">
+    <div className="border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-base">🔑</span>
-          <span className="font-semibold text-sm text-gray-800">Bot API Key (External Access)</span>
+          <span className="font-semibold text-sm text-gray-800 dark:text-gray-100">Bot API Key (External Access)</span>
         </div>
         {serverHasKey
-          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">✅ Key available</span>
-          : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">⚠️ Not generated</span>
+          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">✅ Key available</span>
+          : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700">⚠️ Not generated</span>
         }
       </div>
 
       <div className="flex gap-2">
-        <div className={`flex-1 relative bg-white border rounded-lg px-3 py-2 font-mono text-xs overflow-hidden transition-all ${isVisible ? 'border-emerald-300 bg-emerald-50/20' : 'border-gray-200'}`}>
+        <div className={`flex-1 relative bg-white dark:bg-slate-800 border rounded-lg px-3 py-2 font-mono text-xs overflow-hidden transition-all ${isVisible ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/20 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-slate-700'}`}>
           {isLoading ? (
-            <div className="flex items-center gap-2 text-gray-500">
-              <div className="w-3 h-3 border-2 border-gray-200 border-t-primary rounded-full animate-spin flex-shrink-0" />
+            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+              <div className="w-3 h-3 border-2 border-gray-200 dark:border-slate-700 border-t-primary rounded-full animate-spin flex-shrink-0" />
               <span>{state === 'generating' ? 'Generating new key...' : 'Retrieving API Key...'}</span>
             </div>
           ) : isVisible ? (
@@ -241,34 +245,34 @@ function ApiKeyWidget({ botId, hasKey }) {
           {serverHasKey && !isLoading && (
             isVisible ? (
               <button type="button" onClick={handleHide} title="Hide key"
-                className="px-2.5 py-2 bg-gray-100 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-200 text-xs transition-colors">🙈</button>
+                className="px-2.5 py-2 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-200 text-xs transition-colors">🙈</button>
             ) : (
               <button type="button" onClick={handleReveal} title="Reveal API Key"
-                className="px-2.5 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-semibold text-xs transition-colors">👁 View</button>
+                className="px-2.5 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 font-semibold text-xs transition-colors">👁 View</button>
             )
           )}
           {isVisible && (
             <button type="button" onClick={handleCopy}
-              className={`px-2.5 py-2 rounded-lg font-semibold text-xs transition-colors border ${copied ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+              className={`px-2.5 py-2 rounded-lg font-semibold text-xs transition-colors border ${copied ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700'}`}>
               {copied ? '✅ Copied' : '📋 Copy'}
             </button>
           )}
           <button type="button" onClick={handleGenerate} disabled={isLoading}
             title={serverHasKey ? 'Regenerate API Key (old key will be invalidated)' : 'Generate API Key'}
-            className={`px-2.5 py-2 rounded-lg font-semibold text-xs transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${serverHasKey ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-primary-dark text-white border-primary-dark hover:bg-primary'}`}>
+            className={`px-2.5 py-2 rounded-lg font-semibold text-xs transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${serverHasKey ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50' : 'bg-primary-dark text-white border-primary-dark hover:bg-primary'}`}>
             {state === 'generating' ? '⏳' : serverHasKey ? '🔄 Regenerate' : '✨ Generate'}
           </button>
         </div>
       </div>
 
       {isVisible && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-[10px] text-amber-700 flex items-start gap-1.5">
+        <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2 text-[10px] text-amber-700 dark:text-amber-300 flex items-start gap-1.5">
           <span className="flex-shrink-0">⏱</span>
           <span>Key will be hidden automatically in 60 seconds. Store this key in a safe place now.</span>
         </div>
       )}
-      <p className="text-[10px] text-gray-500">
-        Use this API Key in the <code className="bg-white px-1 py-0.5 rounded border border-gray-200">x-api-key</code> header when calling the chat API endpoint externally.
+      <p className="text-[10px] text-gray-500 dark:text-gray-400">
+        Use this API Key in the <code className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-gray-200 dark:border-slate-700">x-api-key</code> header when calling the chat API endpoint externally.
       </p>
     </div>
   );
@@ -278,33 +282,33 @@ function ApiKeyWidget({ botId, hasKey }) {
 // AUDIT TRAIL helpers
 // ─────────────────────────────────────────────────────────────
 const AUDIT_CATEGORY_META = {
-  auth:      { icon: '🔐', label: 'Auth',      color: 'bg-blue-50   text-blue-700   border-blue-200'    },
-  bot:       { icon: '🤖', label: 'Bot',       color: 'bg-violet-50 text-violet-700 border-violet-200'  },
-  user:      { icon: '👤', label: 'User',      color: 'bg-amber-50  text-amber-700  border-amber-200'   },
-  knowledge: { icon: '📚', label: 'Knowledge', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  export:    { icon: '⬇️', label: 'Export',    color: 'bg-sky-50    text-sky-700    border-sky-200'      },
-  chat:      { icon: '💬', label: 'AI Chat',   color: 'bg-rose-50   text-rose-700   border-rose-200'    },
-  system:    { icon: '⚙️', label: 'System',    color: 'bg-gray-100  text-gray-600   border-gray-200'    },
+  auth: { icon: '🔐', label: 'Auth', color: 'bg-blue-50 dark:bg-blue-900/30  text-blue-700 dark:text-blue-300  border-blue-200 dark:border-blue-700' },
+  bot: { icon: '🤖', label: 'Bot', color: 'bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-700' },
+  user: { icon: '👤', label: 'User', color: 'bg-amber-50 dark:bg-amber-900/30  text-amber-700 dark:text-amber-300  border-amber-200 dark:border-amber-700' },
+  knowledge: { icon: '📚', label: 'Knowledge', color: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700' },
+  export: { icon: '⬇️', label: 'Export', color: 'bg-sky-50 dark:bg-sky-900/30    text-sky-700 dark:text-sky-300    border-sky-200 dark:border-sky-700' },
+  chat: { icon: '💬', label: 'AI Chat', color: 'bg-rose-50 dark:bg-rose-900/30   text-rose-700 dark:text-rose-300   border-rose-200 dark:border-rose-700' },
+  system: { icon: '⚙️', label: 'System', color: 'bg-gray-100 dark:bg-slate-800  text-gray-600 dark:text-gray-300   border-gray-200 dark:border-slate-700' },
 };
 
 const ACTION_LABEL = {
-  LOGIN_SUCCESS:     { label: 'Login',               color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  LOGIN_FAILED:      { label: 'Login Failed',         color: 'text-red-600     bg-red-50     border-red-200'      },
-  LOGOUT:            { label: 'Logout',               color: 'text-slate-600   bg-slate-100  border-slate-200'   },
-  BOT_CREATE:        { label: 'Create Bot',           color: 'text-violet-600  bg-violet-50  border-violet-200'  },
-  BOT_UPDATE:        { label: 'Update Bot',           color: 'text-blue-600    bg-blue-50    border-blue-200'    },
-  BOT_DELETE:        { label: 'Delete Bot',           color: 'text-red-600     bg-red-50     border-red-200'      },
-  BOT_APIKEY_VIEWED: { label: 'API Key Viewed',       color: 'text-amber-600   bg-amber-50   border-amber-200'   },
-  USER_CREATE:       { label: 'Create User',          color: 'text-violet-600  bg-violet-50  border-violet-200'  },
-  USER_UPDATE:       { label: 'Update User',          color: 'text-blue-600    bg-blue-50    border-blue-200'    },
-  USER_DELETE:       { label: 'Delete User',          color: 'text-red-600     bg-red-50     border-red-200'      },
-  KNOWLEDGE_UPLOAD:  { label: 'Upload File',          color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  KNOWLEDGE_DELETE:  { label: 'Delete File',          color: 'text-red-600     bg-red-50     border-red-200'      },
-  EXPORT_CHATS:      { label: 'Export CSV',           color: 'text-sky-600     bg-sky-50     border-sky-200'      },
-  AI_RESPONSE:       { label: 'AI Response',          color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  AI_RESPONSE_EMPTY: { label: '⚠️ Empty Response',   color: 'text-orange-600  bg-orange-50  border-orange-200'  },
-  AI_RESPONSE_ERROR: { label: '❌ AI Error',          color: 'text-red-600     bg-red-50     border-red-200'      },
-  IMAGE_GENERATE:    { label: 'Image Generated',      color: 'text-pink-600    bg-pink-50    border-pink-200'    },
+  LOGIN_SUCCESS: { label: 'Login', color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700' },
+  LOGIN_FAILED: { label: 'Login Failed', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-700' },
+  LOGOUT: { label: 'Logout', color: 'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700' },
+  BOT_CREATE: { label: 'Create Bot', color: 'text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 border-violet-200 dark:border-violet-700' },
+  BOT_UPDATE: { label: 'Update Bot', color: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700' },
+  BOT_DELETE: { label: 'Delete Bot', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-700' },
+  BOT_APIKEY_VIEWED: { label: 'API Key Viewed', color: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-700' },
+  USER_CREATE: { label: 'Create User', color: 'text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 border-violet-200 dark:border-violet-700' },
+  USER_UPDATE: { label: 'Update User', color: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700' },
+  USER_DELETE: { label: 'Delete User', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-700' },
+  KNOWLEDGE_UPLOAD: { label: 'Upload File', color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700' },
+  KNOWLEDGE_DELETE: { label: 'Delete File', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-700' },
+  EXPORT_CHATS: { label: 'Export CSV', color: 'text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/30 border-sky-200 dark:border-sky-700' },
+  AI_RESPONSE: { label: 'AI Response', color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700' },
+  AI_RESPONSE_EMPTY: { label: '⚠️ Empty Response', color: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-700' },
+  AI_RESPONSE_ERROR: { label: '❌ AI Error', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-700' },
+  IMAGE_GENERATE: { label: 'Image Generated', color: 'text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-900/30 border-pink-200 dark:border-pink-700' },
 };
 
 function TokenPanel({ detail }) {
@@ -315,26 +319,26 @@ function TokenPanel({ detail }) {
   return (
     <div className="space-y-1.5">
       {isWarning && (
-        <div className="flex items-start gap-1.5 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1.5">
+        <div className="flex items-start gap-1.5 bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 rounded-lg px-2 py-1.5">
           <span className="text-orange-500 text-xs flex-shrink-0">⚠️</span>
-          <span className="text-[10px] text-orange-700 font-medium leading-tight">
+          <span className="text-[10px] text-orange-700 dark:text-orange-300 font-medium leading-tight">
             {detail.emptyResponse
-              ? `Empty response — reasoning used ${(t.reasoning||0).toLocaleString()} / ${detail.maxTokensConfig?.toLocaleString()} tokens. Increase Max Tokens to ${Math.ceil((detail.maxTokensConfig||2000)*2).toLocaleString()}+`
+              ? `Empty response — reasoning used ${(t.reasoning || 0).toLocaleString()} / ${detail.maxTokensConfig?.toLocaleString()} tokens. Increase Max Tokens to ${Math.ceil((detail.maxTokensConfig || 2000) * 2).toLocaleString()}+`
               : detail.warning}
           </span>
         </div>
       )}
       <div className="flex flex-wrap gap-1.5">
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">📥 {(t.prompt||0).toLocaleString()} prompt</span>
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">📤 {(t.completion||0).toLocaleString()} completion</span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">📥 {(t.prompt || 0).toLocaleString()} prompt</span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">📤 {(t.completion || 0).toLocaleString()} completion</span>
         {hasReasoning && (
-          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${isWarning ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-violet-50 text-violet-700 border-violet-200'}`}>🧠 {(t.reasoning||0).toLocaleString()} reasoning</span>
+          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${isWarning ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-700'}`}>🧠 {(t.reasoning || 0).toLocaleString()} reasoning</span>
         )}
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">Σ {(t.total||0).toLocaleString()} total</span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-700">Σ {(t.total || 0).toLocaleString()} total</span>
       </div>
-      <div className="flex items-center gap-2 text-[10px] text-gray-500">
-        <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">{detail.model||'?'}</span>
-        {detail.durationMs && <span>⏱ {(detail.durationMs/1000).toFixed(1)}s</span>}
+      <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+        <span className="font-mono bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">{detail.model || '?'}</span>
+        {detail.durationMs && <span>⏱ {(detail.durationMs / 1000).toFixed(1)}s</span>}
         {detail.maxTokensConfig && <span className="opacity-60">limit: {detail.maxTokensConfig.toLocaleString()}</span>}
       </div>
     </div>
@@ -343,27 +347,27 @@ function TokenPanel({ detail }) {
 
 function DetailPanel({ detail, action }) {
   if (!detail) return <span className="text-gray-400 italic text-[10px]">—</span>;
-  if (['AI_RESPONSE','AI_RESPONSE_EMPTY','AI_RESPONSE_ERROR'].includes(action)) return <TokenPanel detail={detail} />;
+  if (['AI_RESPONSE', 'AI_RESPONSE_EMPTY', 'AI_RESPONSE_ERROR'].includes(action)) return <TokenPanel detail={detail} />;
   if (action === 'IMAGE_GENERATE') {
     return (
       <div className="flex items-center gap-2 text-[10px]">
         <span>🎨</span>
-        <span className="font-medium text-gray-700 truncate max-w-[180px]">{detail.prompt||'—'}</span>
-        {detail.durationMs && <span className="text-gray-500">⏱ {(detail.durationMs/1000).toFixed(1)}s</span>}
+        <span className="font-medium text-gray-700 dark:text-gray-200 truncate max-w-[180px]">{detail.prompt || '—'}</span>
+        {detail.durationMs && <span className="text-gray-500 dark:text-gray-400">⏱ {(detail.durationMs / 1000).toFixed(1)}s</span>}
       </div>
     );
   }
   if (action === 'BOT_UPDATE' && detail.before && detail.after) {
     const changed = Object.keys(detail.before).filter(k => JSON.stringify(detail.before[k]) !== JSON.stringify(detail.after[k]));
-    if (!changed.length) return <span className="text-[10px] text-gray-500">No changes</span>;
+    if (!changed.length) return <span className="text-[10px] text-gray-500 dark:text-gray-400">No changes</span>;
     return (
       <div className="space-y-0.5">
         {changed.map(k => (
           <div key={k} className="flex items-start gap-1.5 text-[10px]">
-            <span className="font-bold text-gray-500 capitalize min-w-[72px]">{k}:</span>
-            <span className="line-through text-red-400 truncate max-w-[60px]">{String(detail.before[k]??'—')}</span>
+            <span className="font-bold text-gray-500 dark:text-gray-400 capitalize min-w-[72px]">{k}:</span>
+            <span className="line-through text-red-400 truncate max-w-[60px]">{String(detail.before[k] ?? '—')}</span>
             <span className="text-gray-400">→</span>
-            <span className="text-emerald-600 font-medium truncate max-w-[60px]">{String(detail.after[k]??'—')}</span>
+            <span className="text-emerald-600 font-medium truncate max-w-[60px]">{String(detail.after[k] ?? '—')}</span>
           </div>
         ))}
       </div>
@@ -371,16 +375,16 @@ function DetailPanel({ detail, action }) {
   }
   if (action === 'USER_UPDATE') {
     const lines = [];
-    if (detail.before?.isAdmin !== detail.after?.isAdmin) lines.push({ key:'Admin', before:String(detail.before?.isAdmin), after:String(detail.after?.isAdmin) });
-    if (detail.before?.isBotCreator !== detail.after?.isBotCreator) lines.push({ key:'Bot Creator', before:String(detail.before?.isBotCreator), after:String(detail.after?.isBotCreator) });
-    if (detail.before?.assignedBotsCount !== detail.after?.assignedBotsCount) lines.push({ key:'Bots', before:`${detail.before?.assignedBotsCount}`, after:`${detail.after?.assignedBotsCount}` });
-    if (detail.passwordChanged) lines.push({ key:'Password', before:'••••••', after:'(changed)' });
-    if (!lines.length) return <span className="text-[10px] text-gray-500">No changes</span>;
+    if (detail.before?.isAdmin !== detail.after?.isAdmin) lines.push({ key: 'Admin', before: String(detail.before?.isAdmin), after: String(detail.after?.isAdmin) });
+    if (detail.before?.isBotCreator !== detail.after?.isBotCreator) lines.push({ key: 'Bot Creator', before: String(detail.before?.isBotCreator), after: String(detail.after?.isBotCreator) });
+    if (detail.before?.assignedBotsCount !== detail.after?.assignedBotsCount) lines.push({ key: 'Bots', before: `${detail.before?.assignedBotsCount}`, after: `${detail.after?.assignedBotsCount}` });
+    if (detail.passwordChanged) lines.push({ key: 'Password', before: '••••••', after: '(changed)' });
+    if (!lines.length) return <span className="text-[10px] text-gray-500 dark:text-gray-400">No changes</span>;
     return (
       <div className="space-y-0.5">
         {lines.map(l => (
           <div key={l.key} className="flex items-center gap-1.5 text-[10px]">
-            <span className="font-bold text-gray-500 min-w-[60px]">{l.key}:</span>
+            <span className="font-bold text-gray-500 dark:text-gray-400 min-w-[60px]">{l.key}:</span>
             <span className="line-through text-red-400">{l.before}</span>
             <span className="text-gray-400">→</span>
             <span className="text-emerald-600 font-medium">{l.after}</span>
@@ -392,24 +396,24 @@ function DetailPanel({ detail, action }) {
   if (action === 'KNOWLEDGE_UPLOAD' && detail.files) {
     return (
       <div className="space-y-0.5">
-        {detail.files.map((f,i) => (
-          <div key={i} className="text-[10px] text-gray-500 flex items-center gap-1">
-            <span>📄</span><span className="font-medium text-gray-700">{f.name}</span><span>({fmtSize(f.size)})</span>
+        {detail.files.map((f, i) => (
+          <div key={i} className="text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <span>📄</span><span className="font-medium text-gray-700 dark:text-gray-200">{f.name}</span><span>({fmtSize(f.size)})</span>
           </div>
         ))}
       </div>
     );
   }
   if (action === 'EXPORT_CHATS') {
-    return <span className="text-[10px] text-gray-500">{detail.filter==='all'?'All time':detail.filter} · {detail.totalRows} rows</span>;
+    return <span className="text-[10px] text-gray-500 dark:text-gray-400">{detail.filter === 'all' ? 'All time' : detail.filter} · {detail.totalRows} rows</span>;
   }
-  const entries = Object.entries(detail).filter(([k]) => !['before','after','tokens'].includes(k));
-  if (!entries.length) return <span className="text-[10px] text-gray-500 italic">—</span>;
+  const entries = Object.entries(detail).filter(([k]) => !['before', 'after', 'tokens'].includes(k));
+  if (!entries.length) return <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">—</span>;
   return (
     <div className="flex flex-wrap gap-1.5">
-      {entries.slice(0,4).map(([k,v]) => (
-        <span key={k} className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
-          <span className="font-bold text-gray-600">{k}:</span> {String(v).substring(0,30)}
+      {entries.slice(0, 4).map(([k, v]) => (
+        <span key={k} className="text-[10px] bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">
+          <span className="font-bold text-gray-600 dark:text-gray-300">{k}:</span> {String(v).substring(0, 30)}
         </span>
       ))}
     </div>
@@ -459,8 +463,8 @@ function GatewayTab({ bots, baseUrl }) {
   const [copiedKey, setCopiedKey] = useState({});
 
   const externalBots = bots.filter(b => b.aiProvider?.provider === 'external');
-  const activeBotId  = selectedBot?._id || bots[0]?._id || '';
-  const activeBot    = selectedBot || bots[0] || null;
+  const activeBotId = selectedBot?._id || bots[0]?._id || '';
+  const activeBot = selectedBot || bots[0] || null;
 
 
   const handleRevealKey = async (bot) => {
@@ -568,15 +572,15 @@ console.log(response);` : '// Select a bot above';
       {/* Header */}
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-blue-900 rounded-2xl p-6 text-white shadow-lg">
         <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-2xl flex-shrink-0">🌐</div>
+          <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800/10 flex items-center justify-center text-2xl flex-shrink-0">🌐</div>
           <div>
             <h2 className="text-xl font-bold">API Gateway</h2>
             <p className="text-indigo-200 text-sm mt-1">Use your portal bots as an external API. Any system can send messages and receive AI responses via HTTP.</p>
             <div className="flex gap-2 mt-3 flex-wrap">
-              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">✅ REST API</span>
-              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">🔐 API Key Auth</span>
-              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">💬 Thread Support</span>
-              <span className="bg-white/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">📄 Multi-language Examples</span>
+              <span className="bg-white dark:bg-slate-800/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">✅ REST API</span>
+              <span className="bg-white dark:bg-slate-800/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">🔐 API Key Auth</span>
+              <span className="bg-white dark:bg-slate-800/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">💬 Thread Support</span>
+              <span className="bg-white dark:bg-slate-800/10 border border-white/20 text-xs font-semibold px-2.5 py-1 rounded-full">📄 Multi-language Examples</span>
             </div>
           </div>
         </div>
@@ -586,28 +590,28 @@ console.log(response);` : '// Select a bot above';
         {/* Left: Bot selector + API keys */}
         <div className="space-y-4">
           {/* Portal API Keys Panel */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-              <h3 className="font-bold text-sm text-gray-800">🔑 Portal API Keys</h3>
-              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">{bots.length} bots</span>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="font-bold text-sm text-gray-800 dark:text-gray-100">🔑 Portal API Keys</h3>
+              <span className="text-[10px] bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 px-2 py-0.5 rounded-full font-bold">{bots.length} bots</span>
             </div>
             <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
               {bots.map(bot => (
                 <div key={bot._id}
                   onClick={() => setSelectedBot(bot)}
-                  className={`p-3 cursor-pointer hover:bg-gray-50 transition-colors ${activeBotId === bot._id ? 'bg-indigo-50 border-l-2 border-indigo-500' : ''}`}>
+                  className={`p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors ${activeBotId === bot._id ? 'bg-indigo-50 dark:bg-indigo-900/30 border-l-2 border-indigo-500' : ''}`}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2">
                       <span className="text-base">{bot.avatar?.emoji || '🤖'}</span>
-                      <span className="text-xs font-bold text-gray-800 truncate max-w-[100px]">{bot.name}</span>
+                      <span className="text-xs font-bold text-gray-800 dark:text-gray-100 truncate max-w-[100px]">{bot.name}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       {bot.aiProvider?.provider === 'external' && (
-                        <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold">🌐 EXT</span>
+                        <span className="text-[9px] bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded-full font-bold">🌐 EXT</span>
                       )}
                       {bot.botApiKey
-                        ? <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-bold">✅ KEY</span>
-                        : <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold">⚠️ NO KEY</span>
+                        ? <span className="text-[9px] bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✅ KEY</span>
+                        : <span className="text-[9px] bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 px-1.5 py-0.5 rounded-full font-bold">⚠️ NO KEY</span>
                       }
                     </div>
                   </div>
@@ -615,17 +619,17 @@ console.log(response);` : '// Select a bot above';
                     <div className="flex gap-1 mt-1.5">
                       {revealedKey[bot._id] ? (
                         <>
-                          <code className="flex-1 text-[9px] font-mono bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg break-all border border-emerald-200">
+                          <code className="flex-1 text-[9px] font-mono bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-1 rounded-lg break-all border border-emerald-200 dark:border-emerald-700">
                             {revealedKey[bot._id]}
                           </code>
                           <button onClick={e => { e.stopPropagation(); handleCopyKey(revealedKey[bot._id], bot._id); }}
-                            className={`flex-shrink-0 text-[9px] px-2 py-1 rounded-lg font-bold transition-colors ${copiedKey[bot._id] ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                            className={`flex-shrink-0 text-[9px] px-2 py-1 rounded-lg font-bold transition-colors ${copiedKey[bot._id] ? 'bg-emerald-500 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200'}`}>
                             {copiedKey[bot._id] ? '✓' : '⎘'}
                           </button>
                         </>
                       ) : (
                         <button onClick={e => { e.stopPropagation(); handleRevealKey(bot); }}
-                          className="text-[9px] px-2 py-1 bg-blue-50 text-blue-700 rounded-lg font-bold hover:bg-blue-100 transition-colors">
+                          className="text-[9px] px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
                           👁 Reveal Key
                         </button>
                       )}
@@ -641,26 +645,26 @@ console.log(response);` : '// Select a bot above';
 
           {/* External Integrations Monitor */}
           {externalBots.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-50">
-                <h3 className="font-bold text-sm text-gray-800">🌐 External Integrations</h3>
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+                <h3 className="font-bold text-sm text-gray-800 dark:text-gray-100">🌐 External Integrations</h3>
                 <p className="text-[10px] text-gray-400 mt-0.5">Bots using an external HTTP endpoint</p>
               </div>
-              <div className="divide-y divide-gray-50">
+              <div className="divide-y divide-gray-100 dark:divide-slate-700">
                 {externalBots.map(bot => (
                   <div key={bot._id} className="p-3 space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-800">{bot.avatar?.emoji || '🤖'} {bot.name}</span>
-                      <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold border border-indigo-200">🌐 PROXY</span>
+                      <span className="text-xs font-bold text-gray-800 dark:text-gray-100">{bot.avatar?.emoji || '🤖'} {bot.name}</span>
+                      <span className="text-[9px] bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded-full font-bold border border-indigo-200 dark:border-indigo-700">🌐 PROXY</span>
                     </div>
-                    <div className="text-[9px] font-mono bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 text-gray-500 truncate">
+                    <div className="text-[9px] font-mono bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-lg px-2 py-1 text-gray-500 dark:text-gray-400 truncate">
                       {bot.aiProvider?.endpoint || 'No URL configured'}
                     </div>
                     <div className="flex gap-1.5">
-                      <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                      <span className="text-[9px] bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-full">
                         {bot.aiProvider?.apiKeyHeader === 'Authorization' ? 'Bearer' : bot.aiProvider?.apiKeyHeader || 'Authorization'}
                       </span>
-                      <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                      <span className="text-[9px] bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-full">
                         {bot.aiProvider?.requestFormat || 'openai'} format
                       </span>
                     </div>
@@ -674,47 +678,47 @@ console.log(response);` : '// Select a bot above';
         {/* Right: Documentation + Test */}
         <div className="lg:col-span-2 space-y-5">
           {/* Bot selector for docs */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm p-4">
             <div className="flex items-center gap-3 mb-3">
-              <span className="text-sm font-bold text-gray-700">📖 Usage Documentation</span>
+              <span className="text-sm font-bold text-gray-700 dark:text-gray-200">📖 Usage Documentation</span>
               <select
                 value={activeBotId}
                 onChange={e => setSelectedBot(bots.find(b => b._id === e.target.value) || null)}
-                className="ml-auto text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400 bg-gray-50">
+                className="ml-auto text-xs border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400 bg-gray-50 dark:bg-slate-900/50">
                 {bots.map(b => <option key={b._id} value={b._id}>{b.avatar?.emoji || '🤖'} {b.name}</option>)}
               </select>
             </div>
 
             {/* Info boxes */}
             <div className="grid grid-cols-2 gap-2 mb-4">
-              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
-                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Endpoint</p>
-                <code className="text-[10px] font-mono text-gray-700 break-all">{baseUrl}/api/chat/external</code>
+              <div className="bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl p-3">
+                <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Endpoint</p>
+                <code className="text-[10px] font-mono text-gray-700 dark:text-gray-200 break-all">{baseUrl}/api/chat/external</code>
               </div>
-              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+              <div className="bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-xl p-3">
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Method</p>
-                <code className="text-[10px] font-mono text-emerald-700 font-bold">POST</code>
+                <code className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 font-bold">POST</code>
               </div>
-              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+              <div className="bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-xl p-3">
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Auth Header</p>
-                <code className="text-[10px] font-mono text-indigo-700">x-api-key: YOUR_KEY</code>
+                <code className="text-[10px] font-mono text-indigo-700 dark:text-indigo-300">x-api-key: YOUR_KEY</code>
               </div>
-              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+              <div className="bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-xl p-3">
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Bot ID</p>
-                <code className="text-[10px] font-mono text-gray-600 break-all">{activeBotId || '—'}</code>
+                <code className="text-[10px] font-mono text-gray-600 dark:text-gray-300 break-all">{activeBotId || '—'}</code>
               </div>
             </div>
 
             {/* Code tabs */}
             <div className="flex gap-1.5 mb-3 flex-wrap">
               {[
-                { id: 'curl',       label: '⬛ cURL',      badge: null },
-                { id: 'python',     label: '🐍 Python',    badge: null },
+                { id: 'curl', label: '⬛ cURL', badge: null },
+                { id: 'python', label: '🐍 Python', badge: null },
                 { id: 'javascript', label: '🟨 JavaScript', badge: null },
                 { id: 'typescript', label: '🔷 TypeScript', badge: 'TS' },
               ].map(t => (
                 <button key={t.id} onClick={() => setCodeTab(t.id)}
-                  className={`relative px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border-2 ${codeTab === t.id ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
+                  className={`relative px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border-2 ${codeTab === t.id ? 'bg-gray-900 text-white border-gray-900' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:border-slate-600'}`}>
                   {t.label}
                   {t.badge && <span className="absolute -top-1.5 -right-1 bg-blue-500 text-white text-[8px] font-black px-1 py-0.5 rounded-full">{t.badge}</span>}
                 </button>
@@ -725,7 +729,7 @@ console.log(response);` : '// Select a bot above';
 
             {/* Response schema */}
             <div className="mt-3">
-              <p className="text-[10px] font-bold text-gray-500 mb-1.5">📤 Response Schema</p>
+              <p className="text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1.5">📤 Response Schema</p>
               <SyntaxCode lang="json" code={`{
   "response": "AI bot's reply text here",
   "threadId": "67abc123...",   // Use this to continue the conversation
@@ -735,9 +739,9 @@ console.log(response);` : '// Select a bot above';
           </div>
 
           {/* Live Test Panel */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-50">
-              <h3 className="font-bold text-sm text-gray-800">🧪 Live Test Panel</h3>
+              <h3 className="font-bold text-sm text-gray-800 dark:text-gray-100">🧪 Live Test Panel</h3>
               <p className="text-[10px] text-gray-400 mt-0.5">Test your bot's external API directly from here</p>
             </div>
             <div className="p-4 space-y-3">
@@ -745,11 +749,11 @@ console.log(response);` : '// Select a bot above';
                 <select
                   value={activeBotId}
                   onChange={e => setSelectedBot(bots.find(b => b._id === e.target.value) || null)}
-                  className="text-xs border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-400 bg-gray-50 flex-shrink-0">
+                  className="text-xs border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 outline-none focus:border-indigo-400 bg-gray-50 dark:bg-slate-900/50 flex-shrink-0">
                   {bots.map(b => <option key={b._id} value={b._id}>{b.avatar?.emoji || '🤖'} {b.name}</option>)}
                 </select>
                 <input
-                  className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-400 transition-colors"
+                  className="flex-1 text-sm bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 outline-none focus:border-indigo-400 transition-colors"
                   placeholder="Type a test message..."
                   value={testMessage}
                   onChange={e => setTestMessage(e.target.value)}
@@ -757,12 +761,12 @@ console.log(response);` : '// Select a bot above';
                 />
                 <button onClick={handleTest} disabled={testing || !activeBot?.botApiKey}
                   className="flex-shrink-0 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5">
-                  {testing ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Testing...</> : '▶ Send'}
+                  {testing ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Testing...</> : '▶ Send'}
                 </button>
               </div>
 
               {!activeBot?.botApiKey && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-[10px] text-amber-700 font-medium">
+                <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-xl px-3 py-2 text-[10px] text-amber-700 font-medium">
                   ⚠️ This bot has no API Key. Go to Bots tab → Edit bot → generate a key first.
                 </div>
               )}
@@ -777,8 +781,8 @@ console.log(response);` : '// Select a bot above';
           </div>
 
           {/* Quick Reference */}
-          <div className="bg-gradient-to-br from-slate-50 to-gray-50 border border-gray-200 rounded-2xl p-4">
-            <h3 className="font-bold text-sm text-gray-800 mb-3">📚 Request Body Reference</h3>
+          <div className="bg-gradient-to-br from-slate-50 to-gray-50 border border-gray-200 dark:border-slate-700 rounded-2xl p-4">
+            <h3 className="font-bold text-sm text-gray-800 dark:text-gray-100 mb-3">📚 Request Body Reference</h3>
             <SyntaxCode lang="json" code={`{
   "botId":    "${activeBotId || 'your-bot-id'}",  // Required — Bot ID from the panel
   "message":  "User's message text",               // Required
@@ -786,12 +790,12 @@ console.log(response);` : '// Select a bot above';
   "history":  []                                    // Optional — manual history override
 }`} />
             <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
-              <div className="bg-white border border-gray-100 rounded-xl p-2.5">
-                <p className="font-bold text-gray-600 mb-1">Rate Limits</p>
+              <div className="bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl p-2.5">
+                <p className="font-bold text-gray-600 dark:text-gray-300 mb-1">Rate Limits</p>
                 <p className="text-gray-400">Same as portal chat limits. No separate rate limit for external API.</p>
               </div>
-              <div className="bg-white border border-gray-100 rounded-xl p-2.5">
-                <p className="font-bold text-gray-600 mb-1">Security</p>
+              <div className="bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl p-2.5">
+                <p className="font-bold text-gray-600 dark:text-gray-300 mb-1">Security</p>
                 <p className="text-gray-400">API Keys are scoped per-bot. Regenerate anytime in bot settings.</p>
               </div>
             </div>
@@ -809,35 +813,35 @@ function AdminDashboard({ user, handleLogout }) {
 
   const navigate = useNavigate();
   const { isDark, toggle: toggleDark } = useDarkMode();
-  const [activeTab, setActiveTab]   = useState('dashboard');
-  const [stats, setStats]           = useState(null);
-  const [users, setUsers]           = useState([]);
-  const [bots,  setBots]            = useState([]);
-  const [chatLogs, setChatLogs]         = useState([]);
-  const [logPage, setLogPage]           = useState(1);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [stats, setStats] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [bots, setBots] = useState([]);
+  const [chatLogs, setChatLogs] = useState([]);
+  const [logPage, setLogPage] = useState(1);
   const [logTotalPages, setLogTotalPages] = useState(1);
-  const [logTotal, setLogTotal]         = useState(0);
-  const [loading, setLoading]           = useState(false);
+  const [logTotal, setLogTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [exportFilter, setExportFilter] = useState('');
   // Chat Logs search/filter state
-  const [chatSearch, setChatSearch]     = useState('');
-  const [chatRole, setChatRole]         = useState('');
+  const [chatSearch, setChatSearch] = useState('');
+  const [chatRole, setChatRole] = useState('');
   const [chatDateFrom, setChatDateFrom] = useState('');
-  const [chatDateTo, setChatDateTo]     = useState('');
+  const [chatDateTo, setChatDateTo] = useState('');
   const [chatBotFilter, setChatBotFilter] = useState('');
 
   const [showBotModal, setShowBotModal] = useState(false);
-  const [editingBot,   setEditingBot]   = useState(null);
-  const [botForm,      setBotForm]      = useState(initialBotState);
-  const [botModalTab,  setBotModalTab]  = useState('basic');
-  const [testAIState,  setTestAIState]  = useState(null);
+  const [editingBot, setEditingBot] = useState(null);
+  const [botForm, setBotForm] = useState(initialBotState);
+  const [botModalTab, setBotModalTab] = useState('basic');
+  const [testAIState, setTestAIState] = useState(null);
   const [onedriveTestState, setOnedriveTestState] = useState(null);
   const [knowledgeUploading, setKnowledgeUploading] = useState(false);
-  const [knowledgeFiles,     setKnowledgeFiles]     = useState([]);
+  const [knowledgeFiles, setKnowledgeFiles] = useState([]);
   const knowledgeInputRef = useRef(null);
 
   const [showUserModal, setShowUserModal] = useState(false);
-  const [editingUser,   setEditingUser]   = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
   const [userForm, setUserForm] = useState({ username: '', password: '', isAdmin: false, isBotCreator: false, assignedBots: [] });
 
   const [avatarPickerBot, setAvatarPickerBot] = useState(null);
@@ -845,44 +849,44 @@ function AdminDashboard({ user, handleLogout }) {
   const [embedBot, setEmbedBot] = useState(null);
 
   // Audit Trail state
-  const [auditLogs,       setAuditLogs]       = useState([]);
-  const [auditPage,       setAuditPage]       = useState(1);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditPage, setAuditPage] = useState(1);
   const [auditTotalPages, setAuditTotalPages] = useState(1);
-  const [auditTotal,      setAuditTotal]      = useState(0);
-  const [auditLoading,    setAuditLoading]    = useState(false);
-  const [auditCategory,   setAuditCategory]   = useState('');
-  const [auditSearch,     setAuditSearch]     = useState('');
-  const [auditDateFrom,   setAuditDateFrom]   = useState('');
-  const [auditDateTo,     setAuditDateTo]     = useState('');
-  const [auditExpanded,   setAuditExpanded]   = useState(null);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditCategory, setAuditCategory] = useState('');
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditDateFrom, setAuditDateFrom] = useState('');
+  const [auditDateTo, setAuditDateTo] = useState('');
+  const [auditExpanded, setAuditExpanded] = useState(null);
   const [auditTokenStats, setAuditTokenStats] = useState(null);
 
   // Token Usage Monitoring state
-  const [tokenStats,        setTokenStats]        = useState(null);
-  const [tokenLoading,      setTokenLoading]      = useState(false);
-  const [tokenDateFrom,     setTokenDateFrom]      = useState('');
-  const [tokenDateTo,       setTokenDateTo]        = useState('');
-  const [tokenProvider,     setTokenProvider]     = useState('');
-  const [tokenModel,        setTokenModel]        = useState('');
+  const [tokenStats, setTokenStats] = useState(null);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenDateFrom, setTokenDateFrom] = useState('');
+  const [tokenDateTo, setTokenDateTo] = useState('');
+  const [tokenProvider, setTokenProvider] = useState('');
+  const [tokenModel, setTokenModel] = useState('');
 
   useEffect(() => { fetchStats(); fetchBots(); if (user?.isAdmin) fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'chats' && user?.isAdmin) fetchChatLogs(); }, [activeTab, logPage, chatSearch, chatRole, chatDateFrom, chatDateTo, chatBotFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'audit' && user?.isAdmin) fetchAuditLogs(); }, [activeTab, auditPage, auditCategory]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'tokens' && user?.isAdmin) fetchTokenStats(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchStats    = async () => { try { const r = await axios.get('/api/admin/stats'); setStats(r.data); } catch {} };
-  const fetchUsers    = async () => { if (!user?.isAdmin) return; try { const r = await axios.get('/api/admin/users'); setUsers(r.data.users || []); } catch {} };
-  const fetchBots     = async () => { try { const r = await axios.get('/api/admin/bots'); setBots(Array.isArray(r.data) ? r.data : r.data.bots || []); } catch {} };
+  const fetchStats = async () => { try { const r = await axios.get('/api/admin/stats'); setStats(r.data); } catch { } };
+  const fetchUsers = async () => { if (!user?.isAdmin) return; try { const r = await axios.get('/api/admin/users'); setUsers(r.data.users || []); } catch { } };
+  const fetchBots = async () => { try { const r = await axios.get('/api/admin/bots'); setBots(Array.isArray(r.data) ? r.data : r.data.bots || []); } catch { } };
   const fetchChatLogs = async () => {
     if (!user?.isAdmin) return;
     setLoading(true);
     try {
       const p = new URLSearchParams({ page: logPage, limit: 20 });
-      if (chatSearch)    p.set('search',   chatSearch);
-      if (chatRole)      p.set('role',     chatRole);
-      if (chatDateFrom)  p.set('dateFrom', chatDateFrom);
-      if (chatDateTo)    p.set('dateTo',   chatDateTo);
-      if (chatBotFilter) p.set('botId',    chatBotFilter);
+      if (chatSearch) p.set('search', chatSearch);
+      if (chatRole) p.set('role', chatRole);
+      if (chatDateFrom) p.set('dateFrom', chatDateFrom);
+      if (chatDateTo) p.set('dateTo', chatDateTo);
+      if (chatBotFilter) p.set('botId', chatBotFilter);
       const r = await axios.get(`/api/admin/chat-logs?${p}`);
       setChatLogs(r.data.chats || []);
       setLogTotalPages(r.data.totalPages || 1);
@@ -901,9 +905,9 @@ function AdminDashboard({ user, handleLogout }) {
     try {
       const p = new URLSearchParams({ page: auditPage, limit: 30 });
       if (auditCategory) p.set('category', auditCategory);
-      if (auditSearch)   p.set('search',   auditSearch);
-      if (auditDateFrom) p.set('dateFrom',  auditDateFrom);
-      if (auditDateTo)   p.set('dateTo',    auditDateTo);
+      if (auditSearch) p.set('search', auditSearch);
+      if (auditDateFrom) p.set('dateFrom', auditDateFrom);
+      if (auditDateTo) p.set('dateTo', auditDateTo);
       const r = await axios.get(`/api/admin/audit-logs?${p}`);
       const logs = r.data.logs || [];
       setAuditLogs(logs);
@@ -912,17 +916,17 @@ function AdminDashboard({ user, handleLogout }) {
       const chatRows = logs.filter(l => l.category === 'chat' && l.detail?.tokens);
       if (chatRows.length > 0) {
         setAuditTokenStats({
-          total:       chatRows.reduce((s,l) => s + (l.detail.tokens.total     || 0), 0),
-          reasoning:   chatRows.reduce((s,l) => s + (l.detail.tokens.reasoning || 0), 0),
-          emptyCount:  chatRows.filter(l => l.action === 'AI_RESPONSE_EMPTY').length,
+          total: chatRows.reduce((s, l) => s + (l.detail.tokens.total || 0), 0),
+          reasoning: chatRows.reduce((s, l) => s + (l.detail.tokens.reasoning || 0), 0),
+          emptyCount: chatRows.filter(l => l.action === 'AI_RESPONSE_EMPTY').length,
           sampleCount: chatRows.length,
         });
       } else { setAuditTokenStats(null); }
-    } catch {} finally { setAuditLoading(false); }
+    } catch { } finally { setAuditLoading(false); }
   };
 
   const handleAuditSearch = () => { setAuditPage(1); fetchAuditLogs(); };
-  const handleAuditReset  = () => {
+  const handleAuditReset = () => {
     setAuditCategory(''); setAuditSearch(''); setAuditDateFrom(''); setAuditDateTo('');
     setAuditPage(1); setAuditTokenStats(null);
     setTimeout(fetchAuditLogs, 50);
@@ -934,9 +938,9 @@ function AdminDashboard({ user, handleLogout }) {
     try {
       const p = new URLSearchParams();
       if (tokenDateFrom) p.set('dateFrom', tokenDateFrom);
-      if (tokenDateTo)   p.set('dateTo',   tokenDateTo);
+      if (tokenDateTo) p.set('dateTo', tokenDateTo);
       if (tokenProvider) p.set('provider', tokenProvider);
-      if (tokenModel)    p.set('model',    tokenModel);
+      if (tokenModel) p.set('model', tokenModel);
       const r = await axios.get(`/api/admin/token-stats?${p}`);
       setTokenStats(r.data);
     } catch (e) {
@@ -957,20 +961,20 @@ function AdminDashboard({ user, handleLogout }) {
     setEditingBot(bot);
 
     const wahaConfigForForm = {
-      enabled:        bot.wahaConfig?.enabled        || false,
-      endpoint:       bot.wahaConfig?.endpoint       || '',
-      session:        bot.wahaConfig?.session        || 'default',
-      apiKey:         bot.wahaConfig?.apiKey         || '',
+      enabled: bot.wahaConfig?.enabled || false,
+      endpoint: bot.wahaConfig?.endpoint || '',
+      session: bot.wahaConfig?.session || 'default',
+      apiKey: bot.wahaConfig?.apiKey || '',
       webhookEnabled: bot.wahaConfig?.webhookEnabled || false,
-      webhookSecret:  bot.wahaConfig?.webhookSecret  || '',
+      webhookSecret: bot.wahaConfig?.webhookSecret || '',
       botPhoneNumber: bot.wahaConfig?.botPhoneNumber || '',
-      targets:        bot.wahaConfig?.targets        || [],
-      schedules:      bot.wahaConfig?.schedules      || [],
+      targets: bot.wahaConfig?.targets || [],
+      schedules: bot.wahaConfig?.schedules || [],
       chatId: bot.wahaConfig?.chatId || '',
       dailySchedule: {
         enabled: bot.wahaConfig?.dailySchedule?.enabled || false,
-        time:    bot.wahaConfig?.dailySchedule?.time    || '08:00',
-        prompt:  bot.wahaConfig?.dailySchedule?.prompt  || '',
+        time: bot.wahaConfig?.dailySchedule?.time || '08:00',
+        prompt: bot.wahaConfig?.dailySchedule?.prompt || '',
       },
     };
 
@@ -986,27 +990,27 @@ function AdminDashboard({ user, handleLogout }) {
       pptTemplateFileId: bot.pptTemplateFileId || null,
 
       aiProvider: {
-        provider:      bot.aiProvider?.provider      || 'openai',
-        model:         bot.aiProvider?.model         || 'gpt-4o',
-        apiKey:        bot.aiProvider?.apiKey        || '',
-        endpoint:      bot.aiProvider?.endpoint      || '',
-        apiVersion:    bot.aiProvider?.apiVersion    || '',
-        temperature:   bot.aiProvider?.temperature   ?? 0.1,
-        maxTokens:     bot.aiProvider?.maxTokens     ?? 2000,
-        apiKeyHeader:  bot.aiProvider?.apiKeyHeader  || 'Authorization',
+        provider: bot.aiProvider?.provider || 'openai',
+        model: bot.aiProvider?.model || 'gpt-4o',
+        apiKey: bot.aiProvider?.apiKey || '',
+        endpoint: bot.aiProvider?.endpoint || '',
+        apiVersion: bot.aiProvider?.apiVersion || '',
+        temperature: bot.aiProvider?.temperature ?? 0.1,
+        maxTokens: bot.aiProvider?.maxTokens ?? 2000,
+        apiKeyHeader: bot.aiProvider?.apiKeyHeader || 'Authorization',
         requestFormat: bot.aiProvider?.requestFormat || 'openai',
         responseField: bot.aiProvider?.responseField || '',
       },
 
       capabilities: {
-        webSearch:       bot.capabilities?.webSearch       || false,
+        webSearch: bot.capabilities?.webSearch || false,
         codeInterpreter: bot.capabilities?.codeInterpreter || false,
         imageGeneration: bot.capabilities?.imageGeneration || false,
-        canvas:          bot.capabilities?.canvas          || false,
-        fileSearch:      bot.capabilities?.fileSearch      || false,
+        canvas: bot.capabilities?.canvas || false,
+        fileSearch: bot.capabilities?.fileSearch || false,
       },
 
-      smartsheetConfig:  {
+      smartsheetConfig: {
         enabled: false, apiKey: '', sheetId: '',
         sheetIds: [], sheetLabels: [],
         ...bot.smartsheetConfig,
@@ -1016,9 +1020,9 @@ function AdminDashboard({ user, handleLogout }) {
           : (bot.smartsheetConfig?.sheetId ? [bot.smartsheetConfig.sheetId] : []),
         sheetLabels: bot.smartsheetConfig?.sheetLabels || [],
       },
-      kouventaConfig:    { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
+      kouventaConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.kouventaConfig },
       azureSearchConfig: { enabled: false, apiKey: '', endpoint: '', ...bot.azureSearchConfig },
-      onedriveConfig:    { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
+      onedriveConfig: { enabled: false, folderUrl: '', tenantId: '', clientId: '', clientSecret: '', ...bot.onedriveConfig },
 
       wahaConfig: wahaConfigForForm,
 
@@ -1041,7 +1045,7 @@ function AdminDashboard({ user, handleLogout }) {
         pptTemplateFileId: botForm.pptTemplateFileId
       };
       if (editingBot) await axios.put(`/api/admin/bots/${editingBot._id}`, cleanPayload);
-      else            await axios.post('/api/admin/bots', cleanPayload);
+      else await axios.post('/api/admin/bots', cleanPayload);
       setShowBotModal(false); fetchBots(); fetchStats();
     } catch (err) { alert(err.response?.data?.error || err.message); }
   };
@@ -1056,7 +1060,7 @@ function AdminDashboard({ user, handleLogout }) {
     try {
       let res;
       if (editingBot) { await axios.put(`/api/admin/bots/${editingBot._id}`, { ...botForm }); res = await axios.post(`/api/admin/bots/${editingBot._id}/test-ai`); }
-      else            { res = await axios.post('/api/admin/test-ai-config', botForm.aiProvider); }
+      else { res = await axios.post('/api/admin/test-ai-config', botForm.aiProvider); }
       setTestAIState(res.data);
     } catch (err) { setTestAIState({ ok: false, message: err.response?.data?.message || err.message }); }
   };
@@ -1088,7 +1092,7 @@ function AdminDashboard({ user, handleLogout }) {
       const res = await axios.post(`/api/admin/bots/${editingBot._id}/knowledge`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       alert(res.data.message);
       const updated = await axios.get('/api/admin/bots');
-      const fresh   = (Array.isArray(updated.data) ? updated.data : updated.data.bots || []).find(b => b._id === editingBot._id);
+      const fresh = (Array.isArray(updated.data) ? updated.data : updated.data.bots || []).find(b => b._id === editingBot._id);
       setKnowledgeFiles(fresh?.knowledgeFiles || []);
       setBots(Array.isArray(updated.data) ? updated.data : updated.data.bots || []);
     } catch (err) { alert('Upload failed: ' + (err.response?.data?.error || err.message)); }
@@ -1106,9 +1110,9 @@ function AdminDashboard({ user, handleLogout }) {
     if (editingBot?._id === updatedBot._id) { setEditingBot(updatedBot); setBotForm(p => ({ ...p, avatar: updatedBot.avatar })); }
   };
 
-  const addQuestion    = ()     => setBotForm({ ...botForm, starterQuestions: [...botForm.starterQuestions, ''] });
+  const addQuestion = () => setBotForm({ ...botForm, starterQuestions: [...botForm.starterQuestions, ''] });
   const updateQuestion = (i, v) => { const n = [...botForm.starterQuestions]; n[i] = v; setBotForm({ ...botForm, starterQuestions: n }); };
-  const removeQuestion = (i)    => setBotForm({ ...botForm, starterQuestions: botForm.starterQuestions.filter((_, idx) => idx !== i) });
+  const removeQuestion = (i) => setBotForm({ ...botForm, starterQuestions: botForm.starterQuestions.filter((_, idx) => idx !== i) });
 
   // User CRUD
   const handleEditUser = (u) => {
@@ -1120,7 +1124,7 @@ function AdminDashboard({ user, handleLogout }) {
     e.preventDefault();
     try {
       if (editingUser) await axios.put(`/api/admin/users/${editingUser._id}`, userForm);
-      else             await axios.post('/api/admin/users', userForm);
+      else await axios.post('/api/admin/users', userForm);
       setShowUserModal(false); fetchUsers(); fetchStats();
     } catch (err) { alert(err.response?.data?.error || err.message); }
   };
@@ -1144,7 +1148,7 @@ function AdminDashboard({ user, handleLogout }) {
     labels: stats?.activityTrend?.map(d => d._id) || [],
     datasets: [{ label: 'Messages', data: stats?.activityTrend?.map(d => d.count) || [], borderColor: '#007857', backgroundColor: 'rgba(0,120,87,0.08)', tension: 0.4, fill: true, pointBackgroundColor: '#004E36', pointRadius: 4, pointHoverRadius: 6, borderWidth: 2 }]
   };
-  const pieColors = ['#004E36','#007857','#48AE92','#6E6F72','#A5A7AA'];
+  const pieColors = ['#004E36', '#007857', '#48AE92', '#6E6F72', '#A5A7AA'];
   const pieChartData = {
     labels: stats?.botPopularity?.map(b => b.name) || [],
     datasets: [{ data: stats?.botPopularity?.map(b => b.count) || [], backgroundColor: pieColors, borderWidth: 3, borderColor: '#ffffff' }]
@@ -1152,10 +1156,10 @@ function AdminDashboard({ user, handleLogout }) {
 
   const currentProvider = botForm.aiProvider?.provider || 'openai';
   const availableModels = AI_PROVIDERS[currentProvider]?.models || [];
-  const modelGroups     = groupModelsByTier(availableModels);
-  const providerCaps    = AI_PROVIDERS[currentProvider]?.capabilities || []; // eslint-disable-line no-unused-vars
-  const filteredBots    = bots.filter(b => b.name.toLowerCase().includes(botSearch.toLowerCase()));
-  const activeCapCount  = Object.values(botForm.capabilities || {}).filter(Boolean).length;
+  const modelGroups = groupModelsByTier(availableModels);
+  const providerCaps = AI_PROVIDERS[currentProvider]?.capabilities || []; // eslint-disable-line no-unused-vars
+  const filteredBots = bots.filter(b => b.name.toLowerCase().includes(botSearch.toLowerCase()));
+  const activeCapCount = Object.values(botForm.capabilities || {}).filter(Boolean).length;
   const isReasoningOrGpt5 = /^(o\d|gpt-5)/.test(botForm.aiProvider?.model || '');
 
   // ── PATCH SECTION 3: isAzureEndpointDetected computed var ────
@@ -1172,19 +1176,19 @@ function AdminDashboard({ user, handleLogout }) {
       <nav className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <img src="/assets/gys-logo.webp" alt="GYS" className="h-9 w-auto" onError={e => e.target.style.display='none'} />
+            <img src="/assets/gys-logo.webp" alt="GYS" className="h-9 w-auto" onError={e => e.target.style.display = 'none'} />
             <div>
               <h1 className="text-base font-bold text-primary-dark leading-tight">GYS Admin Portal</h1>
               <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">AI Management Console</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1 rounded-full text-xs font-semibold">
+            <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full text-xs font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
               System Online
             </div>
-            <span className="text-xs text-gray-400 hidden md:block px-2 border-l border-gray-100">Hi, {user.username}</span>
-            <button onClick={() => navigate('/')} className="px-3 py-1.5 text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg border border-gray-200 font-medium transition-colors">← Back to Chat</button>
+            <span className="text-xs text-gray-400 hidden md:block px-2 border-l border-gray-100 dark:border-slate-700">Hi, {user.username}</span>
+            <button onClick={() => navigate('/')} className="px-3 py-1.5 text-xs bg-gray-50 dark:bg-slate-900/50 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-slate-700 font-medium transition-colors">← Back to Chat</button>
             <DarkModeToggle isDark={isDark} toggle={toggleDark} />
             <button onClick={handleLogout} className="px-3 py-1.5 text-xs bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-800 font-medium transition-colors">Logout</button>
           </div>
@@ -1192,18 +1196,17 @@ function AdminDashboard({ user, handleLogout }) {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-0.5 overflow-x-auto">
             {[
-              { id: 'dashboard', icon: '📊', label: 'Dashboard',   show: true },
-              { id: 'bots',      icon: '🤖', label: 'Bots',        show: true },
-              { id: 'users',     icon: '👥', label: 'User Access', show: user?.isAdmin },
-              { id: 'chats',     icon: '💬', label: 'Chat Logs',   show: user?.isAdmin },
-              { id: 'tokens',    icon: '🪙', label: 'Token Usage',  show: user?.isAdmin },
-              { id: 'audit',    icon: '🕵️', label: 'Audit Trail', show: user?.isAdmin },
-              { id: 'gateway',  icon: '🌐', label: 'API Gateway', show: user?.isAdmin },
+              { id: 'dashboard', icon: '📊', label: 'Dashboard', show: true },
+              { id: 'bots', icon: '🤖', label: 'Bots', show: true },
+              { id: 'users', icon: '👥', label: 'User Access', show: user?.isAdmin },
+              { id: 'chats', icon: '💬', label: 'Chat Logs', show: user?.isAdmin },
+              { id: 'tokens', icon: '🪙', label: 'Token Usage', show: user?.isAdmin },
+              { id: 'audit', icon: '🕵️', label: 'Audit Trail', show: user?.isAdmin },
+              { id: 'gateway', icon: '🌐', label: 'API Gateway', show: user?.isAdmin },
             ].filter(t => t.show).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
-                className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                  activeTab === t.id ? 'border-primary-dark text-primary-dark' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
-                }`}>
+                className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === t.id ? 'border-primary-dark text-primary-dark' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-200 hover:border-gray-200 dark:border-slate-700'
+                  }`}>
                 {t.icon} {t.label}
                 {t.id === 'bots' && bots.length > 0 && (
                   <span className="ml-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full text-[10px] font-bold">{bots.length}</span>
@@ -1221,10 +1224,10 @@ function AdminDashboard({ user, handleLogout }) {
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { title: 'Total Users',  value: stats.totalUsers,   icon: '👥', gradient: 'from-blue-500 to-blue-600',    light: 'bg-blue-50', text: 'text-blue-600'   },
-                { title: 'Active Bots',  value: stats.totalBots,    icon: '🤖', gradient: 'from-emerald-500 to-emerald-600', light: 'bg-emerald-50', text: 'text-emerald-600' },
-                { title: 'Total Chats',  value: stats.totalChats,   icon: '💬', gradient: 'from-violet-500 to-violet-600', light: 'bg-violet-50', text: 'text-violet-600' },
-                { title: 'Threads',      value: stats.totalThreads, icon: '📂', gradient: 'from-amber-500 to-amber-600',  light: 'bg-amber-50',  text: 'text-amber-600'  },
+                { title: 'Total Users', value: stats.totalUsers, icon: '👥', gradient: 'from-blue-500 to-blue-600', light: 'bg-blue-50 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400' },
+                { title: 'Active Bots', value: stats.totalBots, icon: '🤖', gradient: 'from-emerald-500 to-emerald-600', light: 'bg-emerald-50 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400' },
+                { title: 'Total Chats', value: stats.totalChats, icon: '💬', gradient: 'from-violet-500 to-violet-600', light: 'bg-violet-50 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-400' },
+                { title: 'Threads', value: stats.totalThreads, icon: '📂', gradient: 'from-amber-500 to-amber-600', light: 'bg-amber-50', text: 'text-amber-600' },
               ].map((s) => (
                 <div key={s.title} className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-all group">
                   <div className="flex items-start justify-between mb-3">
@@ -1238,13 +1241,13 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
                 <div className="flex items-center justify-between mb-5">
                   <div>
-                    <h3 className="font-bold text-gray-800">Activity Trend</h3>
+                    <h3 className="font-bold text-gray-800 dark:text-gray-100">Activity Trend</h3>
                     <p className="text-xs text-gray-400 mt-0.5">Message volume over time</p>
                   </div>
-                  <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-lg">Last 7 days</span>
+                  <span className="text-xs text-gray-400 bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 px-2.5 py-1 rounded-lg">Last 7 days</span>
                 </div>
                 <div className="h-52">
                   <Line data={lineChartData} options={{
@@ -1257,9 +1260,9 @@ function AdminDashboard({ user, handleLogout }) {
                   }} />
                 </div>
               </div>
-              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
                 <div className="mb-5">
-                  <h3 className="font-bold text-gray-800">Bot Usage</h3>
+                  <h3 className="font-bold text-gray-800 dark:text-gray-100">Bot Usage</h3>
                   <p className="text-xs text-gray-400 mt-0.5">Message distribution</p>
                 </div>
                 <div className="h-40">
@@ -1272,24 +1275,24 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-gray-800">Top Contributors</h3>
+                  <h3 className="font-bold text-gray-800 dark:text-gray-100">Top Contributors</h3>
                   <p className="text-xs text-gray-400 mt-0.5">Most active users this week</p>
                 </div>
               </div>
-              <div className="divide-y divide-gray-50">
+              <div className="divide-y divide-gray-100 dark:divide-slate-700">
                 {stats.topUsers?.map((u, i) => (
-                  <div key={i} className="px-6 py-3.5 flex items-center justify-between hover:bg-gray-50/80 transition-colors">
+                  <div key={i} className="px-6 py-3.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-900/70 transition-colors">
                     <div className="flex items-center gap-3">
-                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-gray-100 text-gray-600' : 'bg-orange-50 text-orange-600'}`}>
-                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}`}
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' : i === 1 ? 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300' : 'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'}`}>
+                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
                       </div>
-                      <span className="font-medium text-sm text-gray-700">{u.username}</span>
+                      <span className="font-medium text-sm text-gray-700 dark:text-gray-200">{u.username}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="w-24 h-1.5 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, (u.count / (stats.topUsers[0]?.count || 1)) * 100)}%` }} />
                       </div>
                       <span className="font-bold text-primary text-sm tabular-nums w-16 text-right">{u.count} msgs</span>
@@ -1306,33 +1309,33 @@ function AdminDashboard({ user, handleLogout }) {
           <div>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
-                <h2 className="text-xl font-bold text-gray-800">AI Assistants</h2>
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">AI Assistants</h2>
                 <p className="text-sm text-gray-400 mt-0.5">{bots.length} bot{bots.length !== 1 ? 's' : ''} configured</p>
               </div>
               <div className="flex gap-2.5">
                 <div className="relative">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>
-                  <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Search bots..." className="pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all w-44" />
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8" /><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" /></svg>
+                  <input value={botSearch} onChange={e => setBotSearch(e.target.value)} placeholder="Search bots..." className="pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all w-44" />
                 </div>
                 <button onClick={handleCreateBot} className="px-4 py-2 bg-primary-dark text-white text-sm font-semibold rounded-xl hover:bg-primary transition-all shadow-sm flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                   Create Bot
                 </button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div onClick={handleCreateBot} className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary/40 hover:bg-primary/2 transition-all min-h-[200px] group">
-                <div className="w-12 h-12 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center mb-3 text-gray-400 group-hover:border-primary group-hover:text-primary group-hover:bg-primary/5 transition-all">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+              <div onClick={handleCreateBot} className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-dashed border-gray-200 dark:border-slate-700 p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary/40 hover:bg-primary/2 transition-all min-h-[200px] group">
+                <div className="w-12 h-12 rounded-2xl border-2 border-dashed border-gray-200 dark:border-slate-700 flex items-center justify-center mb-3 text-gray-400 group-hover:border-primary group-hover:text-primary group-hover:bg-primary/5 transition-all">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                 </div>
-                <span className="font-semibold text-gray-500 group-hover:text-primary-dark text-sm transition-colors">Create New Bot</span>
+                <span className="font-semibold text-gray-500 dark:text-gray-400 group-hover:text-primary-dark text-sm transition-colors">Create New Bot</span>
                 <p className="text-xs text-gray-400 mt-1 text-center">Configure AI model, knowledge & capabilities</p>
               </div>
 
               {filteredBots.map(bot => {
                 const capCount = Object.values(bot.capabilities || {}).filter(Boolean).length;
                 return (
-                  <div key={bot._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-all flex flex-col group">
+                  <div key={bot._id} className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 p-5 hover:shadow-md transition-all flex flex-col group">
                     <div className="flex items-start gap-3 mb-4">
                       <div className="relative cursor-pointer flex-shrink-0" onClick={() => setAvatarPickerBot(bot)}>
                         <BotAvatar bot={bot} size="md" />
@@ -1341,10 +1344,10 @@ function AdminDashboard({ user, handleLogout }) {
                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-gray-800 truncate text-sm">{bot.name}</h3>
+                        <h3 className="font-bold text-gray-800 dark:text-gray-100 truncate text-sm">{bot.name}</h3>
                         <p className="text-xs text-gray-400 truncate mt-0.5">{bot.description || 'No description'}</p>
                       </div>
-                      <button onClick={() => handleEditBot(bot)} className="flex-shrink-0 text-xs font-semibold text-gray-500 hover:text-primary-dark bg-gray-50 hover:bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-100 transition-all">Edit</button>
+                      <button onClick={() => handleEditBot(bot)} className="flex-shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-primary-dark bg-gray-50 dark:bg-slate-900/50 hover:bg-gray-100 dark:hover:bg-slate-700 px-2.5 py-1 rounded-lg border border-gray-100 dark:border-slate-700 transition-all">Edit</button>
                     </div>
 
                     <div className="flex flex-wrap gap-1.5 mb-3">
@@ -1362,21 +1365,21 @@ function AdminDashboard({ user, handleLogout }) {
                     {capCount > 0 && (
                       <div className="flex gap-1 mb-3">
                         {ALL_CAPABILITIES.filter(c => bot.capabilities?.[c.id]).map(c => (
-                          <span key={c.id} title={c.label} className="w-6 h-6 bg-gray-50 border border-gray-100 rounded-lg text-xs flex items-center justify-center">{c.icon}</span>
+                          <span key={c.id} title={c.label} className="w-6 h-6 bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-lg text-xs flex items-center justify-center">{c.icon}</span>
                         ))}
                       </div>
                     )}
 
                     <div className="flex items-center justify-between flex-wrap gap-1 mt-auto pt-3 border-t border-gray-50">
                       <div className="flex flex-wrap gap-1">
-                        {bot.smartsheetConfig?.enabled  && <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-100 rounded-lg font-medium">Smartsheet</span>}
-                        {bot.kouventaConfig?.enabled     && <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg font-medium">Kouventa</span>}
-                        {bot.onedriveConfig?.enabled     && <span className="text-[9px] px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-100 rounded-lg font-medium">OneDrive</span>}
-                        {bot.azureSearchConfig?.enabled  && <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-100 rounded-lg font-medium">Azure Search</span>}
+                        {bot.smartsheetConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-100 rounded-lg font-medium">Smartsheet</span>}
+                        {bot.kouventaConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg font-medium">Kouventa</span>}
+                        {bot.onedriveConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-100 rounded-lg font-medium">OneDrive</span>}
+                        {bot.azureSearchConfig?.enabled && <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-100 rounded-lg font-medium">Azure Search</span>}
                         {!bot.smartsheetConfig?.enabled && !bot.kouventaConfig?.enabled && !bot.onedriveConfig?.enabled && !bot.azureSearchConfig?.enabled && <span className="text-[9px] text-gray-400">No integrations</span>}
                       </div>
                       <button onClick={() => setEmbedBot(bot)} className="text-[10px] font-semibold px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-100 rounded-lg transition-colors flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
                         Embed
                       </button>
                     </div>
@@ -1389,21 +1392,21 @@ function AdminDashboard({ user, handleLogout }) {
 
         {/* USERS */}
         {activeTab === 'users' && user?.isAdmin && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-50 flex justify-between items-center">
               <div>
-                <h2 className="font-bold text-gray-800">User Management</h2>
+                <h2 className="font-bold text-gray-800 dark:text-gray-100">User Management</h2>
                 <p className="text-xs text-gray-400 mt-0.5">{users.length} registered user{users.length !== 1 ? 's' : ''}</p>
               </div>
-              <button onClick={() => { setEditingUser(null); setUserForm({username:'',password:'',isAdmin:false,isBotCreator:false,assignedBots:[]}); setShowUserModal(true); }}
+              <button onClick={() => { setEditingUser(null); setUserForm({ username: '', password: '', isAdmin: false, isBotCreator: false, assignedBots: [] }); setShowUserModal(true); }}
                 className="px-4 py-2 bg-primary-dark text-white text-sm font-semibold rounded-xl hover:bg-primary transition-colors flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                 Add User
               </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50/80 text-gray-400 uppercase text-[10px] tracking-wider">
+                <thead className="bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-gray-500 uppercase text-[10px] tracking-wider">
                   <tr>
                     <th className="px-6 py-3.5 text-left font-semibold">User</th>
                     <th className="px-6 py-3.5 text-left font-semibold">Role</th>
@@ -1412,28 +1415,28 @@ function AdminDashboard({ user, handleLogout }) {
                     <th className="px-6 py-3.5 text-right font-semibold">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                   {users.map(u => (
-                    <tr key={u._id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr key={u._id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                       <td className="px-6 py-3.5">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-xs font-bold text-primary-dark">{u.username.substring(0,2).toUpperCase()}</div>
-                          <span className="font-medium text-sm text-gray-800">{u.username}</span>
+                          <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-xs font-bold text-primary-dark">{u.username.substring(0, 2).toUpperCase()}</div>
+                          <span className="font-medium text-sm text-gray-800 dark:text-gray-100">{u.username}</span>
                         </div>
                       </td>
                       <td className="px-6 py-3.5">
                         {u.isAdmin
                           ? <span className="bg-primary-dark text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold">ADMIN</span>
                           : u.isBotCreator
-                          ? <span className="bg-violet-600 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold">BOT CREATOR</span>
-                          : <span className="text-gray-400 text-xs">User</span>}
+                            ? <span className="bg-violet-600 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold">BOT CREATOR</span>
+                            : <span className="text-gray-400 text-xs">User</span>}
                       </td>
                       <td className="px-6 py-3.5">
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${u.authMethod === 'ldap' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${u.authMethod === 'ldap' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-gray-50 dark:bg-slate-900/50 text-gray-500 dark:text-gray-400 border-gray-100 dark:border-slate-700'}`}>
                           {u.authMethod === 'ldap' ? 'LDAP/AD' : 'Local'}
                         </span>
                       </td>
-                      <td className="px-6 py-3.5 text-gray-500 text-xs">{u.assignedBots?.length || 0} bot(s)</td>
+                      <td className="px-6 py-3.5 text-gray-500 dark:text-gray-400 text-xs">{u.assignedBots?.length || 0} bot(s)</td>
                       <td className="px-6 py-3.5 text-right">
                         <button onClick={() => handleEditUser(u)} className="text-primary hover:text-primary-dark font-semibold text-xs px-3 py-1.5 bg-primary/5 hover:bg-primary/10 rounded-lg transition-colors">Edit →</button>
                       </td>
@@ -1447,37 +1450,37 @@ function AdminDashboard({ user, handleLogout }) {
 
         {/* CHAT LOGS */}
         {activeTab === 'chats' && user?.isAdmin && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col" style={{ height: '780px' }}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden flex flex-col" style={{ height: '780px' }}>
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-50 flex justify-between items-center flex-shrink-0">
               <div>
-                <h2 className="font-bold text-gray-800">Chat Logs</h2>
+                <h2 className="font-bold text-gray-800 dark:text-gray-100">Chat Logs</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {logTotal > 0 ? `${logTotal.toLocaleString()} messages found` : 'Monitor all conversations'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <input type="month" value={exportFilter} onChange={e => setExportFilter(e.target.value)} className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40" />
+                <input type="month" value={exportFilter} onChange={e => setExportFilter(e.target.value)} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40" />
                 <button onClick={handleExport} className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-dark transition-colors flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                   Export CSV
                 </button>
               </div>
             </div>
 
             {/* Search & Filter Bar */}
-            <div className="px-6 py-3 border-b border-gray-50 bg-gray-50/40 flex flex-wrap gap-2 items-center flex-shrink-0">
+            <div className="px-6 py-3 border-b border-gray-50 bg-gray-50 dark:bg-slate-900/60 flex flex-wrap gap-2 items-center flex-shrink-0">
               {/* Text search */}
               <div className="relative flex-1 min-w-[180px]">
                 <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
                 </svg>
                 <input
                   type="text"
                   placeholder="Search message, user, or bot…"
                   value={chatSearch}
                   onChange={e => { setChatSearch(e.target.value); setLogPage(1); }}
-                  className="w-full pl-8 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                  className="w-full pl-8 pr-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
                 />
               </div>
 
@@ -1485,7 +1488,7 @@ function AdminDashboard({ user, handleLogout }) {
               <select
                 value={chatBotFilter}
                 onChange={e => { setChatBotFilter(e.target.value); setLogPage(1); }}
-                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40 min-w-[130px]"
+                className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40 min-w-[130px]"
               >
                 <option value="">All Bots</option>
                 {bots.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
@@ -1495,7 +1498,7 @@ function AdminDashboard({ user, handleLogout }) {
               <select
                 value={chatRole}
                 onChange={e => { setChatRole(e.target.value); setLogPage(1); }}
-                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
+                className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
               >
                 <option value="">All Roles</option>
                 <option value="user">User</option>
@@ -1507,7 +1510,7 @@ function AdminDashboard({ user, handleLogout }) {
                 type="date"
                 value={chatDateFrom}
                 onChange={e => { setChatDateFrom(e.target.value); setLogPage(1); }}
-                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
+                className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
                 title="From date"
               />
               <span className="text-gray-300 text-xs">→</span>
@@ -1516,7 +1519,7 @@ function AdminDashboard({ user, handleLogout }) {
                 type="date"
                 value={chatDateTo}
                 onChange={e => { setChatDateTo(e.target.value); setLogPage(1); }}
-                className="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
+                className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs px-3 py-2 outline-none focus:border-primary/40"
                 title="To date"
               />
 
@@ -1524,7 +1527,7 @@ function AdminDashboard({ user, handleLogout }) {
               {(chatSearch || chatRole || chatDateFrom || chatDateTo || chatBotFilter) && (
                 <button
                   onClick={handleChatSearchReset}
-                  className="px-3 py-2 text-xs text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors font-medium"
+                  className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors font-medium"
                 >
                   ✕ Reset
                 </button>
@@ -1535,46 +1538,46 @@ function AdminDashboard({ user, handleLogout }) {
             <div className="flex-1 overflow-auto">
               {loading ? (
                 <div className="flex items-center justify-center h-full text-gray-400 text-sm gap-2">
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
                   Loading…
                 </div>
               ) : chatLogs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                  <svg className="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.77 9.77 0 01-4-.83L3 20l1.09-3.27A7.93 7.93 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                  <svg className="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.77 9.77 0 01-4-.83L3 20l1.09-3.27A7.93 7.93 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                   <span className="text-xs">No messages found</span>
                 </div>
               ) : (
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50/80 text-gray-400 uppercase text-[10px] tracking-wider sticky top-0 z-10">
-                  <tr>
-                    <th className="px-5 py-3 text-left font-semibold whitespace-nowrap">Time</th>
-                    <th className="px-5 py-3 text-left font-semibold">User</th>
-                    <th className="px-5 py-3 text-left font-semibold">Bot</th>
-                    <th className="px-5 py-3 text-left font-semibold">Role</th>
-                    <th className="px-5 py-3 text-left font-semibold">Message</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {chatLogs.map(log => (
-                    <tr key={log._id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="px-5 py-2.5 text-gray-400 whitespace-nowrap tabular-nums">{new Date(log.createdAt).toLocaleString('id-ID')}</td>
-                      <td className="px-5 py-2.5 font-medium text-gray-700">{log.userId?.username || '—'}</td>
-                      <td className="px-5 py-2.5 text-primary font-semibold">{log.botId?.name || 'System'}</td>
-                      <td className="px-5 py-2.5">
-                        <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold ${log.role === 'user' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>{log.role}</span>
-                      </td>
-                      <td className="px-5 py-2.5 truncate max-w-xs text-gray-500">{log.content || (log.attachedFiles?.length ? '📎 File attachment' : '—')}</td>
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-gray-500 uppercase text-[10px] tracking-wider sticky top-0 z-10">
+                    <tr>
+                      <th className="px-5 py-3 text-left font-semibold whitespace-nowrap">Time</th>
+                      <th className="px-5 py-3 text-left font-semibold">User</th>
+                      <th className="px-5 py-3 text-left font-semibold">Bot</th>
+                      <th className="px-5 py-3 text-left font-semibold">Role</th>
+                      <th className="px-5 py-3 text-left font-semibold">Message</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                    {chatLogs.map(log => (
+                      <tr key={log._id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
+                        <td className="px-5 py-2.5 text-gray-400 whitespace-nowrap tabular-nums">{new Date(log.createdAt).toLocaleString('id-ID')}</td>
+                        <td className="px-5 py-2.5 font-medium text-gray-700 dark:text-gray-200">{log.userId?.username || '—'}</td>
+                        <td className="px-5 py-2.5 text-primary font-semibold">{log.botId?.name || 'System'}</td>
+                        <td className="px-5 py-2.5">
+                          <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold ${log.role === 'user' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>{log.role}</span>
+                        </td>
+                        <td className="px-5 py-2.5 truncate max-w-xs text-gray-500 dark:text-gray-400">{log.content || (log.attachedFiles?.length ? '📎 File attachment' : '—')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
             <div className="px-5 py-3.5 border-t border-gray-50 flex justify-between items-center text-xs text-gray-400 flex-shrink-0">
               <span>Page {logPage} of {logTotalPages}</span>
               <div className="flex gap-1.5">
-                <button disabled={logPage===1} onClick={()=>setLogPage(p=>p-1)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 font-medium transition-colors">← Prev</button>
-                <button disabled={logPage===logTotalPages} onClick={()=>setLogPage(p=>p+1)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 font-medium transition-colors">Next →</button>
+                <button disabled={logPage === 1} onClick={() => setLogPage(p => p - 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">← Prev</button>
+                <button disabled={logPage === logTotalPages} onClick={() => setLogPage(p => p + 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">Next →</button>
               </div>
             </div>
           </div>
@@ -1586,25 +1589,25 @@ function AdminDashboard({ user, handleLogout }) {
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-bold text-gray-800">🪙 Token Usage Monitoring</h2>
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">🪙 Token Usage Monitoring</h2>
                 <p className="text-sm text-gray-400 mt-0.5">Track AI token consumption per user and bot</p>
               </div>
               <div className="flex gap-2 flex-wrap items-end">
                 <div>
                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">From</label>
                   <input type="date" value={tokenDateFrom} onChange={e => setTokenDateFrom(e.target.value)}
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
+                    className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
                 </div>
                 <div>
                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">To</label>
                   <input type="date" value={tokenDateTo} onChange={e => setTokenDateTo(e.target.value)}
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
+                    className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
                 </div>
                 <button onClick={fetchTokenStats} disabled={tokenLoading}
                   className="px-4 py-2 bg-primary-dark text-white text-xs font-semibold rounded-xl hover:bg-primary disabled:opacity-50 transition-colors flex items-center gap-1.5">
                   {tokenLoading
-                    ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Loading...</>
-                    : <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh</>
+                    ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Loading...</>
+                    : <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Refresh</>
                   }
                 </button>
               </div>
@@ -1612,7 +1615,7 @@ function AdminDashboard({ user, handleLogout }) {
 
             {tokenLoading && !tokenStats && (
               <div className="flex items-center justify-center py-16 gap-3 text-gray-400">
-                <div className="w-5 h-5 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-gray-200 dark:border-slate-700 border-t-primary rounded-full animate-spin" />
                 <span className="text-sm">Loading token statistics...</span>
               </div>
             )}
@@ -1622,28 +1625,28 @@ function AdminDashboard({ user, handleLogout }) {
                 {/* Grand Totals */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
-                    { label: 'Total Tokens',      value: (tokenStats.totals?.totalTokens      || 0).toLocaleString(), icon: 'Σ',  bg: 'bg-primary/5',   text: 'text-primary-dark' },
-                    { label: 'Prompt Tokens',     value: (tokenStats.totals?.promptTokens     || 0).toLocaleString(), icon: '📤', bg: 'bg-blue-50',     text: 'text-blue-700'     },
-                    { label: 'Completion Tokens', value: (tokenStats.totals?.completionTokens || 0).toLocaleString(), icon: '📥', bg: 'bg-emerald-50',  text: 'text-emerald-700'  },
-                    { label: 'AI Responses',      value: (tokenStats.totals?.messageCount     || 0).toLocaleString(), icon: '💬', bg: 'bg-amber-50',    text: 'text-amber-700'    },
-                    { label: 'Est. Cost (USD)',   value: (tokenStats.totals?.costUSD         || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }), icon: '💵', bg: 'bg-emerald-50/60', text: 'text-emerald-700' },
+                    { label: 'Total Tokens', value: (tokenStats.totals?.totalTokens || 0).toLocaleString(), icon: 'Σ', bg: 'bg-primary/5', text: 'text-primary-dark' },
+                    { label: 'Prompt Tokens', value: (tokenStats.totals?.promptTokens || 0).toLocaleString(), icon: '📤', bg: 'bg-blue-50', text: 'text-blue-700' },
+                    { label: 'Completion Tokens', value: (tokenStats.totals?.completionTokens || 0).toLocaleString(), icon: '📥', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+                    { label: 'AI Responses', value: (tokenStats.totals?.messageCount || 0).toLocaleString(), icon: '💬', bg: 'bg-amber-50', text: 'text-amber-700' },
+                    { label: 'Est. Cost (USD)', value: (tokenStats.totals?.costUSD || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }), icon: '💵', bg: 'bg-emerald-50/60', text: 'text-emerald-700' },
                   ].map(s => (
                     <div key={s.label} className={`${s.bg} rounded-2xl p-4 border border-white/60`}>
                       <div className={`text-2xl font-bold ${s.text} tabular-nums`}>{s.value}</div>
-                      <div className="text-[10px] text-gray-500 mt-1 font-medium uppercase tracking-wide">{s.icon} {s.label}</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 font-medium uppercase tracking-wide">{s.icon} {s.label}</div>
                     </div>
                   ))}
                 </div>
 
                 {/* Per-User Table */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
                   <div className="px-5 py-3.5 border-b border-gray-50 flex items-center justify-between">
-                    <h3 className="font-semibold text-sm text-gray-800">👤 Token Usage per User</h3>
+                    <h3 className="font-semibold text-sm text-gray-800 dark:text-gray-100">👤 Token Usage per User</h3>
                     <span className="text-[10px] text-gray-400">{tokenStats.perUser?.length || 0} users</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
-                      <thead className="bg-gray-50/80 text-gray-400 uppercase text-[10px] tracking-wider">
+                      <thead className="bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-gray-500 uppercase text-[10px] tracking-wider">
                         <tr>
                           <th className="px-5 py-3 text-left font-semibold">#</th>
                           <th className="px-5 py-3 text-left font-semibold">User</th>
@@ -1657,32 +1660,32 @@ function AdminDashboard({ user, handleLogout }) {
                           <th className="px-5 py-3 text-right font-semibold">Last Used</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-50">
+                      <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                         {(tokenStats.perUser || []).map((u, idx) => {
                           const maxTokens = tokenStats.perUser[0]?.totalTokens || 1;
                           const pct = Math.round((u.totalTokens / maxTokens) * 100);
                           const avg = u.messageCount > 0 ? Math.round(u.totalTokens / u.messageCount) : 0;
                           const cost = u.costUSD || 0;
                           return (
-                            <tr key={String(u.userId)} className="hover:bg-gray-50/60 transition-colors">
+                            <tr key={String(u.userId)} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                               <td className="px-5 py-3 text-gray-400 font-mono">{idx + 1}</td>
                               <td className="px-5 py-3">
-                                <div className="font-semibold text-gray-800">{u.username || '—'}</div>
+                                <div className="font-semibold text-gray-800 dark:text-gray-100">{u.username || '—'}</div>
                                 {u.displayName && u.displayName !== u.username && (
                                   <div className="text-[10px] text-gray-400">{u.displayName}</div>
                                 )}
                               </td>
-                              <td className="px-5 py-3 text-gray-500">{u.department || '—'}</td>
+                              <td className="px-5 py-3 text-gray-500 dark:text-gray-400">{u.department || '—'}</td>
                               <td className="px-5 py-3 text-right">
-                                <div className="font-bold text-gray-800 tabular-nums">{u.totalTokens.toLocaleString()}</div>
-                                <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden w-24 ml-auto">
+                                <div className="font-bold text-gray-800 dark:text-gray-100 tabular-nums">{u.totalTokens.toLocaleString()}</div>
+                                <div className="mt-1 h-1.5 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden w-24 ml-auto">
                                   <div className="h-full bg-primary-dark rounded-full" style={{ width: `${pct}%` }} />
                                 </div>
                               </td>
-                              <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{u.promptTokens.toLocaleString()}</td>
-                              <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{u.completionTokens.toLocaleString()}</td>
-                              <td className="px-5 py-3 text-right text-gray-600 tabular-nums">{u.messageCount.toLocaleString()}</td>
-                              <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{avg.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">{u.promptTokens.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">{u.completionTokens.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-600 dark:text-gray-300 tabular-nums">{u.messageCount.toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">{avg.toLocaleString()}</td>
                               <td className="px-5 py-3 text-right text-emerald-700 tabular-nums font-semibold">{cost.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })}</td>
                               <td className="px-5 py-3 text-right text-gray-400 whitespace-nowrap">
                                 {u.lastUsed ? new Date(u.lastUsed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
@@ -1701,31 +1704,31 @@ function AdminDashboard({ user, handleLogout }) {
                 {/* Per-Bot + Daily Trend side by side */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Per-Bot */}
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="px-5 py-3.5 border-b border-gray-50">
-                      <h3 className="font-semibold text-sm text-gray-800">🤖 Top Bots by Token Usage</h3>
+                  <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-100 dark:border-slate-700">
+                      <h3 className="font-semibold text-sm text-gray-800 dark:text-gray-100">🤖 Top Bots by Token Usage</h3>
                     </div>
-                    <div className="divide-y divide-gray-50">
+                    <div className="divide-y divide-gray-100 dark:divide-slate-700">
                       {(tokenStats.perBot || []).map((b, idx) => {
                         const maxB = tokenStats.perBot[0]?.totalTokens || 1;
-                        const pct  = Math.round((b.totalTokens / maxB) * 100);
-                                return (
-                                  <div key={String(b.botId)} className="px-5 py-3 flex items-center gap-3">
-                                    <span className="text-[10px] text-gray-400 w-4 text-right font-mono">{idx + 1}</span>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-gray-800 text-xs truncate">{b.botName || '—'}</div>
-                                      <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
-                                      </div>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                      <div className="font-bold text-gray-800 text-xs tabular-nums">{b.totalTokens.toLocaleString()}</div>
-                                      <div className="text-[10px] text-gray-400">{b.messageCount} calls</div>
-                                      <div className="text-[10px] text-emerald-700 font-semibold">{(b.costUSD || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })}</div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                        const pct = Math.round((b.totalTokens / maxB) * 100);
+                        return (
+                          <div key={String(b.botId)} className="px-5 py-3 flex items-center gap-3">
+                            <span className="text-[10px] text-gray-400 w-4 text-right font-mono">{idx + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-gray-800 dark:text-gray-100 text-xs truncate">{b.botName || '—'}</div>
+                              <div className="mt-1 h-1.5 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className="font-bold text-gray-800 dark:text-gray-100 text-xs tabular-nums">{b.totalTokens.toLocaleString()}</div>
+                              <div className="text-[10px] text-gray-400">{b.messageCount} calls</div>
+                              <div className="text-[10px] text-emerald-700 font-semibold">{(b.costUSD || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
                       {(tokenStats.perBot || []).length === 0 && (
                         <div className="px-5 py-8 text-center text-gray-400 text-xs">No data yet</div>
                       )}
@@ -1733,21 +1736,21 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
 
                   {/* Daily Trend */}
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="px-5 py-3.5 border-b border-gray-50">
-                      <h3 className="font-semibold text-sm text-gray-800">📈 Daily Token Trend (30 days)</h3>
+                  <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-100 dark:border-slate-700">
+                      <h3 className="font-semibold text-sm text-gray-800 dark:text-gray-100">📈 Daily Token Trend (30 days)</h3>
                     </div>
                     <div className="px-5 py-4 space-y-1.5 max-h-72 overflow-y-auto">
                       {(tokenStats.dailyTrend || []).slice().reverse().map(d => {
                         const maxD = Math.max(...(tokenStats.dailyTrend || []).map(x => x.totalTokens), 1);
-                        const pct  = Math.round((d.totalTokens / maxD) * 100);
+                        const pct = Math.round((d.totalTokens / maxD) * 100);
                         return (
                           <div key={d._id} className="flex items-center gap-3">
                             <span className="text-[10px] text-gray-400 w-20 flex-shrink-0 font-mono">{d._id}</span>
-                            <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="flex-1 h-4 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
                               <div className="h-full bg-primary/60 rounded-full transition-all" style={{ width: `${pct}%` }} />
                             </div>
-                            <span className="text-[10px] text-gray-600 tabular-nums w-16 text-right font-medium">{d.totalTokens.toLocaleString()}</span>
+                            <span className="text-[10px] text-gray-600 dark:text-gray-300 tabular-nums w-16 text-right font-medium">{d.totalTokens.toLocaleString()}</span>
                           </div>
                         );
                       })}
@@ -1775,11 +1778,11 @@ function AdminDashboard({ user, handleLogout }) {
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-bold text-gray-800">Audit Trail</h2>
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Audit Trail</h2>
                 <p className="text-sm text-gray-400 mt-0.5">{auditTotal.toLocaleString()} total log entries</p>
               </div>
-              <button onClick={fetchAuditLogs} className="px-4 py-2 bg-white border border-gray-200 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-gray-600 self-start">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              <button onClick={fetchAuditLogs} className="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-sm font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 text-gray-600 dark:text-gray-300 self-start">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 Refresh
               </button>
             </div>
@@ -1787,12 +1790,12 @@ function AdminDashboard({ user, handleLogout }) {
             {auditTokenStats && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { label: 'Total Tokens (page)',  value: auditTokenStats.total.toLocaleString(),     icon: 'Σ',  bg: 'bg-primary/5', text: 'text-primary-dark' },
-                  { label: 'Reasoning Tokens',     value: auditTokenStats.reasoning.toLocaleString(), icon: '🧠', bg: 'bg-violet-50', text: 'text-violet-700'  },
-                  { label: 'Empty Responses',      value: auditTokenStats.emptyCount,                 icon: '⚠️', bg: 'bg-orange-50', text: 'text-orange-700'  },
-                  { label: 'AI Calls (page)',       value: auditTokenStats.sampleCount,                icon: '💬', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+                  { label: 'Total Tokens (page)', value: auditTokenStats.total.toLocaleString(), icon: 'Σ', bg: 'bg-primary/5 dark:bg-primary/10', text: 'text-primary-dark dark:text-emerald-400' },
+                  { label: 'Reasoning Tokens', value: auditTokenStats.reasoning.toLocaleString(), icon: '🧠', bg: 'bg-violet-50 dark:bg-violet-900/30', text: 'text-violet-700 dark:text-violet-300' },
+                  { label: 'Empty Responses', value: auditTokenStats.emptyCount, icon: '⚠️', bg: 'bg-orange-50 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300' },
+                  { label: 'AI Calls (page)', value: auditTokenStats.sampleCount, icon: '💬', bg: 'bg-emerald-50 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300' },
                 ].map(s => (
-                  <div key={s.label} className={`${s.bg} p-4 rounded-2xl border border-gray-100 shadow-sm`}>
+                  <div key={s.label} className={`${s.bg} p-4 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm`}>
                     <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">{s.label}</p>
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="text-lg">{s.icon}</span>
@@ -1803,51 +1806,51 @@ function AdminDashboard({ user, handleLogout }) {
               </div>
             )}
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm p-5">
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="flex flex-col gap-1.5 min-w-[150px]">
                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Category</label>
-                  <select value={auditCategory} onChange={e => { setAuditCategory(e.target.value); setAuditPage(1); }} className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40 transition-colors">
+                  <select value={auditCategory} onChange={e => { setAuditCategory(e.target.value); setAuditPage(1); }} className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40 transition-colors">
                     <option value="">All Categories</option>
-                    {Object.entries(AUDIT_CATEGORY_META).map(([k,v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+                    {Object.entries(AUDIT_CATEGORY_META).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Search</label>
-                  <input value={auditSearch} onChange={e => setAuditSearch(e.target.value)} onKeyDown={e => e.key==='Enter' && handleAuditSearch()} placeholder="Username, bot, action..." className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40 transition-colors" />
+                  <input value={auditSearch} onChange={e => setAuditSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuditSearch()} placeholder="Username, bot, action..." className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40 transition-colors" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">From</label>
-                  <input type="date" value={auditDateFrom} onChange={e => setAuditDateFrom(e.target.value)} className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
+                  <input type="date" value={auditDateFrom} onChange={e => setAuditDateFrom(e.target.value)} className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">To</label>
-                  <input type="date" value={auditDateTo} onChange={e => setAuditDateTo(e.target.value)} className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
+                  <input type="date" value={auditDateTo} onChange={e => setAuditDateTo(e.target.value)} className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary/40" />
                 </div>
                 <div className="flex gap-2 pb-0.5">
                   <button onClick={handleAuditSearch} className="px-4 py-2 bg-primary-dark text-white text-xs font-semibold rounded-xl hover:bg-primary transition-colors flex items-center gap-1.5">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8" /><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" /></svg>
                     Search
                   </button>
-                  <button onClick={handleAuditReset} className="px-3 py-2 bg-gray-50 border border-gray-200 text-xs font-medium rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">Reset</button>
+                  <button onClick={handleAuditReset} className="px-3 py-2 bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 text-xs font-medium rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400 transition-colors">Reset</button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-gray-50">
+              <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-gray-100 dark:border-slate-700">
                 <button onClick={() => { setAuditCategory(''); setAuditPage(1); setTimeout(fetchAuditLogs, 50); }}
-                  className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-colors ${!auditCategory ? 'bg-primary-dark text-white border-primary-dark' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>All</button>
-                {Object.entries(AUDIT_CATEGORY_META).map(([k,v]) => (
+                  className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-colors ${!auditCategory ? 'bg-primary-dark text-white border-primary-dark' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:border-slate-600'}`}>All</button>
+                {Object.entries(AUDIT_CATEGORY_META).map(([k, v]) => (
                   <button key={k} onClick={() => { setAuditCategory(k); setAuditPage(1); setTimeout(fetchAuditLogs, 50); }}
-                    className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-colors ${auditCategory===k ? 'bg-primary-dark text-white border-primary-dark' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
+                    className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-colors ${auditCategory === k ? 'bg-primary-dark text-white border-primary-dark' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:border-slate-600'}`}>
                     {v.icon} {v.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
               {auditLoading ? (
                 <div className="flex items-center justify-center py-16 gap-3 text-gray-400">
-                  <div className="w-5 h-5 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-gray-200 dark:border-slate-700 border-t-primary rounded-full animate-spin" />
                   <span className="text-sm">Loading audit logs...</span>
                 </div>
               ) : auditLogs.length === 0 ? (
@@ -1859,7 +1862,7 @@ function AdminDashboard({ user, handleLogout }) {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
-                    <thead className="bg-gray-50/80 text-gray-400 uppercase text-[10px] tracking-wider sticky top-0 z-10">
+                    <thead className="bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-gray-500 uppercase text-[10px] tracking-wider sticky top-0 z-10">
                       <tr>
                         <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Timestamp</th>
                         <th className="px-4 py-3.5 text-left font-semibold">User</th>
@@ -1871,53 +1874,53 @@ function AdminDashboard({ user, handleLogout }) {
                         <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">IP</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                       {auditLogs.map(log => {
                         const catMeta = AUDIT_CATEGORY_META[log.category] || AUDIT_CATEGORY_META.system;
-                        const actMeta = ACTION_LABEL[log.action] || { label: log.action, color: 'text-gray-600 bg-gray-100 border-gray-200' };
+                        const actMeta = ACTION_LABEL[log.action] || { label: log.action, color: 'text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-slate-800 border-gray-200 dark:border-slate-700' };
                         const isExpanded = auditExpanded === log._id;
                         const hasWarning = log.detail?.emptyResponse || log.detail?.warning;
                         return (
                           <React.Fragment key={log._id}>
-                            <tr className={`hover:bg-gray-50/60 transition-colors cursor-pointer ${isExpanded ? 'bg-gray-50/80' : ''} ${hasWarning ? 'bg-orange-50/30' : ''}`}
+                            <tr className={`hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer ${isExpanded ? 'bg-gray-50 dark:bg-slate-900' : ''} ${hasWarning ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
                               onClick={() => setAuditExpanded(isExpanded ? null : log._id)}>
                               <td className="px-4 py-3 whitespace-nowrap font-mono text-[10px] text-gray-400">
-                                <div className="font-medium text-gray-600">{new Date(log.createdAt).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'})}</div>
-                                <div className="opacity-60">{new Date(log.createdAt).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div>
+                                <div className="font-medium text-gray-600 dark:text-gray-300">{new Date(log.createdAt).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                                <div className="opacity-60">{new Date(log.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-1.5">
-                                  <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary-dark flex-shrink-0">{(log.username||'?').substring(0,2).toUpperCase()}</div>
-                                  <span className="font-medium text-gray-700">{log.username||'—'}</span>
+                                  <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary-dark flex-shrink-0">{(log.username || '?').substring(0, 2).toUpperCase()}</div>
+                                  <span className="font-medium text-gray-700 dark:text-gray-200">{log.username || '—'}</span>
                                 </div>
                               </td>
                               <td className="px-4 py-3"><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${catMeta.color}`}>{catMeta.icon} {catMeta.label}</span></td>
                               <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-semibold border ${actMeta.color}`}>{actMeta.label}</span></td>
-                              <td className="px-4 py-3 max-w-[130px]">{log.targetName ? <span className="font-medium text-gray-700 truncate block">{log.targetName}</span> : <span className="text-gray-400">—</span>}</td>
+                              <td className="px-4 py-3 max-w-[130px]">{log.targetName ? <span className="font-medium text-gray-700 dark:text-gray-200 truncate block">{log.targetName}</span> : <span className="text-gray-400">—</span>}</td>
                               <td className="px-4 py-3">
                                 {log.status === 'success'
-                                  ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"/>OK</span>
-                                  : <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-500"><span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"/>Failed</span>}
+                                  ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />OK</span>
+                                  : <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-500"><span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />Failed</span>}
                               </td>
                               <td className="px-4 py-3 max-w-[280px]"><DetailPanel detail={log.detail} action={log.action} /></td>
-                              <td className="px-4 py-3 font-mono text-[10px] text-gray-400 whitespace-nowrap">{log.ip||'—'}</td>
+                              <td className="px-4 py-3 font-mono text-[10px] text-gray-400 whitespace-nowrap">{log.ip || '—'}</td>
                             </tr>
                             {isExpanded && (
-                              <tr className="bg-indigo-50/20">
+                              <tr className="bg-indigo-50/20 dark:bg-indigo-900/10">
                                 <td colSpan={8} className="px-6 py-4">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">{log.category === 'chat' ? '📊 Token Usage Detail' : '📋 Full Detail'}</p>
-                                      <div className="bg-white rounded-xl border border-gray-100 p-3">
+                                      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3">
                                         {log.category === 'chat' && log.detail?.tokens ? <TokenPanel detail={log.detail} /> : <DetailPanel detail={log.detail} action={log.action} />}
                                       </div>
                                     </div>
                                     <div>
                                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">🌐 Request Info</p>
-                                      <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-2">
-                                        <div className="flex items-center gap-2 text-xs"><span className="text-gray-400 font-semibold w-20">User ID:</span><span className="font-mono text-[10px] text-gray-600 break-all">{log.userId||'—'}</span></div>
-                                        <div className="flex items-center gap-2 text-xs"><span className="text-gray-400 font-semibold w-20">Target ID:</span><span className="font-mono text-[10px] text-gray-600 break-all">{log.targetId||'—'}</span></div>
-                                        <div className="flex items-start gap-2 text-xs"><span className="text-gray-400 font-semibold w-20 flex-shrink-0">User Agent:</span><span className="text-[10px] text-gray-500 break-all line-clamp-2">{log.userAgent||'—'}</span></div>
+                                      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3 space-y-2">
+                                        <div className="flex items-center gap-2 text-xs"><span className="text-gray-400 font-semibold w-20">User ID:</span><span className="font-mono text-[10px] text-gray-600 dark:text-gray-300 break-all">{log.userId || '—'}</span></div>
+                                        <div className="flex items-center gap-2 text-xs"><span className="text-gray-400 font-semibold w-20">Target ID:</span><span className="font-mono text-[10px] text-gray-600 dark:text-gray-300 break-all">{log.targetId || '—'}</span></div>
+                                        <div className="flex items-start gap-2 text-xs"><span className="text-gray-400 font-semibold w-20 flex-shrink-0">User Agent:</span><span className="text-[10px] text-gray-500 dark:text-gray-400 break-all line-clamp-2">{log.userAgent || '—'}</span></div>
                                       </div>
                                     </div>
                                   </div>
@@ -1932,11 +1935,11 @@ function AdminDashboard({ user, handleLogout }) {
                 </div>
               )}
               {auditLogs.length > 0 && (
-                <div className="px-5 py-3.5 border-t border-gray-50 flex justify-between items-center text-xs text-gray-400 bg-gray-50/30">
+                <div className="px-5 py-3.5 border-t border-gray-50 flex justify-between items-center text-xs text-gray-400 bg-gray-50 dark:bg-slate-900/60">
                   <span>Showing {auditLogs.length} of {auditTotal.toLocaleString()} entries · Page {auditPage} of {auditTotalPages}</span>
                   <div className="flex gap-1.5">
-                    <button disabled={auditPage===1} onClick={()=>setAuditPage(p=>p-1)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 font-medium transition-colors">← Prev</button>
-                    <button disabled={auditPage===auditTotalPages} onClick={()=>setAuditPage(p=>p+1)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 font-medium transition-colors">Next →</button>
+                    <button disabled={auditPage === 1} onClick={() => setAuditPage(p => p - 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">← Prev</button>
+                    <button disabled={auditPage === auditTotalPages} onClick={() => setAuditPage(p => p + 1)} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40 font-medium transition-colors">Next →</button>
                   </div>
                 </div>
               )}
@@ -1949,7 +1952,7 @@ function AdminDashboard({ user, handleLogout }) {
       {showBotModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center flex-shrink-0 bg-gray-50/50 dark:bg-gray-800/50">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center flex-shrink-0 bg-gray-50 dark:bg-gray-800/50">
               <div className="flex items-center gap-3">
                 <BotAvatar bot={editingBot || { avatar: botForm.avatar }} size="sm" />
                 <div>
@@ -1957,21 +1960,21 @@ function AdminDashboard({ user, handleLogout }) {
                   <p className="text-[10px] text-gray-400">{editingBot ? 'Configure an existing bot' : 'Create a new AI assistant with full capabilities'}</p>
                 </div>
               </div>
-              <button onClick={() => setShowBotModal(false)} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              <button onClick={() => setShowBotModal(false)} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-200 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
             <div className="flex border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 overflow-x-auto flex-shrink-0">
               {[
-                { id: 'basic',        label: 'Basic',        icon: '📝' },
-                { id: 'ai',           label: 'AI & Model',   icon: '🤖' },
+                { id: 'basic', label: 'Basic', icon: '📝' },
+                { id: 'ai', label: 'AI & Model', icon: '🤖' },
                 { id: 'capabilities', label: `Capabilities${activeCapCount > 0 ? ` (${activeCapCount})` : ''}`, icon: '⚡' },
-                { id: 'knowledge',    label: `Knowledge${knowledgeFiles.length > 0 ? ` (${knowledgeFiles.length})` : ''}`, icon: '📚' },
+                { id: 'knowledge', label: `Knowledge${knowledgeFiles.length > 0 ? ` (${knowledgeFiles.length})` : ''}`, icon: '📚' },
                 { id: 'integrations', label: 'Integrations', icon: '🔌' },
               ].map(t => (
                 <button key={t.id} onClick={() => setBotModalTab(t.id)}
-                  className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${botModalTab === t.id ? 'border-primary-dark dark:border-primary-light text-primary-dark dark:text-primary-light' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
+                  className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${botModalTab === t.id ? 'border-primary-dark dark:border-primary-light text-primary-dark dark:text-primary-light' : 'border-transparent text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-300'}`}>
                   {t.icon} {t.label}
                 </button>
               ))}
@@ -1998,28 +2001,28 @@ function AdminDashboard({ user, handleLogout }) {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Bot Name *</label>
-                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 focus:ring-2 focus:ring-primary/10 outline-none transition-all" placeholder="e.g. HR Assistant" value={botForm.name} onChange={e => setBotForm({...botForm, name: e.target.value})} />
+                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 focus:ring-2 focus:ring-primary/10 outline-none transition-all" placeholder="e.g. HR Assistant" value={botForm.name} onChange={e => setBotForm({ ...botForm, name: e.target.value })} />
                     </div>
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Description</label>
-                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" placeholder="Short description for the sidebar" value={botForm.description} onChange={e => setBotForm({...botForm, description: e.target.value})} />
+                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" placeholder="Short description for the sidebar" value={botForm.description} onChange={e => setBotForm({ ...botForm, description: e.target.value })} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Persona (optional)</label>
-                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" placeholder="e.g. Expert HR Consultant" value={botForm.persona} onChange={e => setBotForm({...botForm, persona: e.target.value})} />
+                      <input className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" placeholder="e.g. Expert HR Consultant" value={botForm.persona} onChange={e => setBotForm({ ...botForm, persona: e.target.value })} />
                     </div>
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">Tone / Communication Style</label>
-                      <select className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none" value={botForm.tone} onChange={e => setBotForm({...botForm, tone: e.target.value})}>
+                      <select className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none" value={botForm.tone} onChange={e => setBotForm({ ...botForm, tone: e.target.value })}>
                         {TONE_OPTIONS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                       </select>
                     </div>
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">System Prompt / Bot Instructions</label>
-                    <textarea className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm text-gray-800 dark:text-gray-100 h-36 font-mono focus:border-primary/40 outline-none resize-none transition-all" placeholder="e.g. You are an HR assistant..." value={botForm.prompt} onChange={e => setBotForm({...botForm, prompt: e.target.value})} />
+                    <textarea className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm text-gray-800 dark:text-gray-100 h-36 font-mono focus:border-primary/40 outline-none resize-none transition-all" placeholder="e.g. You are an HR assistant..." value={botForm.prompt} onChange={e => setBotForm({ ...botForm, prompt: e.target.value })} />
                     <p className="text-[10px] text-gray-400 mt-1">💡 This prompt defines the bot's personality, tasks, and boundaries</p>
                   </div>
                   <div>
@@ -2030,7 +2033,7 @@ function AdminDashboard({ user, handleLogout }) {
                     <div className="space-y-2">
                       {botForm.starterQuestions.map((q, i) => (
                         <div key={i} className="flex gap-2">
-                          <input className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" value={q} onChange={e => updateQuestion(i, e.target.value)} placeholder={`Question ${i+1}...`} />
+                          <input className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-sm text-gray-800 dark:text-gray-100 focus:border-primary/40 outline-none transition-all" value={q} onChange={e => updateQuestion(i, e.target.value)} placeholder={`Question ${i + 1}...`} />
                           <button onClick={() => removeQuestion(i)} className="text-red-400 hover:text-red-600 font-bold px-2 transition-colors">✕</button>
                         </div>
                       ))}
@@ -2043,7 +2046,7 @@ function AdminDashboard({ user, handleLogout }) {
               {/* AI & MODEL TAB */}
               {botModalTab === 'ai' && (
                 <div className="space-y-5">
-                  <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                  <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-700 rounded-xl px-4 py-3">
                     💡 Select an AI provider and model. The API Key can be set per-bot or left blank to use the key from the server <code className="bg-blue-100 px-1 rounded">.env</code>.
                   </div>
 
@@ -2057,7 +2060,7 @@ function AdminDashboard({ user, handleLogout }) {
                           ALL_CAPABILITIES.forEach(cap => { if (!cap.providers.includes(key)) newCaps[cap.id] = false; });
                           return { ...f, aiProvider: { ...f.aiProvider, provider: key, model: prov.models[0]?.id || '' }, capabilities: newCaps };
                         })}
-                          className={`p-3.5 rounded-xl border-2 text-left transition-all ${currentProvider === key ? 'border-primary-dark dark:border-primary-light bg-primary/5 dark:bg-primary/20 shadow-sm' : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600 bg-white dark:bg-gray-800'}`}>
+                          className={`p-3.5 rounded-xl border-2 text-left transition-all ${currentProvider === key ? 'border-primary-dark dark:border-primary-light bg-primary/5 dark:bg-primary/20 shadow-sm' : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:border-slate-700 dark:hover:border-gray-600 bg-white dark:bg-gray-800'}`}>
                           <div className="text-xl mb-1">{prov.icon}</div>
                           <div className="text-xs font-bold text-gray-800 dark:text-gray-100">{prov.label}</div>
                           <div className="text-[10px] text-gray-400 mt-0.5">
@@ -2091,19 +2094,19 @@ function AdminDashboard({ user, handleLogout }) {
                         <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">Endpoint URL <span className="text-red-500">*</span></label>
                         <input
                           autoComplete="off"
-                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none"
+                          className="w-full bg-white dark:bg-slate-800 border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none"
                           placeholder="https://your-bot.company.com/api/chat"
                           value={botForm.aiProvider?.endpoint || ''}
                           onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, endpoint: e.target.value } }))}
                         />
-                        <p className="text-[10px] text-indigo-500 mt-1">The URL where the portal will POST your users' messages.</p>
+                        <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">The URL where the portal will POST your users' messages.</p>
                       </div>
 
                       {/* API Key */}
                       <div>
                         <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">API Key / Token</label>
                         <input type="text" autoComplete="off" readOnly onFocus={e => e.target.removeAttribute('readOnly')}
-                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
+                          className="w-full bg-white dark:bg-slate-800 border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
                           placeholder="sk-... or any token your external bot uses"
                           value={botForm.aiProvider?.apiKey || ''}
                           onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))}
@@ -2117,11 +2120,10 @@ function AdminDashboard({ user, handleLogout }) {
                           {['Authorization', 'X-Api-Key', 'api-key', 'Custom'].map(h => (
                             <button key={h} type="button"
                               onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKeyHeader: h } }))}
-                              className={`px-3 py-2 rounded-xl border-2 text-xs font-semibold transition-all ${
-                                botForm.aiProvider?.apiKeyHeader === h
+                              className={`px-3 py-2 rounded-xl border-2 text-xs font-semibold transition-all ${botForm.aiProvider?.apiKeyHeader === h
                                   ? 'border-indigo-500 bg-indigo-600 text-white'
-                                  : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300'
-                              }`}>
+                                  : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:border-indigo-300'
+                                }`}>
                               {h === 'Authorization' ? 'Bearer Token' : h}
                               {h === 'Authorization' && <div className="text-[9px] opacity-70 font-normal mt-0.5">Authorization: Bearer {'{key}'}</div>}
                               {h === 'X-Api-Key' && <div className="text-[9px] opacity-70 font-normal mt-0.5">X-Api-Key: {'{key}'}</div>}
@@ -2133,7 +2135,7 @@ function AdminDashboard({ user, handleLogout }) {
                         {botForm.aiProvider?.apiKeyHeader === 'Custom' && (
                           <input
                             autoComplete="off"
-                            className="w-full mt-2 bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
+                            className="w-full mt-2 bg-white dark:bg-slate-800 border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
                             placeholder="e.g. X-Custom-Token"
                             value={botForm.aiProvider?.customHeaderName || ''}
                             onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, customHeaderName: e.target.value, apiKeyHeader: e.target.value } }))}
@@ -2151,11 +2153,10 @@ function AdminDashboard({ user, handleLogout }) {
                           ].map(f => (
                             <button key={f.id} type="button"
                               onClick={() => setBotForm(frm => ({ ...frm, aiProvider: { ...frm.aiProvider, requestFormat: f.id } }))}
-                              className={`p-3 rounded-xl border-2 text-left transition-all ${
-                                botForm.aiProvider?.requestFormat === f.id
+                              className={`p-3 rounded-xl border-2 text-left transition-all ${botForm.aiProvider?.requestFormat === f.id
                                   ? 'border-indigo-500 bg-indigo-600 text-white'
-                                  : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300'
-                              }`}>
+                                  : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:border-indigo-300'
+                                }`}>
                               <div className="text-base mb-1">{f.icon}</div>
                               <div className="text-xs font-bold">{f.label}</div>
                               <div className="text-[9px] opacity-70 font-mono mt-0.5 break-all">{f.desc}</div>
@@ -2169,16 +2170,16 @@ function AdminDashboard({ user, handleLogout }) {
                         <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-1.5">Response Field (optional)</label>
                         <input
                           autoComplete="off"
-                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
+                          className="w-full bg-white dark:bg-slate-800 border border-indigo-200 rounded-xl p-2.5 text-sm focus:border-indigo-400 outline-none font-mono"
                           placeholder="Leave blank for auto-detect (answer, response, text, output...)"
                           value={botForm.aiProvider?.responseField || ''}
                           onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, responseField: e.target.value } }))}
                         />
-                        <p className="text-[10px] text-indigo-500 mt-1">Dot-notation path to extract text from response, e.g. <code className="bg-indigo-100 px-1 rounded">data.answer</code> or <code className="bg-indigo-100 px-1 rounded">choices.0.message.content</code>. Leave blank to auto-detect.</p>
+                        <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">Dot-notation path to extract text from response, e.g. <code className="bg-indigo-100 px-1 rounded">data.answer</code> or <code className="bg-indigo-100 px-1 rounded">choices.0.message.content</code>. Leave blank to auto-detect.</p>
                       </div>
 
                       {/* Info box */}
-                      <div className="bg-white/60 border border-indigo-100 rounded-xl p-3 text-[10px] text-indigo-700 space-y-1">
+                      <div className="bg-white dark:bg-slate-800/60 border border-indigo-100 rounded-xl p-3 text-[10px] text-indigo-700 space-y-1">
                         <p className="font-bold">📋 How this works:</p>
                         <p>1. User sends a message in the portal chat</p>
                         <p>2. Portal POSTs the message to your Endpoint URL with the API Key</p>
@@ -2193,23 +2194,23 @@ function AdminDashboard({ user, handleLogout }) {
                   {availableModels.length > 0 && (
                     <div>
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-2">Model</label>
-                      <div className="max-h-64 overflow-y-auto pr-1 space-y-3 rounded-xl border border-gray-100 p-3 bg-gray-50">
+                      <div className="max-h-64 overflow-y-auto pr-1 space-y-3 rounded-xl border border-gray-100 dark:border-slate-700 p-3 bg-gray-50 dark:bg-slate-900/50">
                         {modelGroups.map(({ tier, models }) => (
                           <div key={tier}>
-                            <div className="flex items-center gap-2 mb-1.5 sticky top-0 bg-gray-50 py-1 rounded">
+                            <div className="flex items-center gap-2 mb-1.5 sticky top-0 bg-gray-50 dark:bg-slate-900/50 py-1 rounded">
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TIER_STYLE[tier]}`}>{TIER_GROUP_LABEL[tier]}</span>
                               <div className="flex-1 h-px bg-gray-200" />
                             </div>
                             <div className="space-y-1">
                               {models.map(m => (
                                 <button key={m.id} type="button" onClick={() => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, model: m.id } }))}
-                                  className={`w-full px-3 py-2.5 rounded-xl border-2 text-left flex items-center justify-between transition-all ${botForm.aiProvider?.model === m.id ? 'border-primary bg-primary/5 shadow-sm' : 'border-transparent bg-white hover:border-gray-200'}`}>
+                                  className={`w-full px-3 py-2.5 rounded-xl border-2 text-left flex items-center justify-between transition-all ${botForm.aiProvider?.model === m.id ? 'border-primary bg-primary/5 shadow-sm' : 'border-transparent bg-white dark:bg-slate-800 hover:border-gray-200 dark:border-slate-700'}`}>
                                   <div>
-                                    <span className="text-sm font-semibold text-gray-800">{m.label}</span>
+                                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{m.label}</span>
                                     <div className="text-[10px] text-gray-400 font-mono">{m.id}</div>
                                   </div>
                                   {botForm.aiProvider?.model === m.id && (
-                                    <svg className="w-4 h-4 text-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                    <svg className="w-4 h-4 text-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                                   )}
                                 </button>
                               ))}
@@ -2228,7 +2229,7 @@ function AdminDashboard({ user, handleLogout }) {
                       </label>
                       <input
                         autoComplete="off"
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
+                        className="w-full bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
                         placeholder={
                           isAzureEndpointDetected
                             ? "Azure deployment name, e.g. gpt-4.1-agent"
@@ -2254,7 +2255,7 @@ function AdminDashboard({ user, handleLogout }) {
                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1.5">API Key (override .env — optional)</label>
                     <div className="relative">
                       <input type="text" autoComplete="off" readOnly onFocus={e => e.target.removeAttribute('readOnly')}
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
+                        className="w-full bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
                         placeholder="Leave blank to use OPENAI_API_KEY from .env"
                         value={botForm.aiProvider?.apiKey || ''} onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiKey: e.target.value } }))} />
                       {botForm.aiProvider?.apiKey && (
@@ -2278,7 +2279,7 @@ function AdminDashboard({ user, handleLogout }) {
                         </label>
                         <input
                           autoComplete="off"
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none"
+                          className="w-full bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none"
                           placeholder={
                             currentProvider === 'custom'
                               ? "https://your-resource.openai.azure.com/ or https://localhost:11434/v1"
@@ -2290,18 +2291,18 @@ function AdminDashboard({ user, handleLogout }) {
 
                         {/* Azure Detection Banner */}
                         {isAzureEndpointDetected && (
-                          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-[10px] text-blue-700 space-y-1">
+                          <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-xl text-[10px] text-blue-700 space-y-1">
                             <p className="font-bold">🔵 Azure OpenAI Detected</p>
-                            <p>✅ Endpoint will be routed to: <code className="bg-blue-100 px-1 rounded">/openai/deployments/{'{deployment}'}/chat/completions</code></p>
-                            <p>✅ <code className="bg-blue-100 px-1 rounded">api-key</code> header will be used (instead of Bearer token)</p>
+                            <p>✅ Endpoint will be routed to: <code className="bg-blue-100 dark:bg-blue-900/50 px-1 rounded">/openai/deployments/{'{deployment}'}/chat/completions</code></p>
+                            <p>✅ <code className="bg-blue-100 dark:bg-blue-900/50 px-1 rounded">api-key</code> header will be used (instead of Bearer token)</p>
                             <p>📝 Enter your <strong>Deployment Name</strong> from Azure OpenAI Studio as the Model ID</p>
                           </div>
                         )}
 
                         {/* Generic custom endpoint hints */}
                         {currentProvider === 'custom' && !isAzureEndpointDetected && botForm.aiProvider?.endpoint && (
-                          <div className="mt-2 p-3 bg-gray-50 border border-gray-100 rounded-xl text-[10px] text-gray-500 space-y-0.5">
-                            <p className="font-bold text-gray-600">💡 Endpoint format:</p>
+                          <div className="mt-2 p-3 bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-xl text-[10px] text-gray-500 dark:text-gray-400 space-y-0.5">
+                            <p className="font-bold text-gray-600 dark:text-gray-300">💡 Endpoint format:</p>
                             <p>• <strong>Azure:</strong> <code>https://resource.openai.azure.com/</code></p>
                             <p>• <strong>Ollama:</strong> <code>http://localhost:11434/v1</code></p>
                             <p>• <strong>LM Studio:</strong> <code>http://localhost:1234/v1</code></p>
@@ -2318,7 +2319,7 @@ function AdminDashboard({ user, handleLogout }) {
                           </label>
                           <input
                             autoComplete="off"
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
+                            className="w-full bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-sm focus:border-primary/40 outline-none font-mono"
                             placeholder="2024-12-01-preview"
                             value={botForm.aiProvider?.apiVersion || ''}
                             onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, apiVersion: e.target.value } }))}
@@ -2333,14 +2334,14 @@ function AdminDashboard({ user, handleLogout }) {
 
                   {/* Temperature & Max Tokens */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5">
-                      <label className="text-xs font-semibold text-gray-500 block mb-2">Temperature: <span className="text-primary-dark font-bold">{botForm.aiProvider?.temperature ?? 0.1}</span></label>
+                    <div className="bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-xl p-3.5">
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 block mb-2">Temperature: <span className="text-primary-dark font-bold">{botForm.aiProvider?.temperature ?? 0.1}</span></label>
                       <input type="range" min="0" max="1" step="0.05" value={botForm.aiProvider?.temperature ?? 0.1} onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, temperature: parseFloat(e.target.value) } }))} className="w-full accent-primary-dark" />
                       <div className="flex justify-between text-[9px] text-gray-400 mt-1"><span>Precise (0)</span><span>Creative (1)</span></div>
                     </div>
-                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5">
-                      <label className="text-xs font-semibold text-gray-500 block mb-2">Max Tokens</label>
-                      <input type="number" min="256" max="32000" step="256" className="w-full bg-white border border-gray-200 rounded-lg p-2 text-sm focus:border-primary/40 outline-none"
+                    <div className="bg-gray-50 dark:bg-slate-900/50 border border-gray-100 dark:border-slate-700 rounded-xl p-3.5">
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 block mb-2">Max Tokens</label>
+                      <input type="number" min="256" max="32000" step="256" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-2 text-sm focus:border-primary/40 outline-none"
                         value={botForm.aiProvider?.maxTokens ?? 2000} onChange={e => setBotForm(f => ({ ...f, aiProvider: { ...f.aiProvider, maxTokens: parseInt(e.target.value) } }))} />
                       {isReasoningOrGpt5 && (botForm.aiProvider?.maxTokens ?? 2000) < 8000 && (
                         <p className="text-[10px] text-orange-600 font-semibold mt-1.5">⚠️ Reasoning model — increase to at least 8000</p>
@@ -2349,12 +2350,12 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
 
                   {/* Test Connection */}
-                  <div className="pt-3 border-t border-gray-100">
+                  <div className="pt-3 border-t border-gray-100 dark:border-slate-700">
                     <button type="button" onClick={handleTestAI} disabled={testAIState === 'testing'} className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-colors flex items-center gap-2">
-                      {testAIState === 'testing' ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Testing...</> : '🔌 Test Connection'}
+                      {testAIState === 'testing' ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Testing...</> : '🔌 Test Connection'}
                     </button>
                     {testAIState && testAIState !== 'testing' && (
-                      <div className={`mt-3 p-3 rounded-xl text-xs font-medium border ${testAIState.ok ? 'bg-green-50 border-green-100 text-green-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                      <div className={`mt-3 p-3 rounded-xl text-xs font-medium border ${testAIState.ok ? 'bg-green-50 dark:bg-green-900/30 border-green-100 dark:border-green-700 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/30 border-red-100 dark:border-red-700 text-red-700 dark:text-red-300'}`}>
                         {testAIState.ok ? '✅' : '❌'} {testAIState.message}
                       </div>
                     )}
@@ -2365,13 +2366,13 @@ function AdminDashboard({ user, handleLogout }) {
               {/* CAPABILITIES TAB */}
               {botModalTab === 'capabilities' && (
                 <div className="space-y-4">
-                  <div className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">⚡ Enable additional capabilities similar to ChatGPT. Availability depends on the selected provider and model.</div>
+                  <div className="text-xs text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/30 border border-violet-100 dark:border-violet-700 rounded-xl px-4 py-3">⚡ Enable additional capabilities similar to ChatGPT. Availability depends on the selected provider and model.</div>
                   <div className="space-y-3">
                     {ALL_CAPABILITIES.map(cap => {
                       const isSupported = cap.providers.includes(currentProvider);
                       const isOn = botForm.capabilities?.[cap.id] || false;
                       return (
-                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800' : isOn ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-gray-200 dark:hover:border-gray-600'}`}>
+                        <div key={cap.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${!isSupported ? 'opacity-50 border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800' : isOn ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-gray-200 dark:border-slate-700 dark:hover:border-gray-600'}`}>
                           <div className="flex items-start gap-3">
                             <span className="text-xl">{cap.icon}</span>
                             <div>
@@ -2385,20 +2386,20 @@ function AdminDashboard({ user, handleLogout }) {
                           </div>
                           <button type="button" disabled={!isSupported} onClick={() => setBotForm(f => ({ ...f, capabilities: { ...f.capabilities, [cap.id]: !isOn } }))}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-4 ${isOn && isSupported ? 'bg-primary-dark' : 'bg-gray-200'} ${!isSupported ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isOn && isSupported ? 'translate-x-6' : 'translate-x-1'}`} />
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white dark:bg-slate-800 shadow transition-transform ${isOn && isSupported ? 'translate-x-6' : 'translate-x-1'}`} />
                           </button>
                         </div>
                       );
                     })}
                   </div>
-                  {activeCapCount > 0 && <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">⚠️ <strong>{activeCapCount} capability{activeCapCount !== 1 ? 'ies' : ''} active.</strong> May require a paid API tier.</div>}
+                  {activeCapCount > 0 && <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-700 rounded-xl text-xs text-amber-700 dark:text-amber-300">⚠️ <strong>{activeCapCount} capability{activeCapCount !== 1 ? 'ies' : ''} active.</strong> May require a paid API tier.</div>}
                 </div>
               )}
 
               {/* KNOWLEDGE TAB */}
               {botModalTab === 'knowledge' && (
                 <div className="space-y-5">
-                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+                  <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-700 rounded-xl px-4 py-3">
                     📚 Upload documents as the bot's knowledge source. Supports <strong>PDF, Word, Excel, PowerPoint, TXT, CSV, MD</strong>.
                     {!editingBot && (
                       <span className="block mt-1 font-bold text-amber-800">
@@ -2415,11 +2416,10 @@ function AdminDashboard({ user, handleLogout }) {
                       {KNOWLEDGE_MODES.map(m => (
                         <label
                           key={m.id}
-                          className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                            botForm.knowledgeMode === m.id
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${botForm.knowledgeMode === m.id
                               ? 'border-primary bg-primary/5 dark:bg-primary/20'
-                              : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600'
-                          }`}
+                              : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:border-slate-700 dark:hover:border-gray-600'
+                            }`}
                         >
                           <input
                             type="radio"
@@ -2439,12 +2439,12 @@ function AdminDashboard({ user, handleLogout }) {
                   </div>
 
                   {editingBot && knowledgeFiles.some(f => f.originalName?.toLowerCase().endsWith('.pptx')) && (
-                    <div className="border border-indigo-100 bg-indigo-50 rounded-xl p-3">
-                      <label className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide block mb-2">
+                    <div className="border border-indigo-100 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl p-3">
+                      <label className="text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide block mb-2">
                         🎨 PPT Template (from Knowledge Base)
                       </label>
                       <select
-                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                        className="w-full bg-white dark:bg-slate-800 border border-indigo-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-400"
                         value={botForm.pptTemplateFileId || ''}
                         onChange={e =>
                           setBotForm({
@@ -2462,7 +2462,7 @@ function AdminDashboard({ user, handleLogout }) {
                             </option>
                           ))}
                       </select>
-                      <p className="text-[9px] text-indigo-600 mt-1">
+                      <p className="text-[9px] text-indigo-600 dark:text-indigo-400 mt-1">
                         The bot will adopt colors &amp; fonts from the selected PPTX template when creating presentations
                       </p>
                     </div>
@@ -2475,17 +2475,17 @@ function AdminDashboard({ user, handleLogout }) {
                       </label>
                       <div
                         onClick={() => knowledgeInputRef.current?.click()}
-                        className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-amber-300 hover:bg-amber-50/50 transition-all"
+                        className="border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-xl p-8 text-center cursor-pointer hover:border-amber-300 dark:hover:border-amber-700 hover:bg-amber-50/50 dark:hover:bg-amber-900/20 transition-all"
                       >
                         {knowledgeUploading ? (
                           <div className="flex flex-col items-center gap-2 text-amber-600">
-                            <div className="w-8 h-8 border-2 border-amber-200 border-t-amber-600 rounded-full animate-spin"/>
+                            <div className="w-8 h-8 border-2 border-amber-200 border-t-amber-600 rounded-full animate-spin" />
                             <p className="font-semibold text-sm">Processing files...</p>
                           </div>
                         ) : (
                           <>
                             <div className="text-4xl mb-2">📁</div>
-                            <p className="text-sm font-semibold text-gray-600">Click or drag &amp; drop files</p>
+                            <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">Click or drag &amp; drop files</p>
                             <p className="text-xs text-gray-400 mt-1">
                               PDF • Word • Excel • PowerPoint • TXT • CSV • MD
                             </p>
@@ -2512,13 +2512,13 @@ function AdminDashboard({ user, handleLogout }) {
                         {knowledgeFiles.map(f => (
                           <div
                             key={f._id}
-                            className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors"
+                            className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-xl border border-gray-100 dark:border-slate-700 hover:border-gray-200 dark:border-slate-700 transition-colors"
                           >
                             <span className="text-xl flex-shrink-0">
                               {getFileIcon(f.originalName)}
                             </span>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate text-gray-800">
+                              <p className="text-sm font-semibold truncate text-gray-800 dark:text-gray-100">
                                 {f.originalName}
                               </p>
                               <p className="text-[10px] text-gray-400">
@@ -2553,10 +2553,10 @@ function AdminDashboard({ user, handleLogout }) {
                   {editingBot ? (
                     <ApiKeyWidget botId={editingBot._id} hasKey={editingBot.botApiKey === '***'} />
                   ) : (
-                    <div className="border border-gray-200 bg-gray-50 rounded-xl p-4">
+                    <div className="border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-base">🔑</span>
-                        <span className="font-semibold text-sm text-gray-800">Bot API Key (External Access)</span>
+                        <span className="font-semibold text-sm text-gray-800 dark:text-gray-100">Bot API Key (External Access)</span>
                       </div>
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                         ⚠️ Save the bot first, then generate an API Key from here.
@@ -2575,7 +2575,7 @@ function AdminDashboard({ user, handleLogout }) {
                     const targets = waha.targets || [];
                     const schedules = waha.schedules || [];
 
-                    const newTarget = () => ({ _id: Date.now().toString(), chatId: '', label: '', type: 'private', tagOnly: false, active: true });
+                    const newTarget = () => ({ _id: Date.now().toString(), chatId: '', label: '', type: 'private', replyAll: false, active: true });
                     const newSchedule = () => ({ _id: Date.now().toString(), label: '', prompt: '', active: true, scheduleType: 'daily', time: '08:00', times: ['08:00'], intervalMinutes: 60, intervalStart: '08:00', intervalEnd: '17:00', targetIds: [] });
 
                     const addTarget = () => setWaha({ targets: [...targets, newTarget()] });
@@ -2587,18 +2587,18 @@ function AdminDashboard({ user, handleLogout }) {
                     const updateSchedule = (id, patch) => setWaha({ schedules: schedules.map(s => s._id === id ? { ...s, ...patch } : s) });
 
                     return (
-                      <div className={`border-2 rounded-xl p-4 transition-all ${waha.enabled ? 'border-[#25D366]/40 bg-[#25D366]/5' : 'border-gray-100 bg-white'}`}>
+                      <div className={`border-2 rounded-xl p-4 transition-all ${waha.enabled ? 'border-[#25D366]/40 bg-[#25D366]/5' : 'border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800'}`}>
 
                         {/* HEADER */}
                         <div className="flex justify-between items-center mb-3">
                           <div className="flex items-center gap-2">
                             <span className="text-lg">💬</span>
-                            <span className="font-semibold text-sm text-gray-800">WhatsApp Integration (WAHA)</span>
+                            <span className="font-semibold text-sm text-gray-800 dark:text-gray-100">WhatsApp Integration (WAHA)</span>
                           </div>
                           <button type="button"
                             onClick={() => setWaha({ enabled: !waha.enabled })}
                             className={`relative inline-flex h-5 w-9 items-center rounded-full ${waha.enabled ? 'bg-[#25D366]' : 'bg-gray-200'}`}>
-                            <span className={`inline-block h-3.5 w-3.5 bg-white rounded-full transform ${waha.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                            <span className={`inline-block h-3.5 w-3.5 bg-white dark:bg-slate-800 rounded-full transform ${waha.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
 
@@ -2610,18 +2610,18 @@ function AdminDashboard({ user, handleLogout }) {
                               <div className="col-span-2">
                                 <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">WAHA Server URL</label>
                                 <input type="text" value={waha.endpoint || ''} onChange={e => setWaha({ endpoint: e.target.value })}
-                                  placeholder="http://your-waha-server:3000" className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
+                                  placeholder="http://your-waha-server:3000" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
                                 <p className="text-[9px] text-gray-400 mt-0.5">Base URL only, without /api/sendText</p>
                               </div>
                               <div>
                                 <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Session Name</label>
                                 <input type="text" value={waha.session || 'default'} onChange={e => setWaha({ session: e.target.value })}
-                                  placeholder="default" className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
+                                  placeholder="default" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
                               </div>
                               <div>
                                 <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">WAHA API Key</label>
                                 <input type="password" value={waha.apiKey || ''} onChange={e => setWaha({ apiKey: e.target.value })}
-                                  placeholder="Secret API Key" className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
+                                  placeholder="Secret API Key" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-[#25D366]/50" />
                               </div>
                             </div>
 
@@ -2634,7 +2634,7 @@ function AdminDashboard({ user, handleLogout }) {
                                 </div>
                                 <button type="button" onClick={() => setWaha({ webhookEnabled: !waha.webhookEnabled })}
                                   className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${waha.webhookEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}>
-                                  <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform ${waha.webhookEnabled ? 'translate-x-3.5' : 'translate-x-1'}`} />
+                                  <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white dark:bg-slate-800 shadow transition-transform ${waha.webhookEnabled ? 'translate-x-3.5' : 'translate-x-1'}`} />
                                 </button>
                               </div>
                               {waha.webhookEnabled && (
@@ -2647,13 +2647,13 @@ function AdminDashboard({ user, handleLogout }) {
                                     <div>
                                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Bot Phone Number</label>
                                       <input type="text" value={waha.botPhoneNumber || ''} onChange={e => setWaha({ botPhoneNumber: e.target.value })}
-                                        placeholder="628123456789" className="w-full bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
+                                        placeholder="628123456789" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
                                       <p className="text-[9px] text-gray-400 mt-0.5">For @tag detection in groups</p>
                                     </div>
                                     <div>
                                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Webhook Secret (optional)</label>
                                       <input type="text" value={waha.webhookSecret || ''} onChange={e => setWaha({ webhookSecret: e.target.value })}
-                                        placeholder="Optional secret" className="w-full bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
+                                        placeholder="Optional secret" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-2 text-xs outline-none focus:border-blue-400" />
                                     </div>
                                   </div>
                                 </div>
@@ -2664,33 +2664,33 @@ function AdminDashboard({ user, handleLogout }) {
                             <div>
                               <div className="flex items-center justify-between mb-2">
                                 <div>
-                                  <span className="text-xs font-semibold text-gray-700">📱 Target Chats</span>
+                                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">📱 Target Chats</span>
                                   <p className="text-[9px] text-gray-400">Private chats or groups that will receive/send messages</p>
                                 </div>
                                 <button type="button" onClick={addTarget} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Add Target</button>
                               </div>
                               <div className="space-y-2">
                                 {targets.length === 0 && (
-                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">No targets yet. Click &quot;+ Add Target&quot;</p>
+                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">No targets yet. Click &quot;+ Add Target&quot;</p>
                                 )}
                                 {targets.map(target => (
-                                  <div key={target._id} className={`border rounded-xl p-3 space-y-2 ${target.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                                  <div key={target._id} className={`border rounded-xl p-3 space-y-2 ${target.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex items-center gap-2">
                                       <div className="flex-1 grid grid-cols-3 gap-2">
                                         <div>
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Label</label>
                                           <input type="text" value={target.label || ''} onChange={e => updateTarget(target._id, { label: e.target.value })}
-                                            placeholder="e.g. HR Group" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                            placeholder="e.g. HR Group" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                         <div>
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Chat ID</label>
                                           <input type="text" value={target.chatId || ''} onChange={e => updateTarget(target._id, { chatId: e.target.value })}
-                                            placeholder="628xxx@c.us or @g.us" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none font-mono" />
+                                            placeholder="628xxx@c.us or @g.us" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none font-mono" />
                                         </div>
                                         <div>
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Type</label>
                                           <select value={target.type || 'private'} onChange={e => updateTarget(target._id, { type: e.target.value })}
-                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none">
+                                            className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none">
                                             <option value="private">💬 Private</option>
                                             <option value="group">👥 Group</option>
                                           </select>
@@ -2699,8 +2699,8 @@ function AdminDashboard({ user, handleLogout }) {
                                       <div className="flex flex-col gap-1 flex-shrink-0">
                                         {target.type === 'group' && (
                                           <label className="flex items-center gap-1 text-[10px] cursor-pointer whitespace-nowrap">
-                                            <input type="checkbox" checked={target.tagOnly || false} onChange={e => updateTarget(target._id, { tagOnly: e.target.checked })} className="accent-[#25D366]" />
-                                            @tag only
+                                            <input type="checkbox" checked={target.replyAll || false} onChange={e => updateTarget(target._id, { replyAll: e.target.checked })} className="accent-[#25D366]" />
+                                            Reply to all
                                           </label>
                                         )}
                                         <label className="flex items-center gap-1 text-[10px] cursor-pointer">
@@ -2710,7 +2710,7 @@ function AdminDashboard({ user, handleLogout }) {
                                         <button type="button" onClick={() => removeTarget(target._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Remove</button>
                                       </div>
                                     </div>
-                                    {target.type === 'group' && target.tagOnly && (
+                                    {target.type === 'group' && !target.replyAll && (
                                       <p className="text-[9px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
                                         ⚡ @tag mode: Bot only responds when @mentioned in this group
                                       </p>
@@ -2724,28 +2724,28 @@ function AdminDashboard({ user, handleLogout }) {
                             <div>
                               <div className="flex items-center justify-between mb-2">
                                 <div>
-                                  <span className="text-xs font-semibold text-gray-700">⏰ Send Schedules</span>
+                                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">⏰ Send Schedules</span>
                                   <p className="text-[9px] text-gray-400">Automatically send messages to targets on a schedule</p>
                                 </div>
                                 <button type="button" onClick={addSchedule} className="text-xs font-semibold text-[#25D366] hover:text-green-700 transition-colors">+ Add Schedule</button>
                               </div>
                               <div className="space-y-3">
                                 {schedules.length === 0 && (
-                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-xl border border-dashed border-gray-200">No schedules yet. Click &quot;+ Add Schedule&quot;</p>
+                                  <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">No schedules yet. Click &quot;+ Add Schedule&quot;</p>
                                 )}
                                 {schedules.map(sched => (
-                                  <div key={sched._id} className={`border rounded-xl p-3 space-y-3 ${sched.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                                  <div key={sched._id} className={`border rounded-xl p-3 space-y-3 ${sched.active ? 'border-[#25D366]/30 bg-[#25D366]/5' : 'border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex items-start gap-2">
                                       <div className="flex-1 grid grid-cols-2 gap-2">
                                         <div>
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Schedule Label</label>
                                           <input type="text" value={sched.label || ''} onChange={e => updateSchedule(sched._id, { label: e.target.value })}
-                                            placeholder="e.g. Morning Report" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                            placeholder="e.g. Morning Report" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                         <div>
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Schedule Type</label>
                                           <select value={sched.scheduleType || 'daily'} onChange={e => updateSchedule(sched._id, { scheduleType: e.target.value })}
-                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none">
+                                            className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none">
                                             <option value="daily">📅 Daily (once/day)</option>
                                             <option value="multiple">🔢 Multiple times/day</option>
                                             <option value="interval">🔄 Interval (every N minutes)</option>
@@ -2763,22 +2763,22 @@ function AdminDashboard({ user, handleLogout }) {
 
                                     {sched.scheduleType === 'daily' && (
                                       <div className="flex items-center gap-2">
-                                        <label className="text-[10px] font-semibold text-gray-500 whitespace-nowrap">Time:</label>
+                                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 whitespace-nowrap">Time:</label>
                                         <input type="time" value={sched.time || '08:00'} onChange={e => updateSchedule(sched._id, { time: e.target.value })}
-                                          className="bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                          className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none" />
                                         <span className="text-[10px] text-gray-400">Send once per day at this time</span>
                                       </div>
                                     )}
                                     {sched.scheduleType === 'multiple' && (
                                       <div className="space-y-1.5">
                                         <div className="flex items-center justify-between">
-                                          <label className="text-[10px] font-semibold text-gray-500">Send times:</label>
+                                          <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">Send times:</label>
                                           <button type="button" onClick={() => updateSchedule(sched._id, { times: [...(sched.times || []), '08:00'] })}
                                             className="text-[10px] text-[#25D366] font-semibold">+ Add Time</button>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                           {(sched.times || []).map((t, ti) => (
-                                            <div key={ti} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+                                            <div key={ti} className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1">
                                               <input type="time" value={t} onChange={e => {
                                                 const newTimes = [...(sched.times || [])];
                                                 newTimes[ti] = e.target.value;
@@ -2797,17 +2797,17 @@ function AdminDashboard({ user, handleLogout }) {
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Every (minutes)</label>
                                           <input type="number" min="5" max="1440" value={sched.intervalMinutes || 60}
                                             onChange={e => updateSchedule(sched._id, { intervalMinutes: parseInt(e.target.value) || 60 })}
-                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                            className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                         <div>
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Start Time</label>
                                           <input type="time" value={sched.intervalStart || '08:00'} onChange={e => updateSchedule(sched._id, { intervalStart: e.target.value })}
-                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                            className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                         <div>
                                           <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">End Time</label>
                                           <input type="time" value={sched.intervalEnd || '17:00'} onChange={e => updateSchedule(sched._id, { intervalEnd: e.target.value })}
-                                            className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                            className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none" />
                                         </div>
                                       </div>
                                     )}
@@ -2815,7 +2815,7 @@ function AdminDashboard({ user, handleLogout }) {
                                     <div>
                                       <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Prompt for AI</label>
                                       <input type="text" value={sched.prompt || ''} onChange={e => updateSchedule(sched._id, { prompt: e.target.value })}
-                                        placeholder="e.g. Generate a summary report for today" className="w-full bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none" />
+                                        placeholder="e.g. Generate a summary report for today" className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1.5 text-xs outline-none" />
                                     </div>
 
                                     {targets.length > 0 && (
@@ -2825,7 +2825,7 @@ function AdminDashboard({ user, handleLogout }) {
                                         </label>
                                         <div className="flex flex-wrap gap-1.5">
                                           {targets.filter(t => t.active).map(t => (
-                                            <label key={t._id} className="flex items-center gap-1 text-[10px] cursor-pointer bg-white border border-gray-200 rounded-lg px-2 py-1">
+                                            <label key={t._id} className="flex items-center gap-1 text-[10px] cursor-pointer bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1">
                                               <input type="checkbox"
                                                 checked={!sched.targetIds?.length || sched.targetIds.includes(t._id)}
                                                 onChange={e => {
@@ -2850,7 +2850,7 @@ function AdminDashboard({ user, handleLogout }) {
                             </div>
 
                             {/* Info box */}
-                            <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-xl px-3 py-2 text-[10px] text-green-800 space-y-0.5">
+                            <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-xl px-3 py-2 text-[10px] text-green-800 dark:text-green-300 space-y-0.5">
                               <p className="font-bold">💡 How It Works:</p>
                               <p>• <strong>Webhook ON</strong>: Bot responds to incoming messages in real-time (set URL in WAHA)</p>
                               <p>• <strong>@tag Only</strong>: Bot in groups only responds when @mentioned</p>
@@ -2865,8 +2865,8 @@ function AdminDashboard({ user, handleLogout }) {
                   {/* ── Smartsheet Integration (custom multi-sheet UI) ── */}
                   {(() => {
                     const config = botForm.smartsheetConfig || {};
-                    const sheetIds     = config.sheetIds     || [];
-                    const sheetLabels  = config.sheetLabels  || [];
+                    const sheetIds = config.sheetIds || [];
+                    const sheetLabels = config.sheetLabels || [];
 
                     const updateSheetId = (idx, val) => {
                       const next = [...sheetIds]; next[idx] = val;
@@ -2881,29 +2881,29 @@ function AdminDashboard({ user, handleLogout }) {
                         ...f,
                         smartsheetConfig: {
                           ...f.smartsheetConfig,
-                          sheetIds:    [...(f.smartsheetConfig.sheetIds || []), ''],
+                          sheetIds: [...(f.smartsheetConfig.sheetIds || []), ''],
                           sheetLabels: [...(f.smartsheetConfig.sheetLabels || []), ''],
                         }
                       }));
                     };
                     const removeSheet = (idx) => {
-                      const nextIds    = sheetIds.filter((_, i) => i !== idx);
+                      const nextIds = sheetIds.filter((_, i) => i !== idx);
                       const nextLabels = sheetLabels.filter((_, i) => i !== idx);
                       setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, sheetIds: nextIds, sheetLabels: nextLabels } }));
                     };
 
                     return (
-                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white'}`}>
+                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 dark:border-slate-700 dark:bg-slate-800'}`}>
                         {/* Header + toggle */}
                         <div className="flex justify-between items-center mb-3">
                           <div className="flex items-center gap-2">
                             <span className="text-lg">📊</span>
-                            <span className="font-semibold text-sm text-gray-800">Smartsheet Integration</span>
+                            <span className="font-semibold text-sm text-gray-800 dark:text-white">Smartsheet Integration</span>
                           </div>
                           <button type="button"
                             onClick={() => setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, enabled: !config.enabled } }))}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200'}`}>
-                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white dark:bg-slate-800 shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
 
@@ -2911,7 +2911,7 @@ function AdminDashboard({ user, handleLogout }) {
                           <div className="space-y-3">
                             {/* API Key */}
                             <input type="password" placeholder="API Key (override .env)" autoComplete="new-password"
-                              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors"
+                              className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors dark:text-white"
                               value={config.apiKey || ''}
                               onChange={e => setBotForm(f => ({ ...f, smartsheetConfig: { ...f.smartsheetConfig, apiKey: e.target.value } }))} />
 
@@ -2928,7 +2928,7 @@ function AdminDashboard({ user, handleLogout }) {
                               </div>
 
                               {sheetIds.length === 0 && (
-                                <div className="text-[10px] text-gray-400 italic bg-gray-50 border border-dashed border-gray-200 rounded-xl p-3 text-center">
+                                <div className="text-[10px] text-gray-400 italic bg-gray-50 dark:bg-slate-900 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl p-3 text-center">
                                   No sheets configured. Click <strong>+ Add Sheet</strong> to add a Smartsheet ID.
                                 </div>
                               )}
@@ -2938,11 +2938,11 @@ function AdminDashboard({ user, handleLogout }) {
                                   <div key={idx} className="flex gap-1.5 items-center">
                                     <div className="flex-1 flex gap-1.5">
                                       <input type="text" placeholder={`Sheet ID #${idx + 1} (numeric)`}
-                                        className="flex-1 bg-white border border-gray-200 rounded-xl p-2 text-xs font-mono outline-none focus:border-primary/40 transition-colors"
+                                        className="flex-1 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2 text-xs font-mono outline-none focus:border-primary/40 transition-colors dark:text-white"
                                         value={id}
                                         onChange={e => updateSheetId(idx, e.target.value)} />
                                       <input type="text" placeholder="Label (optional)"
-                                        className="w-28 bg-white border border-gray-200 rounded-xl p-2 text-xs outline-none focus:border-primary/40 transition-colors"
+                                        className="w-28 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2 text-xs outline-none focus:border-primary/40 transition-colors dark:text-white"
                                         value={sheetLabels[idx] || ''}
                                         onChange={e => updateSheetLabel(idx, e.target.value)} />
                                     </div>
@@ -2957,7 +2957,7 @@ function AdminDashboard({ user, handleLogout }) {
 
                               {sheetIds.length > 0 && (
                                 <p className="text-[9px] text-gray-400 mt-1.5">
-                                  💡 Bot will search across <strong>all {sheetIds.length} sheet{sheetIds.length !== 1 ? 's' : ''}</strong> when answering questions. Find Sheet ID in the Smartsheet URL: <code className="bg-gray-100 px-1 rounded">…smartsheet.com/sheets/<strong>SHEET_ID</strong></code>
+                                  💡 Bot will search across <strong>all {sheetIds.length} sheet{sheetIds.length !== 1 ? 's' : ''}</strong> when answering questions. Find Sheet ID in the Smartsheet URL: <code className="bg-gray-100 dark:bg-slate-700 px-1 rounded">…smartsheet.com/sheets/<strong>SHEET_ID</strong></code>
                                 </p>
                               )}
                             </div>
@@ -2969,25 +2969,25 @@ function AdminDashboard({ user, handleLogout }) {
 
                   {/* ── Kouventa / Azure Search (unchanged generic renderer) ── */}
                   {[
-                    { key: 'kouventa',    label: 'Kouventa AI Engine', icon: '🔗', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
-                    { key: 'azureSearch', label: 'Azure AI Search',    icon: '🔍', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
+                    { key: 'kouventa', label: 'Kouventa AI Engine', icon: '🔗', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
+                    { key: 'azureSearch', label: 'Azure AI Search', icon: '🔍', fields: [{ key: 'endpoint', label: 'Endpoint URL', type: 'text' }, { key: 'apiKey', label: 'API Key', type: 'password' }] },
                   ].map(intg => {
                     const configKey = `${intg.key}Config`;
                     const config = botForm[configKey] || {};
                     return (
-                      <div key={intg.key} className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5' : 'border-gray-100 bg-white'}`}>
+                      <div key={intg.key} className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-primary/30 bg-primary/5 dark:bg-primary/20' : 'border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 dark:border-slate-700 dark:bg-slate-800'}`}>
                         <div className="flex justify-between items-center mb-3">
-                          <div className="flex items-center gap-2"><span className="text-lg">{intg.icon}</span><span className="font-semibold text-sm text-gray-800">{intg.label}</span></div>
+                          <div className="flex items-center gap-2"><span className="text-lg">{intg.icon}</span><span className="font-semibold text-sm text-gray-800 dark:text-white">{intg.label}</span></div>
                           <button type="button" onClick={() => setBotForm(f => ({ ...f, [configKey]: { ...f[configKey], enabled: !config.enabled } }))}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200'}`}>
-                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white dark:bg-slate-800 shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
                         {config.enabled && (
                           <div className="space-y-2">
                             {intg.fields.map(field => (
                               <input key={field.key} type={field.type} placeholder={field.label} autoComplete="new-password"
-                                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors"
+                                className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-primary/40 transition-colors dark:text-white"
                                 value={config[field.key] || ''} onChange={e => setBotForm(f => ({ ...f, [configKey]: { ...f[configKey], [field.key]: e.target.value } }))} />
                             ))}
                           </div>
@@ -3000,23 +3000,23 @@ function AdminDashboard({ user, handleLogout }) {
                   {(() => {
                     const config = botForm.onedriveConfig || {};
                     return (
-                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-sky-200 bg-sky-50/30' : 'border-gray-100 bg-white'}`}>
+                      <div className={`border-2 rounded-xl p-4 transition-all ${config.enabled ? 'border-sky-200 bg-sky-50/30 dark:border-sky-800 dark:bg-sky-900/30' : 'border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 dark:border-slate-700 dark:bg-slate-800'}`}>
                         <div className="flex justify-between items-center mb-3">
-                          <div className="flex items-center gap-2"><span className="text-lg">☁️</span><span className="font-semibold text-sm text-gray-800">OneDrive / SharePoint Integration</span></div>
+                          <div className="flex items-center gap-2"><span className="text-lg">☁️</span><span className="font-semibold text-sm text-gray-800 dark:text-white">OneDrive / SharePoint Integration</span></div>
                           <button type="button" onClick={() => { setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, enabled: !config.enabled } })); setOnedriveTestState(null); }}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-sky-600' : 'bg-gray-200'}`}>
-                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-sky-600' : 'bg-gray-200 dark:bg-slate-700'}`}>
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white dark:bg-slate-800 shadow transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                           </button>
                         </div>
                         {config.enabled && (
                           <div className="space-y-3">
-                            <div className="bg-sky-50 border border-sky-100 rounded-xl px-3 py-2 text-[10px] text-sky-700">
+                            <div className="bg-sky-50 dark:bg-sky-900/40 border border-sky-100 dark:border-sky-800/50 rounded-xl px-3 py-2 text-[10px] text-sky-700 dark:text-sky-300">
                               📋 Bot will read files from your OneDrive/SharePoint folder. Use <strong>Application permissions</strong> in Azure AD.
                             </div>
                             <div>
                               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Folder URL</label>
                               <input type="text" placeholder="https://company.sharepoint.com/..." autoComplete="off"
-                                className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors"
+                                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors dark:text-white"
                                 value={config.folderUrl || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, folderUrl: e.target.value } }))} />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
@@ -3024,7 +3024,7 @@ function AdminDashboard({ user, handleLogout }) {
                                 <div key={field}>
                                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">{field === 'tenantId' ? 'Tenant ID' : 'Client ID'}</label>
                                   <input type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autoComplete="off"
-                                    className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs font-mono outline-none focus:border-sky-400 transition-colors"
+                                    className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono outline-none focus:border-sky-400 transition-colors dark:text-white"
                                     value={config[field] || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, [field]: e.target.value } }))} />
                                 </div>
                               ))}
@@ -3032,22 +3032,22 @@ function AdminDashboard({ user, handleLogout }) {
                             <div>
                               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Client Secret</label>
                               <input type="password" placeholder="Client Secret Value" autoComplete="new-password"
-                                className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors"
+                                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-2.5 text-xs outline-none focus:border-sky-400 transition-colors dark:text-white"
                                 value={config.clientSecret || ''} onChange={e => setBotForm(f => ({ ...f, onedriveConfig: { ...f.onedriveConfig, clientSecret: e.target.value } }))} />
                             </div>
-                            <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-[10px] text-amber-700 space-y-0.5">
+                            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-800/50 rounded-xl px-3 py-2 text-[10px] text-amber-700 dark:text-amber-400 space-y-0.5">
                               <p className="font-bold">⚠️ Required Azure App Permissions:</p>
-                              <p>✅ <code className="bg-amber-100 px-1 rounded">Files.Read.All</code> — Application</p>
-                              <p>✅ <code className="bg-amber-100 px-1 rounded">Sites.Read.All</code> — Application</p>
+                              <p>✅ <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">Files.Read.All</code> — Application</p>
+                              <p>✅ <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">Sites.Read.All</code> — Application</p>
                             </div>
-                            <div className="pt-1 border-t border-gray-100">
+                            <div className="pt-1 border-t border-gray-100 dark:border-slate-700">
                               <button type="button" onClick={handleTestOneDrive}
                                 disabled={onedriveTestState === 'testing' || !config.folderUrl || !config.tenantId || !config.clientId || !config.clientSecret}
                                 className="px-4 py-2 bg-sky-600 text-white text-xs font-semibold rounded-xl hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
-                                {onedriveTestState === 'testing' ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Testing...</> : '🔌 Test OneDrive Connection'}
+                                {onedriveTestState === 'testing' ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Testing...</> : '🔌 Test OneDrive Connection'}
                               </button>
                               {onedriveTestState && onedriveTestState !== 'testing' && (
-                                <div className={`mt-2 p-3 rounded-xl text-xs font-medium border ${onedriveTestState.ok ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                                <div className={`mt-2 p-3 rounded-xl text-xs font-medium border ${onedriveTestState.ok ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-100 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/30 border-red-100 dark:border-red-800/50 text-red-700 dark:text-red-400'}`}>
                                   {onedriveTestState.ok ? <div><p className="font-bold">✅ Connection successful!</p>{onedriveTestState.fileCount !== undefined && <p>📁 {onedriveTestState.fileCount} file(s) found</p>}</div> : <div><p className="font-bold">❌ Connection failed</p><p>{onedriveTestState.message}</p></div>}
                                 </div>
                               )}
@@ -3062,17 +3062,17 @@ function AdminDashboard({ user, handleLogout }) {
             </div>
 
             {/* Modal footer */}
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-between items-center bg-gray-50/40 flex-shrink-0">
+            <div className="px-6 py-4 border-t border-gray-100 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-900/60 flex-shrink-0">
               <div>
                 {editingBot && (
-                  <button onClick={() => handleDeleteBot(editingBot._id)} className="px-4 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 font-semibold text-sm rounded-xl transition-colors flex items-center gap-1.5">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  <button onClick={() => handleDeleteBot(editingBot._id)} className="px-4 py-2 text-red-500 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 font-semibold text-sm rounded-xl transition-colors flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     Delete Bot
                   </button>
                 )}
               </div>
               <div className="flex gap-2.5">
-                <button onClick={() => setShowBotModal(false)} className="px-4 py-2 text-gray-500 hover:text-gray-700 font-medium text-sm transition-colors">Cancel</button>
+                <button onClick={() => setShowBotModal(false)} className="px-4 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium text-sm transition-colors">Cancel</button>
                 <button onClick={handleSaveBot} className="px-6 py-2 bg-primary-dark text-white rounded-xl font-semibold hover:bg-primary text-sm transition-all shadow-sm">
                   {editingBot ? '✓ Save Changes' : '+ Create Bot'}
                 </button>
@@ -3085,41 +3085,41 @@ function AdminDashboard({ user, handleLogout }) {
       {/* USER MODAL */}
       {showUserModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border border-gray-100">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-6 border border-gray-100 dark:border-slate-700">
             <div className="flex justify-between items-center mb-5">
-              <h3 className="font-bold text-gray-800 text-lg">{editingUser ? 'Edit User' : 'Add User'}</h3>
-              <button onClick={() => setShowUserModal(false)} className="text-gray-400 hover:text-gray-600 w-8 h-8 rounded-xl hover:bg-gray-100 flex items-center justify-center transition-all">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg">{editingUser ? 'Edit User' : 'Add User'}</h3>
+              <button onClick={() => setShowUserModal(false)} className="text-gray-400 hover:text-gray-600 dark:text-gray-300 w-8 h-8 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700 flex items-center justify-center transition-all">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
             <div className="space-y-3">
-              <input autoComplete="off" className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:border-primary/40 outline-none transition-all" placeholder="Username" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
-              <input autoComplete="new-password" className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:border-primary/40 outline-none transition-all" type="password" placeholder="Password (leave blank to keep unchanged)" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+              <input autoComplete="off" className="w-full bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl p-3 text-sm focus:border-primary/40 outline-none transition-all" placeholder="Username" value={userForm.username} onChange={e => setUserForm({ ...userForm, username: e.target.value })} />
+              <input autoComplete="new-password" className="w-full bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl p-3 text-sm focus:border-primary/40 outline-none transition-all" type="password" placeholder="Password (leave blank to keep unchanged)" value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} />
               <div className="flex gap-6">
-                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer text-gray-700">
-                  <input type="checkbox" checked={userForm.isAdmin} onChange={e => setUserForm({...userForm, isAdmin: e.target.checked})} className="accent-primary-dark" />
+                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer text-gray-700 dark:text-gray-200">
+                  <input type="checkbox" checked={userForm.isAdmin} onChange={e => setUserForm({ ...userForm, isAdmin: e.target.checked })} className="accent-primary-dark" />
                   Administrator
                 </label>
                 {!userForm.isAdmin && (
-                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer text-violet-700">
-                    <input type="checkbox" checked={userForm.isBotCreator} onChange={e => setUserForm({...userForm, isBotCreator: e.target.checked})} className="accent-violet-600" />
+                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer text-violet-700 dark:text-violet-300">
+                    <input type="checkbox" checked={userForm.isBotCreator} onChange={e => setUserForm({ ...userForm, isBotCreator: e.target.checked })} className="accent-violet-600" />
                     Bot Creator
                   </label>
                 )}
               </div>
-              <div className="border border-gray-100 p-3 rounded-xl max-h-36 overflow-y-auto bg-gray-50">
+              <div className="border border-gray-100 dark:border-slate-700 p-3 rounded-xl max-h-36 overflow-y-auto bg-gray-50 dark:bg-slate-800">
                 <p className="text-[10px] font-semibold text-gray-400 mb-2 uppercase tracking-wide">Bot Access</p>
                 {bots.map(b => (
-                  <label key={b._id} className="flex items-center gap-2 mb-1.5 text-sm cursor-pointer hover:bg-white rounded-lg px-1 py-0.5 transition-colors">
+                  <label key={b._id} className="flex items-center gap-2 mb-1.5 text-sm cursor-pointer hover:bg-white dark:hover:bg-slate-700 rounded-lg px-1 py-0.5 transition-colors">
                     <input type="checkbox" checked={userForm.assignedBots.includes(b._id)} onChange={() => toggleBotAssignment(b._id)} className="accent-primary-dark" />
                     <BotAvatar bot={b} size="xs" />
-                    <span className="truncate font-medium text-gray-700">{b.name}</span>
+                    <span className="truncate font-medium text-gray-700 dark:text-gray-200">{b.name}</span>
                   </label>
                 ))}
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setShowUserModal(false)} className="px-4 py-2 text-gray-500 font-medium text-sm hover:text-gray-700 transition-colors">Cancel</button>
+              <button onClick={() => setShowUserModal(false)} className="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium text-sm hover:text-gray-700 dark:text-gray-200 transition-colors">Cancel</button>
               <button onClick={handleSaveUser} className="px-5 py-2 bg-primary-dark text-white rounded-xl font-semibold text-sm hover:bg-primary transition-colors">Save</button>
             </div>
           </div>
