@@ -210,6 +210,11 @@ const BaileysService = {
       return false;
     }
     try {
+      // Force group metadata sync if it's a group, helps avoid 'forbidden' due to desync
+      if (jid.endsWith('@g.us')) {
+        await sock.groupMetadata(jid).catch(() => {});
+      }
+      
       await sock.sendMessage(jid, { text });
       log(`✅ Text sent to ${jid}`);
       return true;
@@ -230,6 +235,12 @@ const BaileysService = {
         log(`❌ Image file not found: ${imagePath}`);
         return false;
       }
+      
+      // Force group metadata sync if it's a group
+      if (jid.endsWith('@g.us')) {
+        await sock.groupMetadata(jid).catch(() => {});
+      }
+
       const buffer = fs.readFileSync(imagePath);
       await sock.sendMessage(jid, {
         image: buffer,
