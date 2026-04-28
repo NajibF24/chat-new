@@ -16,7 +16,6 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   isJidGroup,
-  proto,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import fs from 'fs';
@@ -94,7 +93,7 @@ async function connect() {
       getMessage: async (key) => {
         const stored = msgStore.get(key.id);
         if (stored) return stored.message;
-        return proto.Message.fromObject({ conversation: '(retry)' });
+        return { conversation: '(retry)' };
       },
     });
 
