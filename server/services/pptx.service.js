@@ -245,14 +245,16 @@ function addLeftAccent(slide, pptx, GYS, y = 0.85, h = 4.3) {
 
 function addSlideTitle(slide, GYS, title) {
   const titleStr  = String(title || '');
-  // ✅ v1.5.0: tighter box (w=8.0 to leave room for badge) + stricter scaling
+  // ✅ v1.5.1: align title text vertically with logo (logo y=0.14, h=0.40)
+  // Title box y=0.14, h=0.52 centers text at same height as logo center
   const titleSize = calcFontSize(titleStr, 45, 22, 13);
   slide.addText(titleStr, {
-    x: 1.6, y: 0.10, w: 7.3, h: 0.62,
+    x: 1.6, y: 0.14, w: 7.3, h: 0.52,
     fontSize: titleSize, bold: true, color: GYS.darkText, valign: "middle",
     fontFace: GYS.fontTitle, autoFit: true,
   });
 }
+
 
 // ────────────────────────────────────────────────────────────
 // IMAGE_SLIDE layout
