@@ -23,12 +23,18 @@ const knowledgeFileSchema = new mongoose.Schema({
 
 // ── AI Provider Config Sub-Schema ────────────────────────────
 const aiProviderSchema = new mongoose.Schema({
-  provider:    { type: String, enum: ['openai', 'anthropic', 'google', 'custom'], default: 'openai' },
+  provider:    { type: String, enum: ['openai', 'anthropic', 'google', 'custom', 'external'], default: 'openai' },
   model:       { type: String, default: 'gpt-4.1' },
   apiKey:      { type: String, default: '' },
   endpoint:    { type: String, default: '' },
   temperature: { type: Number, default: 0.1 },
-  maxTokens:   { type: Number, default: 8000 }, // ✅ UPDATED: default 8000
+  maxTokens:   { type: Number, default: 8000 },
+
+  // ── External Bot / HTTP Proxy fields ─────────────────────
+  // Used only when provider === 'external'
+  apiKeyHeader:  { type: String, default: 'Authorization' }, // 'Authorization'|'X-Api-Key'|'api-key'|'custom'
+  requestFormat: { type: String, enum: ['openai', 'simple'], default: 'openai' },
+  responseField: { type: String, default: '' }, // dot-notation, e.g. 'answer' or auto-detect if empty
 }, { _id: false });
 
 // ── Bot Capabilities Sub-Schema ───────────────────────────────

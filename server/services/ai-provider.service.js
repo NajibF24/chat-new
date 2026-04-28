@@ -64,6 +64,16 @@ export const AI_PROVIDERS = {
     envKey:       null,
     description:  'Works with Azure OpenAI, AWS Bedrock (OpenAI-compatible), Ollama, LM Studio, etc.',
   },
+
+  // ── External Bot / HTTP Proxy (no portal tokens consumed) ──
+  external: {
+    label:        'External Bot / HTTP Proxy',
+    icon:         '🌐',
+    models:       [],
+    capabilities: [],
+    envKey:       null,
+    description:  'Proxy requests to any external bot endpoint (Azure Bot, internal API, etc.). Portal only provides the UI — all AI processing happens on the external server.',
+  },
 };
 
 // ── Capabilities that can be toggled per-bot ──────────────────
@@ -264,6 +274,21 @@ class AIProviderService {
       } else {
         return this._callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, timeout: reqTimeout });
       }
+    }
+
+    // ✅ External Bot: pure HTTP proxy — no portal tokens consumed
+    if (provider === 'external') {
+      return this._callExternal({
+        apiKey,
+        endpoint,
+        systemPrompt,
+        messages,
+        userContent,
+        apiKeyHeader:  providerConfig?.apiKeyHeader  || 'Authorization',
+        requestFormat: providerConfig?.requestFormat || 'openai',
+        responseField: providerConfig?.responseField || '',
+        timeout: reqTimeout,
+      });
     }
 
     switch (provider) {
@@ -676,8 +701,107 @@ class AIProviderService {
     return { text, usage };
   }
 
+  // ── ✅ NEW: External Bot / HTTP Proxy ──────────────────────
+  // Forwards the user message to any arbitrary HTTP endpoint.
+  // The external server does ALL the AI work — portal only proxies.
+  //
+  // Request format 'openai' → standard OpenAI chat completions body
+  // Request format 'simple' → { message, system, history }
+  //
+  // Response field auto-detection order:
+  //   choices[0].message.content → answer → response → text → output → message → result
   // ─────────────────────────────────────────────────────────────
-  // ✅ NEW: generateImage — DALL-E 3 image generation
+  async _callExternal({ apiKey, endpoint, systemPrompt, messages, userContent, apiKeyHeader, requestFormat, responseField, timeout = 60000 }) {
+    if (!endpoint) throw new Error(
+      'External bot membutuhkan Endpoint URL. Masukkan URL endpoint di konfigurasi bot.'
+    );
+
+    const userText = Array.isArray(userContent)
+      ? userContent.map(b => b.text || '').join('\n')
+      : String(userContent);
+
+    // ── Build request headers ──────────────────────────────
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) {
+      if (apiKeyHeader === 'Authorization') {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      } else if (apiKeyHeader === 'X-Api-Key') {
+        headers['X-Api-Key'] = apiKey;
+      } else if (apiKeyHeader === 'api-key') {
+        headers['api-key'] = apiKey;
+      } else {
+        // custom header name — use as-is
+        headers[apiKeyHeader] = apiKey;
+      }
+    }
+
+    // ── Build request body ────────────────────────────────
+    let body;
+    if (requestFormat === 'simple') {
+      body = {
+        message: userText,
+        system:  systemPrompt,
+        history: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+      };
+    } else {
+      // OpenAI-compatible format
+      body = {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          { role: 'user', content: userText },
+        ],
+      };
+    }
+
+    console.log(`[External] → POST ${endpoint} | format=${requestFormat} | header=${apiKeyHeader}`);
+
+    let response;
+    try {
+      response = await axios.post(endpoint, body, { headers, timeout });
+    } catch (err) {
+      const status = err.response?.status;
+      const msg    = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+      if (status === 401 || status === 403) throw new Error(`External bot: Unauthorized — cek API Key dan header. (${msg})`);
+      if (status === 404) throw new Error(`External bot: URL tidak ditemukan. Pastikan endpoint URL benar. (${msg})`);
+      if (status === 429) throw new Error(`External bot: Rate limit. Coba beberapa saat lagi. (${msg})`);
+      throw new Error(`External bot error ${status || ''}: ${msg}`);
+    }
+
+    const data = response.data;
+
+    // ── Extract response text ──────────────────────────────
+    let text = '';
+
+    if (responseField) {
+      // User-configured dot-notation field, e.g. 'data.answer' or 'choices.0.message.content'
+      const parts = responseField.split('.');
+      let val = data;
+      for (const p of parts) {
+        val = val?.[p];
+        if (val === undefined) break;
+      }
+      text = typeof val === 'string' ? val : JSON.stringify(val);
+    } else {
+      // Auto-detect common response shapes
+      text =
+        data?.choices?.[0]?.message?.content   // OpenAI-compatible
+        || data?.message?.content              // Azure Bot Service
+        || data?.answer                        // QnA-style
+        || data?.response                      // generic
+        || data?.text                          // simple text field
+        || data?.output                        // LangChain / n8n
+        || data?.message                       // simple message field
+        || data?.result                        // some APIs
+        || data?.content                       // fallback
+        || (typeof data === 'string' ? data : JSON.stringify(data)); // last resort
+    }
+
+    console.log(`[External] ✅ Response received (${String(text).length} chars)`);
+    return { text: String(text), usage: null };
+  }
+
+  // ── ✅ NEW: Generate image — DALL-E 3 ───────────────────────
   //
   // @param {object} providerConfig  - bot.aiProvider config
   // @param {string} prompt          - image description prompt
