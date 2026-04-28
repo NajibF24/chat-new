@@ -22,8 +22,12 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 WORKDIR /usr/src/app
 
 # 3. Copy package files dan install dependencies
+#    Baileys v7 depends on libsignal from a GitHub git repo.
+#    Force git to use HTTPS (not SSH) so Docker can clone without SSH keys.
 COPY package*.json ./
-RUN npm install --production --legacy-peer-deps
+RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    npm install --production --legacy-peer-deps
 
 # 4. Copy sisa kode aplikasi
 COPY . .
