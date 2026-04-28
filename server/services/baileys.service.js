@@ -236,7 +236,27 @@ async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = 
   return false;
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// ─── Force sender key sync for a group ─────────────────────────────────────────────
+// 'No sessions' in group sends = Baileys hasn't exchanged Signal prekeys with
+// all group participants. This fetches group metadata (triggering Baileys to
+// cache participant list) and then calls assertSessions() to explicitly
+// establish Signal sessions with each participant.
+//
+// This is more effective than just groupMetadata() alone.
+async function forceGroupKeySync(jid) {
+  if (!sock || !jid.endsWith('@g.us')) return;
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    if (typeof sock.assertSessions === 'function') {
+      const participantIds = (metadata?.participants || []).map(p => p.id).filter(Boolean);
+      if (participantIds.length > 0) {
+        await sock.assertSessions(participantIds, false).catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+
+
 const BaileysService = {
 
   // Initialize and connect
@@ -271,7 +291,7 @@ const BaileysService = {
       return false;
     }
     return sendWithRetry(`send text to ${jid}`, async () => {
-      if (jid.endsWith('@g.us')) await sock.groupMetadata(jid).catch(() => {});
+      await forceGroupKeySync(jid);   // establishes Signal sessions with all group participants
       await sock.sendMessage(jid, { text });
       log(`✅ Text sent to ${jid}`);
     });
@@ -289,7 +309,7 @@ const BaileysService = {
     }
     const buffer = fs.readFileSync(imagePath);
     return sendWithRetry(`send image to ${jid}`, async () => {
-      if (jid.endsWith('@g.us')) await sock.groupMetadata(jid).catch(() => {});
+      await forceGroupKeySync(jid);   // establishes Signal sessions with all group participants
       await sock.sendMessage(jid, { image: buffer, caption, mimetype: 'image/png' });
       log(`✅ Image sent to ${jid}`);
     });
