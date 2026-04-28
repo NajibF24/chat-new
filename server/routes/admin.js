@@ -574,7 +574,7 @@ router.post('/bots', requireAdminOrBotCreator, async (req, res) => {
         chatId:  t.chatId  || '',
         label:   t.label   || '',
         type:    t.type    || 'private',
-        tagOnly: t.tagOnly || false,
+        replyAll: t.replyAll || false,
         active:  t.active  !== false,
       })),
       schedules: (wahaConfig?.schedules || []).map(s => ({
@@ -708,7 +708,7 @@ router.put('/bots/:id', requireAdminOrBotCreator, async (req, res) => {
         chatId:  t.chatId  || '',
         label:   t.label   || '',
         type:    t.type    || 'private',
-        tagOnly: t.tagOnly || false,
+        replyAll: t.replyAll || false,
         active:  t.active  !== false,
       })),
       schedules: (wahaConfig?.schedules || []).map(s => ({

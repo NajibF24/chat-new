@@ -33,12 +33,13 @@ function pushHistory(botId, chatId, role, content) {
 
 // ── Check if this group message should be responded to ─────────────
 // For GROUP messages: only respond when bot is explicitly @mentioned
-// (tagOnly defaults to true for groups — set tagOnly=false in target config to disable)
+// (Groups require a tag by default. Set replyAll=true in target config to reply to all messages)
 function shouldRespond(wahaConfig, target, mentionedJid, isGroup) {
   if (!isGroup) return true; // Always respond in private/DM chats
 
-  // tagOnly=false explicitly disables the mention requirement
-  if (target?.tagOnly === false) return true;
+  // Always require mentions in groups by default to prevent spamming
+  // If explicitly configured to replyAll, bypass the mention requirement
+  if (target?.replyAll === true) return true;
 
   // Check if the bot's own JID is in the mentionedJid list sent by WhatsApp
   const botJid = wahaConfig.botJid || '';

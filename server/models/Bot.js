@@ -51,7 +51,8 @@ const wahaTargetSchema = new mongoose.Schema({
   chatId:   { type: String, required: true },  // 628xxxx@c.us or 12036xxxx@g.us
   label:    { type: String, default: '' },     // user-friendly label e.g. "HR Group"
   type:     { type: String, enum: ['private', 'group'], default: 'private' },
-  tagOnly:  { type: Boolean, default: false }, // group only: only reply when tagged
+  tagOnly:  { type: Boolean, default: false }, // legacy: kept for compatibility
+  replyAll: { type: Boolean, default: false }, // group only: reply to all messages without tag
   active:   { type: Boolean, default: true },
 }, { _id: true });
 

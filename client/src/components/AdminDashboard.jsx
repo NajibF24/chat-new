@@ -2575,7 +2575,7 @@ function AdminDashboard({ user, handleLogout }) {
                     const targets = waha.targets || [];
                     const schedules = waha.schedules || [];
 
-                    const newTarget = () => ({ _id: Date.now().toString(), chatId: '', label: '', type: 'private', tagOnly: false, active: true });
+                    const newTarget = () => ({ _id: Date.now().toString(), chatId: '', label: '', type: 'private', replyAll: false, active: true });
                     const newSchedule = () => ({ _id: Date.now().toString(), label: '', prompt: '', active: true, scheduleType: 'daily', time: '08:00', times: ['08:00'], intervalMinutes: 60, intervalStart: '08:00', intervalEnd: '17:00', targetIds: [] });
 
                     const addTarget = () => setWaha({ targets: [...targets, newTarget()] });
@@ -2699,8 +2699,8 @@ function AdminDashboard({ user, handleLogout }) {
                                       <div className="flex flex-col gap-1 flex-shrink-0">
                                         {target.type === 'group' && (
                                           <label className="flex items-center gap-1 text-[10px] cursor-pointer whitespace-nowrap">
-                                            <input type="checkbox" checked={target.tagOnly || false} onChange={e => updateTarget(target._id, { tagOnly: e.target.checked })} className="accent-[#25D366]" />
-                                            @tag only
+                                            <input type="checkbox" checked={target.replyAll || false} onChange={e => updateTarget(target._id, { replyAll: e.target.checked })} className="accent-[#25D366]" />
+                                            Reply to all
                                           </label>
                                         )}
                                         <label className="flex items-center gap-1 text-[10px] cursor-pointer">
@@ -2710,7 +2710,7 @@ function AdminDashboard({ user, handleLogout }) {
                                         <button type="button" onClick={() => removeTarget(target._id)} className="text-red-400 hover:text-red-600 text-[10px] font-bold transition-colors">✕ Remove</button>
                                       </div>
                                     </div>
-                                    {target.type === 'group' && target.tagOnly && (
+                                    {target.type === 'group' && !target.replyAll && (
                                       <p className="text-[9px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
                                         ⚡ @tag mode: Bot only responds when @mentioned in this group
                                       </p>
