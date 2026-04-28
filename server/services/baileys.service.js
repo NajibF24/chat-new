@@ -199,6 +199,29 @@ async function connect() {
   }
 }
 
+// ─── Internal retry helper ──────────────────────────────────────────────────────────
+// Retries fn() up to maxAttempts times.
+// If 'No sessions' error, waits delayMs between attempts (sender keys may arrive later).
+// For other errors, fails immediately.
+async function sendWithRetry(label, fn, { maxAttempts = 20, delayMs = 30000 } = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fn();
+      return true;
+    } catch (err) {
+      const isNoSessions = err.message?.includes('No sessions');
+      log(`❌ Failed to ${label} (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+      if (isNoSessions && attempt < maxAttempts) {
+        log(`⏳ No sessions — waiting ${delayMs / 1000}s for WhatsApp to distribute sender keys...`);
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        return false;
+      }
+    }
+  }
+  return false;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 const BaileysService = {
 
@@ -233,34 +256,11 @@ const BaileysService = {
       log(`⚠️  Cannot send text — not connected (status: ${status})`);
       return false;
     }
-
-    // If recently connected (<30s), wait for sender keys to propagate
-    const msSinceConnect = connectedAt ? Date.now() - connectedAt : Infinity;
-    if (msSinceConnect < 30000) {
-      const waitMs = 30000 - msSinceConnect;
-      log(`⏳ Waiting ${Math.ceil(waitMs / 1000)}s for session warmup...`);
-      await new Promise(r => setTimeout(r, waitMs));
-    }
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        if (jid.endsWith('@g.us')) {
-          await sock.groupMetadata(jid).catch(() => {});
-        }
-        await sock.sendMessage(jid, { text });
-        log(`✅ Text sent to ${jid}`);
-        return true;
-      } catch (err) {
-        log(`❌ Failed to send text to ${jid} (attempt ${attempt}/3): ${err.message}`);
-        if (attempt < 3 && err.message?.includes('No sessions')) {
-          log(`🔄 Retrying in 10s...`);
-          await new Promise(r => setTimeout(r, 10000));
-        } else {
-          return false;
-        }
-      }
-    }
-    return false;
+    return sendWithRetry(`send text to ${jid}`, async () => {
+      if (jid.endsWith('@g.us')) await sock.groupMetadata(jid).catch(() => {});
+      await sock.sendMessage(jid, { text });
+      log(`✅ Text sent to ${jid}`);
+    });
   },
 
   // ── Send image from file path ─────────────────────────────────────────────
@@ -273,39 +273,12 @@ const BaileysService = {
       log(`❌ Image file not found: ${imagePath}`);
       return false;
     }
-
-    // If recently connected (<30s), wait for sender keys to propagate
-    const msSinceConnect = connectedAt ? Date.now() - connectedAt : Infinity;
-    if (msSinceConnect < 30000) {
-      const waitMs = 30000 - msSinceConnect;
-      log(`⏳ Waiting ${Math.ceil(waitMs / 1000)}s for session warmup...`);
-      await new Promise(r => setTimeout(r, waitMs));
-    }
-
     const buffer = fs.readFileSync(imagePath);
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        if (jid.endsWith('@g.us')) {
-          await sock.groupMetadata(jid).catch(() => {});
-        }
-        await sock.sendMessage(jid, {
-          image: buffer,
-          caption,
-          mimetype: 'image/png',
-        });
-        log(`✅ Image sent to ${jid}`);
-        return true;
-      } catch (err) {
-        log(`❌ Failed to send image to ${jid} (attempt ${attempt}/3): ${err.message}`);
-        if (attempt < 3 && err.message?.includes('No sessions')) {
-          log(`🔄 Retrying in 10s...`);
-          await new Promise(r => setTimeout(r, 10000));
-        } else {
-          return false;
-        }
-      }
-    }
-    return false;
+    return sendWithRetry(`send image to ${jid}`, async () => {
+      if (jid.endsWith('@g.us')) await sock.groupMetadata(jid).catch(() => {});
+      await sock.sendMessage(jid, { image: buffer, caption, mimetype: 'image/png' });
+      log(`✅ Image sent to ${jid}`);
+    });
   },
 
   // ── Disconnect & clear session ────────────────────────────────────────────
