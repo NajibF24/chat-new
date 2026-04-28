@@ -16,7 +16,8 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "6.7.9",
+    "@cacheable/node-cache": "^1.4.0",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
     "adm-zip": "^0.5.16",
     "axios": "^1.15.2",
     "bcryptjs": "^2.4.3",
