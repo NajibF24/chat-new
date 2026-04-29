@@ -1436,6 +1436,10 @@ class AICoreService {
       Object.entries(rawCaps).map(([k, v]) => [k, allowedCaps.includes(k) ? v : false])
     );
 
+    // ✅ DEBUG: Log capabilities being passed to AI provider
+    console.log(`[AI DEBUG] Bot "${bot.name}" filteredCaps:`, JSON.stringify(filteredCaps));
+    console.log(`[AI DEBUG] webSearch=${!!filteredCaps.webSearch} | provider=${currentProvider} | model=${providerConfig.model}`);
+
     const result = await AIProviderService.generateCompletion({
       providerConfig,
       systemPrompt,

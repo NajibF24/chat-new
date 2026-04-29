@@ -424,9 +424,10 @@ class AIProviderService {
       // openai.responses is available in SDK >= 4.77.0
       // For older SDK versions, fall back to chat completions without web search
       if (typeof openai.responses?.create === 'function') {
+        console.log(`[WebSearch] ✅ openai.responses.create available — calling Responses API...`);
         response = await openai.responses.create(responseBody);
       } else {
-        console.warn('[WebSearch] openai.responses API not available in this SDK version. Falling back to chat completions without web search.');
+        console.warn('[WebSearch] ❌ openai.responses API not available in this SDK version. Falling back to chat completions without web search.');
         const fallback = await openai.chat.completions.create({
           model,
           messages: [
@@ -463,7 +464,7 @@ class AIProviderService {
         );
       }
 
-      console.error(`[WebSearch] Responses API error: ${err.message}. Falling back to chat completions.`);
+      console.error(`[WebSearch] ❌ Responses API error: ${err.message}. Falling back to chat completions (NO web search).`);
       const fallback = await openai.chat.completions.create({
         model,
         messages: [
@@ -476,6 +477,18 @@ class AIProviderService {
       const text = fallback.choices[0]?.message?.content || '';
       const usage = normalizeUsage(fallback.usage, 'openai', model);
       return { text, usage };
+    }
+
+    // ── DEBUG: Log full Responses API output structure ──────────
+    const outputTypes = (response.output || []).map(o => o.type);
+    console.log(`[WebSearch] Response output types: [${outputTypes.join(', ')}]`);
+    
+    // Log web search calls specifically
+    const searchCalls = (response.output || []).filter(o => o.type === 'web_search_call');
+    if (searchCalls.length > 0) {
+      console.log(`[WebSearch] ✅ ${searchCalls.length} web search call(s) made by model`);
+    } else {
+      console.warn(`[WebSearch] ⚠️ Model did NOT make any web search calls despite tool being available`);
     }
 
     // Extract text from Responses API output
