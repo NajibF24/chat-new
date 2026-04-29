@@ -2,6 +2,7 @@
 // Komponen untuk menampilkan avatar bot di mana saja (chat header, list, dll)
 
 import React from 'react';
+import axios from 'axios';
 
 /**
  * BotAvatar — render avatar bot berdasarkan type: image | emoji | icon
@@ -30,10 +31,16 @@ export default function BotAvatar({ bot, size = 'md', className = '' }) {
 
   // ── Image upload ─────────────────────────────────────────
   if (avatar?.type === 'image' && avatar?.imageUrl) {
+    let finalUrl = avatar.imageUrl;
+    if (finalUrl.startsWith('/')) {
+      const baseUrl = axios.defaults.baseURL || '';
+      finalUrl = `${baseUrl}${finalUrl}`;
+    }
+
     return (
       <img
-        src={avatar.imageUrl}
-        alt={bot.name}
+        src={finalUrl}
+        alt={bot?.name || 'Bot'}
         className={`${sizeClass.img} rounded-full object-cover flex-shrink-0 ${className}`}
         onError={(e) => {
           // Fallback ke emoji jika gambar gagal load

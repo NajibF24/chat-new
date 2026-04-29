@@ -3,12 +3,17 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import BotAvatar from './BotAvatar';
 
+import axios from 'axios';
+
 const getFileUrl = (path) => {
   if (!path) return '';
   if (path.startsWith('http') || path.startsWith('https')) return path;
-  if (path.startsWith('/api')) return path;
-  if (path.startsWith('/')) return path;
-  return `/api/files/${path}`;
+  
+  const baseUrl = axios.defaults.baseURL || '';
+  
+  if (path.startsWith('/api')) return `${baseUrl}${path}`;
+  if (path.startsWith('/')) return `${baseUrl}${path}`;
+  return `${baseUrl}/api/files/${path}`;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -161,7 +166,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
             : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-tl-sm w-full min-w-0 shadow-sm'
         }`}>
 
-          <div className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800 dark:text-gray-200 dark:prose-invert'}`}>
+          <div className={`prose max-w-full min-w-0 break-words leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800 dark:text-gray-200 dark:prose-invert'}`}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -239,8 +244,8 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
                 ),
 
                 table: ({ node, ...props }) => (
-                  <div className={`overflow-x-auto my-4 rounded-xl border shadow-sm w-full ${isUser ? 'border-white/20' : 'border-gray-100 dark:border-gray-700'}`}>
-                    <table className={`w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-gray-100 dark:divide-gray-700'}`} {...props} />
+                  <div className={`block max-w-full overflow-x-auto my-4 rounded-xl border shadow-sm ${isUser ? 'border-white/20' : 'border-gray-100 dark:border-gray-700'}`}>
+                    <table className={`min-w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-gray-100 dark:divide-gray-700'}`} {...props} />
                   </div>
                 ),
                 thead: ({ node, ...props }) => <thead className={`${isUser ? 'bg-white/10' : 'bg-gray-50 dark:bg-gray-700'} font-semibold`} {...props} />,
