@@ -1431,9 +1431,9 @@ class AICoreService {
     };
     const currentProvider = providerConfig.provider || 'openai';
     const allowedCaps     = PROVIDER_CAPABILITIES[currentProvider] || [];
-    const rawCaps         = bot.capabilities || {};
+    const rawCaps         = bot.capabilities?.toObject?.() || bot.capabilities || {};
     const filteredCaps    = Object.fromEntries(
-      Object.entries(rawCaps).map(([k, v]) => [k, allowedCaps.includes(k) ? v : false])
+      Object.entries(rawCaps).filter(([k]) => allowedCaps.includes(k)).map(([k, v]) => [k, v])
     );
 
     // ✅ DEBUG: Log capabilities being passed to AI provider
