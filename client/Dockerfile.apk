@@ -71,6 +71,13 @@ RUN npx cap add android
 # ── Sync web assets ke Android project ──────────────────────────
 RUN npx cap sync android
 
+# ── Generate Android Icons (GYS Logo) ───────────────────────────
+RUN apt-get update && apt-get install -y imagemagick \
+    && mkdir -p resources \
+    && convert build/assets/gys-logo.webp -resize 1024x1024 -background transparent -gravity center -extent 1024x1024 resources/icon.png \
+    && convert build/assets/gys-logo.webp -resize 2732x2732 -background white -gravity center -extent 2732x2732 resources/splash.png \
+    && npx --yes @capacitor/assets generate --android
+
 # ── Configure Android for HTTPS (production URL) ────────────────
 # Tambahkan network security config untuk mengizinkan HTTPS ke chat.gyssteel.com
 RUN mkdir -p android/app/src/main/res/xml \
