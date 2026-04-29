@@ -1,0 +1,16 @@
+{
+  "appId": "com.gyssteel.portalai",
+  "appName": "GYS Portal AI",
+  "webDir": "build",
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "CapacitorCookies": {
+      "enabled": true
+    },
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

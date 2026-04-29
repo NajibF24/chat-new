@@ -5,9 +5,23 @@ import Login from './components/Login';
 import Chat from './components/Chat';
 import AdminDashboard from './components/AdminDashboard';
 import EmbedChat from './components/EmbedChat';
+
+// ✅ Capacitor platform detection (untuk APK mobile)
+let isNativePlatform = false;
+try {
+  const { Capacitor } = require('@capacitor/core');
+  isNativePlatform = Capacitor.isNativePlatform();
+} catch (e) {
+  // @capacitor/core tidak tersedia (web build) — tidak masalah
+}
+
 // ✅ CRITICAL: Configure axios for HTTPS with credentials
 axios.defaults.withCredentials = true; // ✅ MUST for cookies/session
-axios.defaults.baseURL = ''; // ✅ Empty = relative URLs (nginx proxies to backend)
+// Di mobile (Capacitor APK), arahkan ke server production.
+// Di web, tetap pakai relative URL (nginx proxies to backend).
+axios.defaults.baseURL = isNativePlatform
+  ? 'https://chat.gyssteel.com'
+  : ''; // ✅ Empty = relative URLs (nginx proxies to backend)
 
 // ✅ Set default headers
 axios.defaults.headers.common['Accept'] = 'application/json';

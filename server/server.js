@@ -43,6 +43,9 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
+// ✅ Session config — mendukung Web + Capacitor APK
+// Capacitor HTTP plugin mengelola cookies secara native,
+// jadi sameSite: 'lax' tetap bekerja untuk APK.
 app.use(session({
   secret: process.env.SESSION_SECRET || 'gys-secret-key-fallback',
   resave: false,
@@ -53,10 +56,10 @@ app.use(session({
     ttl:            24 * 60 * 60,
   }),
   cookie: {
-    secure:   false,
+    secure:   process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge:   24 * 60 * 60 * 1000,
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path:     '/',
   },
 }));

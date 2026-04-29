@@ -7,3 +7,8 @@ data/
 *.bckp
 *.backup
 *.bck*
+
+# Capacitor / Android APK build
+client/android/
+apk-output/
+
