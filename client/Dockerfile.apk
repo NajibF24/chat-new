@@ -97,12 +97,12 @@ RUN sed -i 's|<application|<application android:networkSecurityConfig="@xml/netw
 # ── Build APK ───────────────────────────────────────────────────
 WORKDIR /app/android
 RUN chmod +x gradlew \
-    && ./gradlew assembleRelease --no-daemon -x lint
+    && ./gradlew assembleDebug --no-daemon -x lint
 
 # ── Output: copy APK ke /output saat container run ──────────────
 WORKDIR /app
 CMD echo "📦 Copying APK to /output..." \
-    && cp android/app/build/outputs/apk/release/app-release-unsigned.apk /output/GYS-Portal-AI.apk \
+    && cp android/app/build/outputs/apk/debug/app-debug.apk /output/GYS-Portal-AI.apk \
     && echo "✅ APK berhasil dibuild!" \
     && echo "📁 File: /output/GYS-Portal-AI.apk" \
     && ls -lh /output/GYS-Portal-AI.apk
