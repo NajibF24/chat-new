@@ -1694,12 +1694,22 @@ class AICoreService {
     const jsonSchema = '{\n  "headline": "String - Main news headline (max 80 chars)",\n  "summaryParagraphs": ["String - Paragraph 1", "String - Paragraph 2"],\n  "keyPoints": [\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" }\n  ],\n  "implicationIntro": "String - Short intro to implications",\n  "implicationCustomer": "String - Customer behavior implication",\n  "implicationSupplier": "String - Supplier behavior implication",\n  "implicationMarket": "String - Market narrative implication",\n  "actionSalesCheck": "String - Sales action check",\n  "actionSalesRec": "String - Sales recommended action",\n  "actionProcurementCheck": "String - Procurement action check",\n  "actionProcurementRec": "String - Procurement recommended action",\n  "managementTakeaway": "String - Strong management takeaway",\n  "sourceLinks": ["ONLY real verified URLs — leave empty array [] if none found"]\n}';
     contentUserMsg += `Output ONLY a raw JSON object (no markdown, no code blocks).\nStructure:\n${jsonSchema}`;
 
+    // ✅ FIX: Force webSearch=true for OpenAI provider regardless of what is stored in DB.
+    // This is the newsletter generator — it MUST search the web to get real news.
+    // We also bypass the regular processMessage() filteredCaps check by building
+    // a clean capabilities object that directly reflects what this specific call needs.
+    const newsletterProvider = bot.aiProvider?.provider || 'openai';
+    const newsletterCaps = newsletterProvider === 'openai'
+      ? { webSearch: true }   // Always force web search for OpenAI on newsletter generation
+      : {};                   // Other providers do not support webSearch; skip silently
+    console.log(`[NEWSLETTER] Provider=${newsletterProvider} | webSearch=${!!newsletterCaps.webSearch}`);
+
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt: `You are an expert market intelligence analyst for Garuda Yamato Steel (GYS). Today is ${today}. You MUST search the web for TODAY's latest real news before generating content. You output ONLY valid raw JSON. Never invent news or URLs.`,
       messages: history,
       userContent: contentUserMsg,
-      capabilities: bot.capabilities || { webSearch: true },
+      capabilities: newsletterCaps,
       timeout: 120000,
       maxTokens: 4000,
     });
