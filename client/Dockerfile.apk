@@ -101,8 +101,4 @@ RUN chmod +x gradlew \
 
 # ── Output: copy APK ke /output saat container run ──────────────
 WORKDIR /app
-CMD echo "📦 Copying APK to /output..." \
-    && cp android/app/build/outputs/apk/debug/app-debug.apk /output/GYS-Portal-AI.apk \
-    && echo "✅ APK berhasil dibuild!" \
-    && echo "📁 File: /output/GYS-Portal-AI.apk" \
-    && ls -lh /output/GYS-Portal-AI.apk
+CMD ["sh", "-c", "echo \"📦 Copying APK to /output...\" && cp android/app/build/outputs/apk/debug/app-debug.apk /output/GYS-Portal-AI.apk && echo \"✅ APK berhasil dibuild!\" && echo \"📁 File: /output/GYS-Portal-AI.apk\" && ls -lh /output/GYS-Portal-AI.apk"]
