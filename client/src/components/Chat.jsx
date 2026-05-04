@@ -5,6 +5,7 @@ import ChatMessage from './ChatMessage';
 import ArtifactPanel from './ArtifactPanel';
 import BotAvatar from './BotAvatar';
 import DarkModeToggle from './DarkModeToggle';
+import WelcomeScreen, { shouldShowWelcome } from './WelcomeScreen';
 import useDarkMode from '../hooks/useDarkMode';
 
 // ─────────────────────────────────────────────────────────────
@@ -75,10 +76,13 @@ const Chat = ({ user, handleLogout }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(() => shouldShowWelcome());
 
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [showAllThreads, setShowAllThreads] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
 
   const [artifact, setArtifact] = useState(null);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
@@ -222,6 +226,46 @@ const Chat = ({ user, handleLogout }) => {
     }
   };
 
+  // ── Drag & Drop handlers ──
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    dragCounter.current = 0;
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.size > 20 * 1024 * 1024) {
+        alert('Maximum file size is 20MB');
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e); }
     if (e.key === 'Escape') setConfirmDeleteId(null);
@@ -291,6 +335,14 @@ const Chat = ({ user, handleLogout }) => {
 
   return (
     <div className={`flex h-screen bg-[#F7F8FA] dark:bg-gray-950 text-gray-800 dark:text-gray-200 font-sans overflow-hidden`}>
+
+      {/* ════════════════ WELCOME SCREEN ════════════════ */}
+      {showWelcome && (
+        <WelcomeScreen
+          user={user}
+          onContinue={() => setShowWelcome(false)}
+        />
+      )}
 
       {/* ════════════════ SIDEBAR ════════════════ */}
       <aside className={`
@@ -460,7 +512,29 @@ const Chat = ({ user, handleLogout }) => {
 
       {/* ════════════════ MAIN AREA ════════════════ */}
       <div className="flex-1 flex min-w-0 overflow-hidden">
-        <main className="flex-1 flex flex-col h-full min-w-0 bg-[#F7F8FA] dark:bg-gray-950">
+        <main
+          className="flex-1 flex flex-col h-full min-w-0 bg-[#F7F8FA] dark:bg-gray-950 relative"
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          {/* Drag & Drop Overlay */}
+          {isDragOver && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-primary/5 dark:bg-primary/10 backdrop-blur-sm pointer-events-none">
+              <div className="flex flex-col items-center gap-3 p-8 rounded-3xl border-2 border-dashed border-primary/50 bg-white/80 dark:bg-gray-900/80 shadow-2xl">
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-base font-bold text-gray-800 dark:text-gray-100">Drop file here</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Images, PDF, DOCX, XLSX, CSV, PPTX (max 20MB)</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Top bar */}
           <div className="h-14 border-b border-gray-100 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 flex-shrink-0">
