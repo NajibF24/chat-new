@@ -44,6 +44,7 @@ let qrBase64    = null;
 let status      = 'offline';
 let reconnectTimer = null;
 let connectedAt    = null;
+let qrLogCount     = 0;   // Track QR regenerations to avoid log spam
 
 // ─── Caches (v7 requirement) ────────────────────────────────────────────────
 // Message retry counter — tracks how many times we've retried decryption
@@ -136,18 +137,26 @@ async function connect() {
           qrRaw = qr;
           status = 'qr';
           try { qrBase64 = await QRCode.toDataURL(qr); } catch (_) { qrBase64 = null; }
-          log('📱 QR Code ready — scan from WhatsApp → Linked Devices → Link a Device');
-          log('   Or visit: GET /api/admin/baileys/qr');
+          qrLogCount++;
+          // Only log first QR and then every 10th to avoid spam
+          if (qrLogCount === 1) {
+            log('📱 QR Code ready — scan from WhatsApp → Linked Devices → Link a Device');
+            log('   Visit: GET /api/admin/baileys/qr');
+          } else if (qrLogCount % 10 === 0) {
+            log(`📱 QR Code refreshed ${qrLogCount} times — still waiting for scan. Visit: GET /api/admin/baileys/qr`);
+          }
         }
 
         if (connection === 'connecting') {
           status = 'connecting';
-          log('🔄 Connecting to WhatsApp...');
+          // Only log once, not on every reconnect attempt
+          if (qrLogCount === 0) log('🔄 Connecting to WhatsApp...');
         }
 
         if (connection === 'open') {
           qrRaw = null;
           qrBase64 = null;
+          qrLogCount = 0; // Reset counter on successful connect
           status = 'connected';
           connectedAt = Date.now();
           log('✅ WhatsApp connected! Pre-warming group cache in 10s...');
