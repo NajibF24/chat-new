@@ -5,7 +5,7 @@ import ChatMessage from './ChatMessage';
 import ArtifactPanel from './ArtifactPanel';
 import BotAvatar from './BotAvatar';
 import DarkModeToggle from './DarkModeToggle';
-import WelcomeScreen, { shouldShowWelcome } from './WelcomeScreen';
+import WelcomeScreen from './WelcomeScreen';
 import useDarkMode from '../hooks/useDarkMode';
 
 // ─────────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ function generateTitle(lang, code) {
 // ─────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────
-const Chat = ({ user, handleLogout }) => {
+const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const navigate = useNavigate();
   const { isDark, toggle: toggleDark } = useDarkMode();
 
@@ -76,7 +76,6 @@ const Chat = ({ user, handleLogout }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [showWelcome, setShowWelcome] = useState(() => shouldShowWelcome());
 
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -337,10 +336,10 @@ const Chat = ({ user, handleLogout }) => {
     <div className={`flex h-screen bg-[#F7F8FA] dark:bg-gray-950 text-gray-800 dark:text-gray-200 font-sans overflow-hidden`}>
 
       {/* ════════════════ WELCOME SCREEN ════════════════ */}
-      {showWelcome && (
+      {justLoggedIn && (
         <WelcomeScreen
           user={user}
-          onContinue={() => setShowWelcome(false)}
+          onContinue={() => onWelcomeDismissed?.()}
         />
       )}
 

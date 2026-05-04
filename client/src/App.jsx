@@ -86,6 +86,7 @@ axios.interceptors.response.use(
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -112,12 +113,19 @@ function App() {
     }
   };
 
+  // Called by Login component on successful login
+  const handleLogin = (userData) => {
+    setJustLoggedIn(true);
+    setUser(userData);
+  };
+
   const handleLogout = async () => {
     try {
       await axios.post('/api/auth/logout');
       setUser(null);
+      setJustLoggedIn(false);
 
-      // Clear all client-side storage (includes welcome screen flags)
+      // Clear all client-side storage
       localStorage.clear();
       sessionStorage.clear();
 
@@ -147,14 +155,21 @@ function App() {
         {/* Auth-gated routes */}
         {!user ? (
           <>
-            <Route path="/login" element={<Login setUser={setUser} />} />
+            <Route path="/login" element={<Login setUser={handleLogin} />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </>
         ) : (
           <>
             <Route
               path="/"
-              element={<Chat user={user} handleLogout={handleLogout} />}
+              element={
+                <Chat
+                  user={user}
+                  handleLogout={handleLogout}
+                  justLoggedIn={justLoggedIn}
+                  onWelcomeDismissed={() => setJustLoggedIn(false)}
+                />
+              }
             />
             {(user.isAdmin || user.isBotCreator) && (
               <Route

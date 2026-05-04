@@ -1,6 +1,6 @@
 // client/src/components/WelcomeScreen.jsx
 // Welcome / What's New screen shown ONLY after a fresh login (not on refresh).
-// Uses sessionStorage flag set by App.jsx on login success.
+// Visibility controlled by React state (justLoggedIn) in App.jsx — no sessionStorage.
 
 import React, { useState, useEffect, useCallback } from 'react';
 
@@ -73,8 +73,6 @@ export default function WelcomeScreen({ user, onContinue }) {
   // Handle continue
   const handleContinue = useCallback(() => {
     setExiting(true);
-    // Mark welcome as dismissed in sessionStorage so it won't show again on refresh
-    try { sessionStorage.setItem('gys-welcome-dismissed', 'true'); } catch {}
     setTimeout(() => onContinue(), 500);
   }, [onContinue]);
 
@@ -89,6 +87,7 @@ export default function WelcomeScreen({ user, onContinue }) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [handleContinue]);
+
 
   const firstName = user?.username?.split?.('.')?.[0] || user?.username || 'User';
   const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
@@ -223,19 +222,4 @@ export default function WelcomeScreen({ user, onContinue }) {
       `}</style>
     </div>
   );
-}
-
-// ─── Utility: check if welcome should be shown ───────────────────────
-// Shows ONLY when:
-//   1. sessionStorage has the "just-logged-in" flag (set by App.jsx on login)
-//   2. sessionStorage does NOT have the "dismissed" flag (set when user clicks Continue)
-// This means: login → show once, refresh → don't show, new login → show again
-export function shouldShowWelcome() {
-  try {
-    const justLoggedIn = sessionStorage.getItem('gys-just-logged-in') === 'true';
-    const dismissed    = sessionStorage.getItem('gys-welcome-dismissed') === 'true';
-    return justLoggedIn && !dismissed;
-  } catch {
-    return false;
-  }
 }
