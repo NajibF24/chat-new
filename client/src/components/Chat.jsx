@@ -265,6 +265,26 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
     }
   };
 
+  // ── Ctrl+V Paste handler ──
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === 'file') {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          if (file.size > 20 * 1024 * 1024) {
+            alert('Maximum file size is 20MB');
+            return;
+          }
+          setSelectedFile(file);
+        }
+        return;
+      }
+    }
+  }, []);
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e); }
     if (e.key === 'Escape') setConfirmDeleteId(null);
@@ -333,7 +353,27 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const visibleThreads = showAllThreads ? threads : threads.slice(0, MAX_THREADS_SHOWN);
 
   return (
-    <div className={`flex h-screen bg-[#F7F8FA] dark:bg-gray-950 text-gray-800 dark:text-gray-200 font-sans overflow-hidden`}>
+    <div
+      className={`flex h-screen bg-[#F7F8FA] dark:bg-gray-950 text-gray-800 dark:text-gray-200 font-sans overflow-hidden relative`}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onPaste={handlePaste}
+    >
+
+      {/* ════════════════ DRAG OVERLAY ════════════════ */}
+      {isDragOver && (
+        <div className="fixed inset-0 z-[90] bg-primary/10 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border-2 border-dashed border-primary p-10 text-center">
+            <svg className="w-16 h-16 text-primary mx-auto mb-4 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p className="text-lg font-bold text-primary-dark dark:text-primary-light">Drop file here</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Supports images, PDF, DOCX, XLSX, PPTX (max 20MB)</p>
+          </div>
+        </div>
+      )}
 
       {/* ════════════════ WELCOME SCREEN ════════════════ */}
       {justLoggedIn && (
