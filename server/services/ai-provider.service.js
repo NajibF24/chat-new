@@ -255,8 +255,9 @@ class AIProviderService {
     const temp       = providerConfig?.temperature ?? 0.1;
     // ✅ caller's maxTokens takes priority over providerConfig, then falls back to 2000
     const maxTok     = maxTokens ?? providerConfig?.maxTokens ?? 2000;
-    // ✅ caller's timeout takes priority, default 120s for normal calls
-    const reqTimeout = timeout ?? 120000;
+    // ✅ caller's timeout takes priority, default 180s for normal calls
+    // Anthropic (Slide Architect) can take 2-3 min for large prompts
+    const reqTimeout = timeout ?? 180000;
     const apiKey     = this.getApiKey(providerConfig);
     const endpoint   = providerConfig?.endpoint?.trim() || '';
 
