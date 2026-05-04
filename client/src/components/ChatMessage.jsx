@@ -131,12 +131,51 @@ function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
 const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
   const isUser = message.role === 'user';
   const [visible, setVisible] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const synthRef = useRef(null);
 
   // Fade-in on mount
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 10);
     return () => clearTimeout(t);
   }, []);
+
+  // ── Text-to-Speech (TTS) ──
+  useEffect(() => {
+    synthRef.current = window.speechSynthesis;
+    return () => {
+      if (synthRef.current && isPlaying) {
+        synthRef.current.cancel();
+      }
+    };
+  }, [isPlaying]);
+
+  const toggleSpeech = () => {
+    if (!synthRef.current) {
+      alert("Fitur Text-to-Speech tidak didukung di browser ini.");
+      return;
+    }
+
+    if (isPlaying) {
+      synthRef.current.cancel();
+      setIsPlaying(false);
+    } else {
+      // Basic text cleanup to remove markdown symbols for speech
+      const textToSpeak = (message.content || '')
+        .replace(/```[\s\S]*?```/g, ' [Kode snippet dihilangkan] ') // Remove code blocks
+        .replace(/[#*`_~\[\]]/g, '') // Remove common markdown chars
+        .replace(/https?:\/\/[^\s]+/g, ' [tautan] '); // Replace URLs with word
+      
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = 'id-ID'; // Default to Indonesian
+      
+      utterance.onend = () => setIsPlaying(false);
+      utterance.onerror = () => setIsPlaying(false);
+      
+      synthRef.current.speak(utterance);
+      setIsPlaying(true);
+    }
+  };
 
   return (
     <div
@@ -303,9 +342,28 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
             </div>
           )}
 
-          {/* Timestamp */}
-          <div className={`text-[10px] mt-2 text-right tabular-nums ${isUser ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
-            {new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {/* Footer: Timestamp & Actions */}
+          <div className={`flex items-center mt-2 ${isUser ? 'justify-end' : 'justify-between'}`}>
+            {!isUser && (
+              <button
+                onClick={toggleSpeech}
+                title={isPlaying ? "Stop audio" : "Play audio"}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors ${
+                  isPlaying 
+                    ? 'text-primary bg-primary/10' 
+                    : 'text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {isPlaying ? (
+                  <><svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> Stop</>
+                ) : (
+                  <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg> Dengarkan</>
+                )}
+              </button>
+            )}
+            <div className={`text-[10px] tabular-nums ${isUser ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
+              {new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
           </div>
         </div>
       </div>

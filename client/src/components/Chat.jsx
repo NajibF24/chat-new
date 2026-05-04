@@ -76,6 +76,8 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
 
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -137,6 +139,62 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
     const best = pickBestArtifact(blocks);
     if (best) openArtifact(best.lang, best.code);
   }, [openArtifact]);
+
+  // ── Speech-to-Text (STT) ──
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'id-ID'; // Default to Indonesian
+
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript + ' ';
+          }
+        }
+        if (finalTranscript) {
+          setInput(prev => prev + finalTranscript);
+          if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+          setIsListening(true);
+        } catch (err) {
+          console.error("Failed to start speech recognition:", err);
+        }
+      } else {
+        alert("Fitur Voice Typing tidak didukung di browser ini. Gunakan Chrome atau Edge.");
+      }
+    }
+  };
 
   const fetchBots = async () => {
     try {
@@ -715,6 +773,18 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                   className="hidden"
                   accept="image/*,.pdf,.docx,.xlsx,.xls,.txt,.csv,.pptx"
                 />
+                <button type="button" onClick={toggleListening} title={isListening ? "Stop listening" : "Voice typing"}
+                  className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl transition-colors mb-0.5
+                    ${isListening 
+                      ? 'text-red-500 bg-red-100 dark:bg-red-900/30 animate-pulse' 
+                      : 'text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}>
+                  {isListening ? (
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.39-.9.89 0 2.76-2.24 5-5.01 5s-5.01-2.24-5.01-5c0-.5-.41-.89-.9-.89s-.9.39-.9.89c0 3.42 2.72 6.23 6.06 6.72V21h1.5v-2.39c3.34-.49 6.06-3.3 6.06-6.72 0-.5-.41-.89-.9-.89z" /></svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                  )}
+                </button>
                 <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach file"
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mb-0.5">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
