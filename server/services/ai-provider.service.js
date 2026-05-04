@@ -255,8 +255,8 @@ class AIProviderService {
     const temp       = providerConfig?.temperature ?? 0.1;
     // ✅ caller's maxTokens takes priority over providerConfig, then falls back to 2000
     const maxTok     = maxTokens ?? providerConfig?.maxTokens ?? 2000;
-    // ✅ caller's timeout takes priority, default 60s for normal calls
-    const reqTimeout = timeout ?? 60000;
+    // ✅ caller's timeout takes priority, default 120s for normal calls
+    const reqTimeout = timeout ?? 120000;
     const apiKey     = this.getApiKey(providerConfig);
     const endpoint   = providerConfig?.endpoint?.trim() || '';
 
@@ -570,8 +570,9 @@ class AIProviderService {
   }
 
   // ── Anthropic Claude ───────────────────────────────────────
-  // ✅ PATCH v1.3.0: Added `timeout` param (was hardcoded 60000)
-  async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 60000 }) {
+  // ✅ PATCH v1.4.0: Increased default timeout from 60s to 180s (3 min)
+  // Slide Architect and other bots with large prompts/documents need more time.
+  async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 180000 }) {
     // Build Anthropic-format content blocks (supports text + image)
     let anthropicUserContent;
     if (Array.isArray(userContent)) {

@@ -1,46 +1,42 @@
 // client/src/components/WelcomeScreen.jsx
-// Welcome / What's New screen shown after login before entering chat
-// Uses localStorage to track last-seen version — shows once per new release
+// Welcome / What's New screen shown ONLY after a fresh login (not on refresh).
+// Uses sessionStorage flag set by App.jsx on login success.
 
 import React, { useState, useEffect, useCallback } from 'react';
 
-// ─── Update this whenever you want users to see the welcome screen again ───
-const CURRENT_VERSION = '2.4.0';
-const LS_KEY = 'gys-welcome-seen-version';
-
-// ─── Feature announcements ────────────────────────────────────────────────
+// ─── Feature announcements (update these whenever there's a new release) ───
 const FEATURES = [
   {
     icon: '📊',
     badge: 'NEW',
     badgeColor: 'bg-emerald-500',
-    title: 'PPT dengan Template GYS',
-    description: 'Presentasi sekarang otomatis menggunakan template resmi GYS — warna, font, dan layout sudah sesuai Brand Guidelines.',
+    title: 'PPT with GYS Template',
+    description: 'Presentations now automatically use the official GYS template — colors, fonts, and layouts follow the Brand Guidelines.',
   },
   {
     icon: '📎',
     badge: 'NEW',
     badgeColor: 'bg-blue-500',
-    title: 'Drag & Drop File',
-    description: 'Seret file langsung ke area chat untuk upload. Tidak perlu lagi klik ikon attach — lebih cepat dan praktis!',
+    title: 'Drag & Drop File Upload',
+    description: 'Drag files directly onto the chat area to upload. No more clicking the attach icon — faster and more convenient!',
   },
   {
     icon: '🌙',
     badge: 'IMPROVED',
     badgeColor: 'bg-violet-500',
-    title: 'Dark Mode yang Lebih Baik',
-    description: 'Tampilan dark mode diperbaiki agar lebih nyaman dan konsisten di seluruh halaman portal.',
+    title: 'Enhanced Dark Mode',
+    description: 'Dark mode has been refined for a more comfortable and consistent experience across all portal pages.',
   },
   {
     icon: '🔍',
     badge: 'IMPROVED',
     badgeColor: 'bg-amber-500',
-    title: 'Web Search Lebih Akurat',
-    description: 'Bot sekarang bisa mencari informasi terkini dari internet dengan hasil yang lebih akurat dan sumber yang jelas.',
+    title: 'Smarter Web Search',
+    description: 'Bots can now search the web for up-to-date information with more accurate results and clear source citations.',
   },
 ];
 
-// ─── Particle / decorative dots for bg ─────────────────────────────────────
+// ─── Decorative floating particles ─────────────────────────────────────
 function FloatingParticles() {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -77,7 +73,8 @@ export default function WelcomeScreen({ user, onContinue }) {
   // Handle continue
   const handleContinue = useCallback(() => {
     setExiting(true);
-    try { localStorage.setItem(LS_KEY, CURRENT_VERSION); } catch {}
+    // Mark welcome as dismissed in sessionStorage so it won't show again on refresh
+    try { sessionStorage.setItem('gys-welcome-dismissed', 'true'); } catch {}
     setTimeout(() => onContinue(), 500);
   }, [onContinue]);
 
@@ -98,7 +95,7 @@ export default function WelcomeScreen({ user, onContinue }) {
 
   const now = new Date();
   const hour = now.getHours();
-  const greeting = hour < 12 ? 'Selamat Pagi' : hour < 17 ? 'Selamat Siang' : 'Selamat Malam';
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
   return (
     <div
@@ -150,13 +147,13 @@ export default function WelcomeScreen({ user, onContinue }) {
             {greeting}, {displayName}! 👋
           </h1>
           <p className="text-white/70 text-sm font-medium">
-            Selamat datang kembali di <span className="text-white font-bold">GYS AI Portal</span>
+            Welcome back to <span className="text-white font-bold">GYS AI Portal</span>
           </p>
 
           {/* Version badge */}
           <div className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full bg-white/15 border border-white/20">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[11px] text-white/80 font-semibold tracking-wide">v{CURRENT_VERSION} — What's New</span>
+            <span className="text-[11px] text-white/80 font-semibold tracking-wide">What's New</span>
           </div>
         </div>
 
@@ -199,13 +196,13 @@ export default function WelcomeScreen({ user, onContinue }) {
               transition-all duration-200 flex items-center justify-center gap-2
               group"
           >
-            <span>Mulai Chat</span>
+            <span>Continue to Chat</span>
             <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </button>
           <p className="text-center text-[11px] text-white/40 mt-3 select-none">
-            Tekan <kbd className="px-1.5 py-0.5 rounded bg-white/15 text-white/60 font-mono text-[10px] border border-white/20">Enter</kbd> untuk melanjutkan
+            Press <kbd className="px-1.5 py-0.5 rounded bg-white/15 text-white/60 font-mono text-[10px] border border-white/20">Enter</kbd> to continue
           </p>
         </div>
       </div>
@@ -228,11 +225,17 @@ export default function WelcomeScreen({ user, onContinue }) {
   );
 }
 
-// Utility: check if welcome should be shown
+// ─── Utility: check if welcome should be shown ───────────────────────
+// Shows ONLY when:
+//   1. sessionStorage has the "just-logged-in" flag (set by App.jsx on login)
+//   2. sessionStorage does NOT have the "dismissed" flag (set when user clicks Continue)
+// This means: login → show once, refresh → don't show, new login → show again
 export function shouldShowWelcome() {
   try {
-    return localStorage.getItem(LS_KEY) !== CURRENT_VERSION;
+    const justLoggedIn = sessionStorage.getItem('gys-just-logged-in') === 'true';
+    const dismissed    = sessionStorage.getItem('gys-welcome-dismissed') === 'true';
+    return justLoggedIn && !dismissed;
   } catch {
-    return true;
+    return false;
   }
 }

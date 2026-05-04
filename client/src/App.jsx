@@ -117,7 +117,7 @@ function App() {
       await axios.post('/api/auth/logout');
       setUser(null);
 
-      // Clear any local storage if needed
+      // Clear all client-side storage (includes welcome screen flags)
       localStorage.clear();
       sessionStorage.clear();
 

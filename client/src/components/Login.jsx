@@ -27,6 +27,11 @@ const Login = ({ setUser }) => {
       );
 
       console.log('✅ Login successful');
+      // Set flag so WelcomeScreen shows after this fresh login
+      try {
+        sessionStorage.setItem('gys-just-logged-in', 'true');
+        sessionStorage.removeItem('gys-welcome-dismissed');
+      } catch {}
       setUser(response.data.user);
 
     } catch (err) {
