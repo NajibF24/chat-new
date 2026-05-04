@@ -2041,7 +2041,7 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
         systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
         messages:       [],
         userContent:    contentUserMsg,
-        timeout:        120000,
+        timeout:        240000, // 4 min — large system prompt + long narratives need more time
         maxTokens:      contentMaxTokens,
       });
 
@@ -2080,7 +2080,7 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
         systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
         messages:       [],
         userContent:    `Convert this presentation to JSON:${jsonSlideCountNote}\n\n${slideContentForJson}`,
-        timeout:        120000,
+        timeout:        180000, // 3 min — JSON conversion of large presentations
         maxTokens:      freeformMode ? 4000 : jsonTokens,
       });
 
