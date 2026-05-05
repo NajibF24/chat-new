@@ -7,39 +7,39 @@ import React, { useState, useEffect, useCallback } from 'react';
 // ─── Feature announcements (update these whenever there's a new release) ───
 const FEATURES = [
   {
-    icon: '🎙️',
+    icon: '⚡',
     badge: 'NEW',
     badgeColor: 'bg-emerald-500',
-    title: 'Voice Mode — Conversational AI',
-    description: 'Speak directly to AI and it replies with voice! Auto-detects Indonesian & English. Full conversational loop — just like Gemini or ChatGPT voice mode.',
+    title: 'Streaming AI Responses',
+    description: 'AI responses are now streamed in real-time token-by-token (just like ChatGPT), significantly reducing perceived wait times for long answers.',
   },
   {
-    icon: '🔊',
+    icon: '✨',
     badge: 'NEW',
     badgeColor: 'bg-emerald-500',
-    title: 'Auto-Read & Voice Typing',
-    description: 'Enable Auto-Read to have every AI reply spoken aloud while you keep typing. Or use the mic button to type with your voice — no need to switch modes.',
+    title: 'Message Actions (Copy, Edit, Regenerate)',
+    description: 'You can now easily Copy AI responses, Edit & Resend your own messages, or Regenerate an AI response with a single click.',
+  },
+  {
+    icon: '🎙️',
+    badge: 'IMPROVED',
+    badgeColor: 'bg-blue-500',
+    title: 'Voice Mode & Auto-Read',
+    description: 'Speak directly to AI and it replies with voice! Auto-detects Indonesian & English. Enable Auto-Read to have AI replies spoken aloud automatically.',
   },
   {
     icon: '📊',
-    badge: 'NEW',
-    badgeColor: 'bg-emerald-500',
+    badge: 'IMPROVED',
+    badgeColor: 'bg-blue-500',
     title: 'PPT with GYS Template',
     description: 'Presentations now automatically use the official GYS template — colors, fonts, and layouts follow the Brand Guidelines.',
   },
   {
     icon: '📎',
-    badge: 'NEW',
-    badgeColor: 'bg-emerald-500',
-    title: 'Drag & Drop + Ctrl+V Upload',
-    description: 'Drag files directly onto the chat or press Ctrl+V to paste from clipboard. Supports images, PDF, DOCX, XLSX, PPTX (max 20MB).',
-  },
-  {
-    icon: '🌙',
     badge: 'IMPROVED',
     badgeColor: 'bg-blue-500',
-    title: 'Enhanced Dark Mode & Performance',
-    description: 'Dark mode refined for consistency. AI response timeouts increased to prevent errors on heavy tasks like long presentations.',
+    title: 'Drag & Drop + Ctrl+V Upload',
+    description: 'Drag files directly onto the chat or press Ctrl+V to paste from clipboard. Supports images, PDF, DOCX, XLSX, PPTX (max 20MB).',
   },
 ];
 
