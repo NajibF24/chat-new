@@ -204,6 +204,159 @@ router.post('/message', requireAuth, async (req, res) => {
 });
 
 // ============================================================
+// 🔥 STREAMING ENDPOINT — Server-Sent Events (SSE)
+// ============================================================
+router.post('/message/stream', requireAuth, async (req, res) => {
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no', // Disable Nginx buffering
+  });
+
+  const sendSSE = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const { message, botId, history, threadId: reqThreadId } = req.body;
+    const userId       = req.session.userId;
+    const attachedFile = req.body.attachedFile || null;
+
+    const bot = await Bot.findById(botId).lean();
+    if (!bot) { sendSSE('error', { error: 'Bot not found' }); res.end(); return; }
+
+    // ── Special commands (PPT, Doc, Excel, Newsletter, Image) → non-streaming fallback
+    const cleanMsg = (message || '').trim().toLowerCase();
+    const isSpecial = cleanMsg.startsWith('/ppt') || cleanMsg.startsWith('/doc') ||
+      cleanMsg.startsWith('/pdf') || cleanMsg.startsWith('/excel') ||
+      cleanMsg.startsWith('/newsletter') || cleanMsg.startsWith('/image') ||
+      cleanMsg.startsWith('/img') || cleanMsg.startsWith('gambarkan');
+
+    if (isSpecial) {
+      // Fall back to normal processMessage for special commands
+      const result = await AICoreService.processMessage({
+        userId, botId, message, attachedFile, threadId: reqThreadId,
+        history: (history || []).map(m => ({ role: m.role, content: m.content })),
+      });
+      sendSSE('token', { token: result.response });
+      sendSSE('done', { threadId: result.threadId, attachedFiles: result.attachedFiles || [] });
+      res.end();
+      return;
+    }
+
+    // ── Create / reuse thread
+    let threadId = reqThreadId;
+    if (!threadId) {
+      const title     = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
+      const newThread = new Thread({ userId, botId, title, lastMessageAt: new Date() });
+      await newThread.save();
+      threadId = newThread._id;
+    }
+
+    // ── Build context (reuse same logic as processMessage for Smartsheet, Kouventa, etc.)
+    // For streaming we go directly through AIProviderService with streaming
+    let contextData = '';
+
+    if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
+      try {
+        const kouventa = new (await import('../services/kouventa.service.js')).default(
+          bot.kouventaConfig.apiKey, bot.kouventaConfig.endpoint
+        );
+        const reply = await kouventa.generateResponse(message || '');
+        contextData += `\n\n=== REFERENSI DOKUMEN INTERNAL ===\n${reply}\n`;
+      } catch (e) { console.error('Kouventa Error:', e.message); }
+    }
+
+    if (bot.azureSearchConfig?.enabled && bot.azureSearchConfig?.apiKey) {
+      try {
+        const AzureSearchService = (await import('../services/azure-search.service.js')).default;
+        const azureSearch = new AzureSearchService(
+          bot.azureSearchConfig.apiKey, bot.azureSearchConfig.endpoint
+        );
+        const context = await azureSearch.generateResponse(message || '');
+        if (context) contextData += `\n\n=== REFERENSI AZURE AI SEARCH ===\n${context}\n`;
+      } catch (e) { console.error('Azure Search Error:', e.message); }
+    }
+
+    // Build user content
+    const userContent = [];
+    if (message) userContent.push({ type: 'text', text: message });
+
+    // Build system prompt
+    const today = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    const systemPrompt = [
+      bot.prompt || bot.systemPrompt || '',
+      `[TODAY: ${today}]`,
+      contextData,
+    ].filter(Boolean).join('\n\n');
+
+    const providerConfig = { ...(bot.aiProvider || {}) };
+    if (!providerConfig.provider) {
+      providerConfig.provider = 'openai';
+      providerConfig.model    = providerConfig.model || 'gpt-4o-mini';
+    }
+
+    // Filter capabilities to only those supported by current provider
+    const PROVIDER_CAPS = { openai: ['webSearch','codeInterpreter','imageGeneration','canvas','fileSearch'], anthropic: ['fileSearch'], google: [], custom: [] };
+    const allowedCaps = PROVIDER_CAPS[providerConfig.provider] || [];
+    const rawCaps     = bot.capabilities || {};
+    const filteredCaps = Object.fromEntries(
+      Object.entries(rawCaps).filter(([k]) => allowedCaps.includes(k))
+    );
+
+    // ── Stream AI response ────────────────────────────
+    const finalUserContent = userContent.length === 1 && userContent[0].type === 'text'
+      ? userContent[0].text
+      : userContent;
+
+    let fullResponse = '';
+    await AIProviderService.streamCompletion({
+      providerConfig,
+      systemPrompt,
+      messages:    (history || []).slice(-6),
+      userContent: finalUserContent,
+      capabilities: filteredCaps,
+      onToken: (token) => {
+        fullResponse += token;
+        sendSSE('token', { token });
+      },
+    });
+
+    // ── Save to DB ────────────────────────────────────
+    let savedAttachments = [];
+    if (attachedFile) {
+      savedAttachments.push({
+        name: attachedFile.originalname || attachedFile.filename,
+        path: `/api/files/${attachedFile.filename}`,
+        serverPath: attachedFile.path,
+        type: attachedFile.mimetype?.includes('image') ? 'image'
+          : attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file',
+      });
+    }
+
+    await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
+    await new Chat({ userId, botId, threadId, role: 'assistant', content: fullResponse }).save();
+    await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+    // WAHA Forward (fire & forget)
+    sendToWaha(bot, req.session?.username, message, fullResponse);
+
+    // Done
+    sendSSE('done', { threadId, attachedFiles: savedAttachments });
+    res.end();
+
+  } catch (error) {
+    console.error('Stream Error:', error);
+    try { sendSSE('error', { error: error.message }); } catch {}
+    res.end();
+  }
+});
+
+// ============================================================
 // 🌐 EXTERNAL API CHAT — akses via x-api-key header
 // ============================================================
 // Contoh curl:

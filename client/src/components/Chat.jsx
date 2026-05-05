@@ -345,7 +345,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
     if (e.key === 'Escape') setConfirmDeleteId(null);
   };
 
-  // Normal (keyboard/click) send
+  // ── Streaming SSE submit ────────────────────────────
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     const currentInput = input.trim();
@@ -381,31 +381,175 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
     };
     setMessages(prev => [...prev, userMessage]);
 
+    // Add placeholder streaming AI message
+    const aiMsgId = Date.now();
+    setMessages(prev => [...prev, {
+      _streamId: aiMsgId, role: 'assistant', content: '', attachedFiles: [],
+      createdAt: new Date().toISOString(), isStreaming: true
+    }]);
+
+    const payload = {
+      message: currentInput, botId: selectedBot._id, threadId: currentThreadId,
+      attachedFile: uploadedFileData,
+      history: messages.map(m => ({ role: m.role, content: m.content }))
+    };
+
     try {
-      const payload = {
-        message: currentInput, botId: selectedBot._id, threadId: currentThreadId,
-        attachedFile: uploadedFileData,
-        history: messages.map(m => ({ role: m.role, content: m.content }))
-      };
-      const res = await axios.post('/api/chat/message', payload);
-      const aiContent = res.data.response;
-      setMessages(prev => [...prev, {
-        role: 'assistant', content: aiContent,
-        attachedFiles: res.data.attachedFiles || [],
-        createdAt: new Date().toISOString()
-      }]);
-      parseAndOpenArtifact(aiContent);
-      if (res.data.threadId) { setCurrentThreadId(res.data.threadId); fetchThreads(); }
-      else fetchThreads();
-      // Auto-Read: speak every AI response when toggle is on
-      if (autoRead) voice.speak(aiContent);
+      const response = await fetch('/api/chat/message/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include',
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              // Find the event type from the previous line
+              const eventLine = lines[lines.indexOf(line) - 1];
+              const eventType = eventLine?.startsWith('event: ') ? eventLine.slice(7).trim() : 'token';
+
+              if (data.token !== undefined) {
+                fullContent += data.token;
+                setMessages(prev => prev.map(m =>
+                  m._streamId === aiMsgId ? { ...m, content: fullContent } : m
+                ));
+              }
+              if (data.threadId) {
+                setCurrentThreadId(data.threadId);
+                fetchThreads();
+              }
+              if (data.attachedFiles) {
+                setMessages(prev => prev.map(m =>
+                  m._streamId === aiMsgId ? { ...m, attachedFiles: data.attachedFiles, isStreaming: false } : m
+                ));
+              }
+              if (data.error) {
+                setMessages(prev => prev.map(m =>
+                  m._streamId === aiMsgId ? { ...m, content: 'Error: ' + data.error, isStreaming: false } : m
+                ));
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // Mark streaming complete
+      setMessages(prev => prev.map(m =>
+        m._streamId === aiMsgId ? { ...m, isStreaming: false } : m
+      ));
+      parseAndOpenArtifact(fullContent);
+      if (autoRead) voice.speak(fullContent);
+
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, an error occurred on the AI server.' }]);
+      setMessages(prev => prev.map(m =>
+        m._streamId === aiMsgId ? { ...m, content: 'Sorry, an error occurred on the AI server.', isStreaming: false } : m
+      ));
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  // ── Regenerate last AI response ──────────────────────
+  const handleRegenerate = useCallback(async () => {
+    // Find last user message
+    const lastUserIdx = [...messages].reverse().findIndex(m => m.role === 'user');
+    if (lastUserIdx === -1 || !selectedBot) return;
+    const userIdx = messages.length - 1 - lastUserIdx;
+    const lastUserMsg = messages[userIdx];
+
+    // Remove last AI response
+    setMessages(prev => prev.slice(0, userIdx + 1));
+    setLoading(true);
+
+    const aiMsgId = Date.now();
+    setMessages(prev => [...prev, {
+      _streamId: aiMsgId, role: 'assistant', content: '', attachedFiles: [],
+      createdAt: new Date().toISOString(), isStreaming: true
+    }]);
+
+    try {
+      const response = await fetch('/api/chat/message/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: lastUserMsg.content, botId: selectedBot._id, threadId: currentThreadId,
+          history: messages.slice(0, userIdx).map(m => ({ role: m.role, content: m.content }))
+        }),
+        credentials: 'include',
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.token !== undefined) {
+                fullContent += data.token;
+                setMessages(prev => prev.map(m =>
+                  m._streamId === aiMsgId ? { ...m, content: fullContent } : m
+                ));
+              }
+              if (data.threadId) { setCurrentThreadId(data.threadId); fetchThreads(); }
+            } catch {}
+          }
+        }
+      }
+      setMessages(prev => prev.map(m =>
+        m._streamId === aiMsgId ? { ...m, isStreaming: false } : m
+      ));
+      parseAndOpenArtifact(fullContent);
+      if (autoRead) voice.speak(fullContent);
+    } catch {
+      setMessages(prev => prev.map(m =>
+        m._streamId === aiMsgId ? { ...m, content: 'Regeneration failed. Please try again.', isStreaming: false } : m
+      ));
+    } finally {
+      setLoading(false);
+    }
+  }, [messages, selectedBot, currentThreadId, autoRead, voice, parseAndOpenArtifact]);
+
+  // ── Edit & resend user message ──────────────────────
+  const handleEditMessage = useCallback((msgIndex, newContent) => {
+    // Trim messages after the edited one
+    setMessages(prev => {
+      const updated = prev.slice(0, msgIndex);
+      updated.push({ ...prev[msgIndex], content: newContent });
+      return updated;
+    });
+    // Auto-send the edited message
+    setInput(newContent);
+    setTimeout(() => {
+      const fakeEvent = { preventDefault: () => {} };
+      handleSubmit(fakeEvent);
+    }, 100);
+  }, []);
 
   const visibleThreads = showAllThreads ? threads : threads.slice(0, MAX_THREADS_SHOWN);
 
@@ -718,17 +862,22 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
               <div className="space-y-1 max-w-4xl mx-auto">
                 {messages.map((msg, index) => (
                   <ChatMessage
-                    key={msg._id || index}
+                    key={msg._id || msg._streamId || index}
                     message={msg}
                     bot={selectedBot}
                     onOpenArtifact={openArtifact}
+                    isStreaming={msg.isStreaming}
+                    onRegenerate={handleRegenerate}
+                    onEdit={handleEditMessage}
+                    msgIndex={index}
+                    isLast={index === messages.length - 1}
                   />
                 ))}
               </div>
             )}
 
-            {/* Thinking indicator */}
-            {loading && (
+            {/* Thinking indicator — only show when loading AND not already streaming */}
+            {loading && !messages.some(m => m.isStreaming) && (
               <div className="flex justify-start py-3 max-w-4xl mx-auto">
                 <div className="flex items-end gap-2.5">
                   <BotAvatar bot={selectedBot} size="sm" />

@@ -128,10 +128,13 @@ function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
 // ─────────────────────────────────────────────────────────────
 // ChatMessage
 // ─────────────────────────────────────────────────────────────
-const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
+const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming, onRegenerate, onEdit, msgIndex, isLast }) => {
   const isUser = message.role === 'user';
   const [visible, setVisible] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [copied, setCopied]       = useState(false);
+  const [editing, setEditing]     = useState(false);
+  const [editText, setEditText]   = useState('');
   const synthRef = useRef(null);
 
   // Fade-in on mount
@@ -198,6 +201,28 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
       setIsPlaying(true);
     }
   };
+
+  // ── Copy entire message ──
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content || '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  // ── Edit mode ──
+  const startEdit = () => {
+    setEditText(message.content || '');
+    setEditing(true);
+  };
+  const submitEdit = () => {
+    if (editText.trim() && onEdit) {
+      onEdit(msgIndex, editText.trim());
+    }
+    setEditing(false);
+  };
+  const cancelEdit = () => setEditing(false);
 
   return (
     <div
@@ -318,6 +343,10 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
             >
               {message.content || ''}
             </ReactMarkdown>
+            {/* Streaming cursor */}
+            {isStreaming && (
+              <span className="inline-block w-2 h-4 ml-0.5 bg-primary-dark dark:bg-primary-light animate-pulse rounded-sm" />
+            )}
           </div>
 
           {/* Attachments */}
@@ -365,28 +394,93 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
           )}
 
           {/* Footer: Timestamp & Actions */}
-          <div className={`flex items-center mt-2 ${isUser ? 'justify-end' : 'justify-between'}`}>
-            {!isUser && (
-              <button
-                onClick={toggleSpeech}
-                title={isPlaying ? "Stop audio" : "Play audio"}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors ${
-                  isPlaying 
-                    ? 'text-primary bg-primary/10' 
-                    : 'text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                {isPlaying ? (
-                  <><svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> Stop</>
-                ) : (
-                  <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg> Dengarkan</>
+          <div className={`flex items-center gap-1 mt-2 flex-wrap ${isUser ? 'justify-end' : 'justify-start'}`}>
+
+            {/* AI message actions */}
+            {!isUser && !isStreaming && message.content && (
+              <>
+                {/* Copy */}
+                <button onClick={handleCopy}
+                  title="Copy response"
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+                    ${copied ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                  {copied ? (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>                  ) : (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Copy</>                  )}
+                </button>
+
+                {/* Regenerate (only on last AI message) */}
+                {isLast && onRegenerate && (
+                  <button onClick={onRegenerate}
+                    title="Regenerate response"
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    Regenerate
+                  </button>
                 )}
-              </button>
+
+                {/* TTS */}
+                <button onClick={toggleSpeech}
+                  title={isPlaying ? "Stop audio" : "Listen"}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+                    ${isPlaying ? 'text-primary bg-primary/10' : 'text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                  {isPlaying ? (
+                    <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>Stop</>                  ) : (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>Listen</>                  )}
+                </button>
+              </>
             )}
-            <div className={`text-[10px] tabular-nums ${isUser ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
+
+            {/* User message actions */}
+            {isUser && !isStreaming && (
+              <>
+                <button onClick={handleCopy}
+                  title="Copy message"
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+                    ${copied ? 'text-emerald-300 bg-emerald-500/20' : 'text-white/40 hover:text-white/70 hover:bg-white/10'}`}>
+                  {copied ? (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>                  ) : (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Copy</>                  )}
+                </button>
+                {onEdit && (
+                  <button onClick={startEdit}
+                    title="Edit & resend"
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    Edit
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Timestamp */}
+            <div className={`text-[10px] tabular-nums ml-auto ${isUser ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
               {new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
+
+          {/* Edit modal overlay */}
+          {editing && (
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+              <textarea
+                value={editText}
+                onChange={e => setEditText(e.target.value)}
+                className="w-full bg-gray-50 dark:bg-gray-700 text-sm text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                rows={3}
+                autoFocus
+              />
+              <div className="flex gap-2 mt-2">
+                <button onClick={submitEdit}
+                  className="px-3 py-1.5 bg-primary-dark text-white text-xs font-bold rounded-lg hover:bg-primary transition-colors">
+                  Send Edited
+                </button>
+                <button onClick={cancelEdit}
+                  className="px-3 py-1.5 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

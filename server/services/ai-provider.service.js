@@ -897,6 +897,111 @@ class AIProviderService {
     return { imageUrl, revisedPrompt };
   }
 
+  /**
+   * Stream tokens via a callback.  onToken(text) is called for each chunk.
+   * Returns the full accumulated text when done.
+   * Falls back to non-streaming generateCompletion for unsupported providers.
+   */
+  async streamCompletion({ providerConfig = {}, systemPrompt, messages, userContent, capabilities = {}, onToken }) {
+    const provider = providerConfig?.provider || 'openai';
+    const model    = providerConfig?.model    || 'gpt-4o';
+    const temp     = providerConfig?.temperature ?? 0.1;
+    const maxTok   = providerConfig?.maxTokens ?? 2000;
+    const apiKey   = this.getApiKey(providerConfig);
+    const endpoint = providerConfig?.endpoint?.trim() || '';
+
+    // ── OpenAI streaming ──────────────────────────────────
+    if (provider === 'openai' || (provider === 'custom' && !isAzureEndpoint(endpoint))) {
+      const clientConfig = { apiKey };
+      if (endpoint) clientConfig.baseURL = endpoint;
+      clientConfig.timeout = 300000;
+      const openai = new OpenAI(clientConfig);
+
+      const tokenParams = getModelParams(model, temp, maxTok);
+      const body = {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          { role: 'user', content: userContent },
+        ],
+        ...tokenParams,
+        stream: true,
+      };
+
+      let fullText = '';
+      const stream = await openai.chat.completions.create(body);
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullText += delta;
+          if (onToken) onToken(delta);
+        }
+      }
+      return { text: fullText, usage: null };
+    }
+
+    // ── Anthropic streaming ───────────────────────────────
+    if (provider === 'anthropic') {
+      const userText = Array.isArray(userContent)
+        ? userContent.filter(c => c.type === 'text').map(c => c.text).join('\n')
+        : String(userContent);
+
+      const anthropicMessages = [
+        ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: userText },
+      ];
+
+      let fullText = '';
+      const response = await axios.post('https://api.anthropic.com/v1/messages', {
+        model,
+        max_tokens: maxTok,
+        system: systemPrompt,
+        messages: anthropicMessages,
+        stream: true,
+      }, {
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        responseType: 'stream',
+        timeout: 300000,
+      });
+
+      return new Promise((resolve, reject) => {
+        let buffer = '';
+        response.data.on('data', (chunk) => {
+          buffer += chunk.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const json = line.slice(6).trim();
+            if (json === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(json);
+              if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                fullText += parsed.delta.text;
+                if (onToken) onToken(parsed.delta.text);
+              }
+            } catch {}
+          }
+        });
+        response.data.on('end', () => resolve({ text: fullText, usage: null }));
+        response.data.on('error', reject);
+      });
+    }
+
+    // ── Fallback: non-streaming for Google, custom, external ──
+    const result = await this.generateCompletion({
+      providerConfig, systemPrompt, messages, userContent, capabilities,
+    });
+    // Send entire text as a single "chunk"
+    if (onToken && result.text) onToken(result.text);
+    return result;
+  }
+
   async testConnection(providerConfig) {
     try {
       const result = await this.generateCompletion({
