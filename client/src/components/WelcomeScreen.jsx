@@ -7,6 +7,20 @@ import React, { useState, useEffect, useCallback } from 'react';
 // ─── Feature announcements (update these whenever there's a new release) ───
 const FEATURES = [
   {
+    icon: '🎙️',
+    badge: 'NEW',
+    badgeColor: 'bg-emerald-500',
+    title: 'Voice Mode — Conversational AI',
+    description: 'Speak directly to AI and it replies with voice! Auto-detects Indonesian & English. Full conversational loop — just like Gemini or ChatGPT voice mode.',
+  },
+  {
+    icon: '🔊',
+    badge: 'NEW',
+    badgeColor: 'bg-emerald-500',
+    title: 'Auto-Read & Voice Typing',
+    description: 'Enable Auto-Read to have every AI reply spoken aloud while you keep typing. Or use the mic button to type with your voice — no need to switch modes.',
+  },
+  {
     icon: '📊',
     badge: 'NEW',
     badgeColor: 'bg-emerald-500',
@@ -17,24 +31,18 @@ const FEATURES = [
     icon: '📎',
     badge: 'NEW',
     badgeColor: 'bg-emerald-500',
-    title: 'Drag & Drop File Upload',
-    description: 'Drag files directly onto the chat area or press Ctrl+V to paste. No more clicking the attach icon!',
+    title: 'Drag & Drop + Ctrl+V Upload',
+    description: 'Drag files directly onto the chat or press Ctrl+V to paste from clipboard. Supports images, PDF, DOCX, XLSX, PPTX (max 20MB).',
   },
   {
     icon: '🌙',
     badge: 'IMPROVED',
     badgeColor: 'bg-blue-500',
-    title: 'Enhanced Dark Mode',
-    description: 'Dark mode has been refined for a more comfortable and consistent experience across all portal pages.',
-  },
-  {
-    icon: '🔍',
-    badge: 'IMPROVED',
-    badgeColor: 'bg-blue-500',
-    title: 'Smarter Web Search',
-    description: 'Bots can now search the web for up-to-date information with more accurate results and clear source citations.',
+    title: 'Enhanced Dark Mode & Performance',
+    description: 'Dark mode refined for consistency. AI response timeouts increased to prevent errors on heavy tasks like long presentations.',
   },
 ];
+
 
 // ─── Decorative floating particles ─────────────────────────────────────
 function FloatingParticles() {
