@@ -6,7 +6,9 @@ import ArtifactPanel from './ArtifactPanel';
 import BotAvatar from './BotAvatar';
 import DarkModeToggle from './DarkModeToggle';
 import WelcomeScreen from './WelcomeScreen';
+import VoiceModal from './VoiceModal';
 import useDarkMode from '../hooks/useDarkMode';
+import useVoice from '../hooks/useVoice';
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -76,8 +78,6 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef(null);
 
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -140,61 +140,35 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
     if (best) openArtifact(best.lang, best.code);
   }, [openArtifact]);
 
-  // ── Speech-to-Text (STT) ──
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'id-ID'; // Default to Indonesian
-
-      recognition.onresult = (event) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript + ' ';
-          }
-        }
-        if (finalTranscript) {
-          setInput(prev => prev + finalTranscript);
-          if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
-          }
-        }
-      };
-
-      recognition.onerror = (event) => {
-        console.error('Speech recognition error', event.error);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-    }
-  }, []);
-
-  const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-          setIsListening(true);
-        } catch (err) {
-          console.error("Failed to start speech recognition:", err);
-        }
-      } else {
-        alert("Fitur Voice Typing tidak didukung di browser ini. Gunakan Chrome atau Edge.");
+  // ── Voice (STT + TTS) via useVoice hook ──
+  const voice = useVoice({
+    // Called when STT produces a transcript (for manual mic button)
+    onTranscript: (text) => {
+      setInput(prev => prev + (prev ? ' ' : '') + text);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
       }
+    },
+    // Called in voice mode: auto-sends transcript
+    onSendMessage: (text) => {
+      if (!selectedBot || loading) return;
+      voiceSendRef.current = true;
+      setInput(text);
+    },
+  });
+
+  // Ref to signal that next handleSubmit came from voice mode
+  const voiceSendRef = useRef(false);
+
+  // When input is set from voice mode, auto-submit
+  useEffect(() => {
+    if (voiceSendRef.current && input.trim()) {
+      voiceSendRef.current = false;
+      handleSubmitFromVoice(input);
     }
-  };
+  // eslint-disable-next-line
+  }, [input]);
 
   const fetchBots = async () => {
     try {
@@ -348,13 +322,13 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
     if (e.key === 'Escape') setConfirmDeleteId(null);
   };
 
+  // Normal (keyboard/click) send
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if ((!input.trim() && !selectedFile) || !selectedBot || loading) return;
-
-    setLoading(true);
-    const currentInput = input;
+    if (e) e.preventDefault();
+    const currentInput = input.trim();
     const currentFile  = selectedFile;
+    if ((!currentInput && !currentFile) || !selectedBot || loading) return;
+    setLoading(true);
     setInput('');
     setSelectedFile(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -419,6 +393,16 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
       onDrop={handleDrop}
       onPaste={handlePaste}
     >
+      {/* ════════════════ VOICE MODE MODAL ════════════════ */}
+      {voice.voiceMode && (
+        <VoiceModal
+          voiceState={voice.voiceState}
+          isSpeaking={voice.isSpeaking}
+          isListening={voice.isListening}
+          botName={selectedBot?.name}
+          onClose={() => voice.setVoiceMode(false)}
+        />
+      )}
 
       {/* ════════════════ DRAG OVERLAY ════════════════ */}
       {isDragOver && (
@@ -773,18 +757,36 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                   className="hidden"
                   accept="image/*,.pdf,.docx,.xlsx,.xls,.txt,.csv,.pptx"
                 />
-                <button type="button" onClick={toggleListening} title={isListening ? "Stop listening" : "Voice typing"}
-                  className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl transition-colors mb-0.5
-                    ${isListening 
-                      ? 'text-red-500 bg-red-100 dark:bg-red-900/30 animate-pulse' 
-                      : 'text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}>
-                  {isListening ? (
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.39-.9.89 0 2.76-2.24 5-5.01 5s-5.01-2.24-5.01-5c0-.5-.41-.89-.9-.89s-.9.39-.9.89c0 3.42 2.72 6.23 6.06 6.72V21h1.5v-2.39c3.34-.49 6.06-3.3 6.06-6.72 0-.5-.41-.89-.9-.89z" /></svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                  )}
-                </button>
+                {/* Voice Mode button (conversational) */}
+                {voice.isSupported && (
+                  <button type="button" onClick={voice.toggleVoiceMode}
+                    title="Voice Mode — have a conversation"
+                    className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl transition-all mb-0.5
+                      ${voice.voiceMode
+                        ? 'text-white bg-primary-dark shadow-md'
+                        : 'text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}>
+                    {/* Soundwave icon */}
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                  </button>
+                )}
+                {/* Mic button (quick STT only — no voice mode) */}
+                {voice.isSupported && (
+                  <button type="button" onClick={voice.toggleListening} title={voice.isListening ? "Stop listening" : "Voice typing"}
+                    className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl transition-colors mb-0.5
+                      ${voice.isListening
+                        ? 'text-red-500 bg-red-100 dark:bg-red-900/30 animate-pulse'
+                        : 'text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}>
+                    {voice.isListening ? (
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.39-.9.89 0 2.76-2.24 5-5.01 5s-5.01-2.24-5.01-5c0-.5-.41-.89-.9-.89s-.9.39-.9.89c0 3.42 2.72 6.23 6.06 6.72V21h1.5v-2.39c3.34-.49 6.06-3.3 6.06-6.72 0-.5-.41-.89-.9-.89z" /></svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                    )}
+                  </button>
+                )}
                 <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach file"
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mb-0.5">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>

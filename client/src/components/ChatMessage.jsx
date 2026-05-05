@@ -2,7 +2,7 @@ import React, { memo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import BotAvatar from './BotAvatar';
-
+import { cleanForSpeech, detectLang } from '../hooks/useVoice';
 import axios from 'axios';
 
 const getFileUrl = (path) => {
@@ -152,26 +152,48 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
 
   const toggleSpeech = () => {
     if (!synthRef.current) {
-      alert("Fitur Text-to-Speech tidak didukung di browser ini.");
+      alert("Text-to-Speech is not supported in this browser.");
       return;
     }
 
     if (isPlaying) {
       synthRef.current.cancel();
       setIsPlaying(false);
+      return;
+    }
+
+    const cleaned  = cleanForSpeech(message.content || '');
+    const lang     = detectLang(cleaned);
+    const voices   = synthRef.current.getVoices();
+
+    // Pick best voice: prefer Google > Microsoft > any matching lang
+    const [primary] = lang.split('-');
+    const candidates = voices.filter(v => v.lang === lang || v.lang.startsWith(primary + '-'));
+    const bestVoice  = candidates.find(v => v.name.toLowerCase().includes('google'))
+                    || candidates.find(v => v.name.toLowerCase().includes('microsoft'))
+                    || candidates[0];
+
+    const utterance  = new SpeechSynthesisUtterance(cleaned);
+    utterance.lang   = lang;
+    utterance.rate   = 1.0;
+    utterance.pitch  = 1.0;
+    utterance.volume = 1.0;
+    if (bestVoice) utterance.voice = bestVoice;
+
+    utterance.onstart = () => setIsPlaying(true);
+    utterance.onend   = () => setIsPlaying(false);
+    utterance.onerror = () => setIsPlaying(false);
+
+    // Chrome: voices might not be loaded yet
+    if (voices.length === 0) {
+      window.speechSynthesis.addEventListener('voiceschanged', () => {
+        const v2 = window.speechSynthesis.getVoices();
+        const c2 = v2.filter(v => v.lang === lang || v.lang.startsWith(primary + '-'));
+        const bv2 = c2.find(v => v.name.toLowerCase().includes('google')) || c2[0];
+        if (bv2) utterance.voice = bv2;
+        synthRef.current.speak(utterance);
+      }, { once: true });
     } else {
-      // Basic text cleanup to remove markdown symbols for speech
-      const textToSpeak = (message.content || '')
-        .replace(/```[\s\S]*?```/g, ' [Kode snippet dihilangkan] ') // Remove code blocks
-        .replace(/[#*`_~\[\]]/g, '') // Remove common markdown chars
-        .replace(/https?:\/\/[^\s]+/g, ' [tautan] '); // Replace URLs with word
-      
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = 'id-ID'; // Default to Indonesian
-      
-      utterance.onend = () => setIsPlaying(false);
-      utterance.onerror = () => setIsPlaying(false);
-      
       synthRef.current.speak(utterance);
       setIsPlaying(true);
     }
