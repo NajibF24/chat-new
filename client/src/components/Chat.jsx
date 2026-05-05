@@ -151,24 +151,46 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
         textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
       }
     },
-    // Called in voice mode: auto-sends transcript
+    // Called in voice mode: store text and trigger auto-send via ref
     onSendMessage: (text) => {
       if (!selectedBot || loading) return;
+      pendingVoiceText.current = text;
       voiceSendRef.current = true;
-      setInput(text);
+      setInput(text); // triggers useEffect
     },
   });
 
-  // Ref to signal that next handleSubmit came from voice mode
-  const voiceSendRef = useRef(false);
+  // Ref to hold pending voice message for auto-send
+  const voiceSendRef       = useRef(false);
+  const pendingVoiceText   = useRef('');
 
-  // When input is set from voice mode, auto-submit
+  // When input is set from voice mode, auto-submit via ref flag
+  // (uses useEffect so it runs after React re-render with new input value)
   useEffect(() => {
-    if (voiceSendRef.current && input.trim()) {
-      voiceSendRef.current = false;
-      handleSubmitFromVoice(input);
+    if (voiceSendRef.current && pendingVoiceText.current) {
+      const text = pendingVoiceText.current;
+      voiceSendRef.current    = false;
+      pendingVoiceText.current = '';
+      setInput('');
+      // Inline submit for voice (avoids calling undefined fn)
+      if (!text.trim() || !selectedBot || loading) return;
+      setLoading(true);
+      const userMsg = { role: 'user', content: text, attachedFiles: [], createdAt: new Date().toISOString() };
+      setMessages(prev => [...prev, userMsg]);
+      axios.post('/api/chat/message', {
+        message: text, botId: selectedBot._id, threadId: currentThreadId,
+        history: messages.map(m => ({ role: m.role, content: m.content }))
+      }).then(res => {
+        const aiContent = res.data.response;
+        setMessages(prev => [...prev, { role: 'assistant', content: aiContent, attachedFiles: res.data.attachedFiles || [], createdAt: new Date().toISOString() }]);
+        parseAndOpenArtifact(aiContent);
+        if (res.data.threadId) { setCurrentThreadId(res.data.threadId); fetchThreads(); } else fetchThreads();
+        if (voice.voiceMode) voice.speak(aiContent);
+      }).catch(() => {
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, an error occurred.', attachedFiles: [], createdAt: new Date().toISOString() }]);
+      }).finally(() => setLoading(false));
     }
-  // eslint-disable-next-line
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input]);
 
   const fetchBots = async () => {
