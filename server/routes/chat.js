@@ -228,22 +228,34 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     if (!bot) { sendSSE('error', { error: 'Bot not found' }); res.end(); return; }
 
     // ── Determine if this bot/request needs the full processMessage pipeline ──
-    // Smartsheet, special commands (/ppt, /doc, etc.), file attachments,
-    // and image generation all require the complete processMessage flow
-    // which handles data fetching, context building, and file processing
-    // that cannot be safely duplicated in the streaming path.
+    // Smartsheet, special commands, file attachments, image generation,
+    // and Knowledge Files all require the complete processMessage flow.
     const cleanMsg = (message || '').trim().toLowerCase();
+
+    // Special commands — must match the same detectors as processMessage
     const isSpecial = cleanMsg.startsWith('/ppt') || cleanMsg.startsWith('/doc') ||
       cleanMsg.startsWith('/pdf') || cleanMsg.startsWith('/excel') ||
       cleanMsg.startsWith('/newsletter') || cleanMsg.startsWith('/image') ||
-      cleanMsg.startsWith('/img') || cleanMsg.startsWith('gambarkan');
+      cleanMsg.startsWith('/img') || cleanMsg.startsWith('/slide') ||
+      cleanMsg.startsWith('/presentation') || cleanMsg.startsWith('gambarkan');
 
-    const hasSmartsheet = bot.smartsheetConfig?.enabled;
-    const hasAttachment = !!attachedFile;
+    // ✅ Check for freeform generation commands (PPT, DOC, image gen patterns)
+    const hasPptPattern = /\b(presentasi|powerpoint|ppt|slide)\b/i.test(cleanMsg) &&
+      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(cleanMsg);
+    const hasDocPattern = /\b(doc|docx|word)\b/i.test(cleanMsg);
+    const hasPdfPattern = /\b(pdf)\b/i.test(cleanMsg);
+    const hasExcelPattern = /\b(excel|xlsx|spreadsheet|tabel)\b/i.test(cleanMsg);
+    const hasNewsletterPattern = /\b(newsletter|signal)\b/i.test(cleanMsg);
+    const hasImageGenPattern = /^(create|generate|make|draw|buatkan?|buat|gambarkan|lukiskan|desainkan)\s+(a\s+|an\s+)?(image|photo|picture|illustration|gambar|foto|ilustrasi)/i.test(cleanMsg);
 
-    // ✅ FIX: Route through processMessage for Smartsheet bots, special commands,
-    // and file attachments — these require the full pipeline for correct behavior
-    if (isSpecial || hasSmartsheet || hasAttachment) {
+    const hasSmartsheet   = bot.smartsheetConfig?.enabled;
+    const hasAttachment   = !!attachedFile;
+    const hasKnowledge    = bot.knowledgeFiles?.length > 0 && bot.knowledgeMode !== 'disabled';
+
+    // ✅ FIX: Route through processMessage for ANY complex pipeline requirement
+    if (isSpecial || hasSmartsheet || hasAttachment || hasKnowledge ||
+        hasPptPattern || hasDocPattern || hasPdfPattern || hasExcelPattern ||
+        hasNewsletterPattern || hasImageGenPattern) {
       const result = await AICoreService.processMessage({
         userId, botId, message, attachedFile, threadId: reqThreadId,
         history: (history || []).map(m => ({ role: m.role, content: m.content })),
@@ -254,7 +266,9 @@ router.post('/message/stream', requireAuth, async (req, res) => {
       return;
     }
 
-    // ── Pure streaming path (no Smartsheet, no attachments, no special commands) ──
+    // ── Pure streaming path ──
+    // Only reaches here for plain chat bots without:
+    // Smartsheet, Knowledge Files, attachments, or special commands.
 
     // Create / reuse thread
     let threadId = reqThreadId;
@@ -265,7 +279,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
       threadId = newThread._id;
     }
 
-    // Build context from Kouventa / Azure Search (these are simple and safe to inline)
+    // Build context from Kouventa / Azure Search
     let contextData = '';
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
@@ -278,7 +292,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
       } catch (e) { console.error('Kouventa Error:', e.message); }
     }
 
-    if (bot.azureSearchConfig?.enabled && bot.azureSearchConfig?.apiKey) {
+    if (bot.azureSearchConfig?.enabled && bot.azureSearchConfig?.apiKey && bot.azureSearchConfig?.endpoint) {
       try {
         const AzureSearchService = (await import('../services/azure-search.service.js')).default;
         const azureSearch = new AzureSearchService(
@@ -289,18 +303,49 @@ router.post('/message/stream', requireAuth, async (req, res) => {
       } catch (e) { console.error('Azure Search Error:', e.message); }
     }
 
+    // ── Language detection (mirrors processMessage logic) ──
+    const userMsg = (message || '').trim();
+    const EN_SIGNALS = [
+      'show','list','get','find','what','which','how','give','tell','display',
+      'check','all','my','the','are','is','do','can','have','project','projects',
+      'status','report','overview','summary','active','overdue','budget','issue',
+      'where','me','for','by','with','without','from','to','and','or','not','in','on','at','of','a','an',
+    ];
+    const ID_SIGNALS = [
+      'tampilkan','cari','lihat','semua','daftar','berikan','apa','siapa',
+      'kapan','dimana','bagaimana','gimana','berapa','proyek','status','laporan',
+      'aktif','selesai','terlambat','anggaran','masalah','kendala','dari','untuk',
+      'dengan','tanpa','oleh','di','ke','dan','atau','tidak','bukan','yang','ini',
+      'itu','adalah','ada','tolong','mohon','bisa','boleh',
+    ];
+    const lowerUserMsg = userMsg.toLowerCase();
+    const enCount = EN_SIGNALS.filter(w => new RegExp(`\\b${w}\\b`, 'i').test(lowerUserMsg)).length;
+    const idCount = ID_SIGNALS.filter(w => lowerUserMsg.includes(w)).length;
+    const isEnglishMsg = enCount >= 1 && enCount >= idCount;
+
+    const langRule = isEnglishMsg
+      ? `[LANGUAGE: The user is writing in ENGLISH. You MUST respond entirely in English. Do NOT use Indonesian.]`
+      : `[BAHASA: Deteksi bahasa pesan terakhir user dan balas dengan bahasa yang SAMA PERSIS. Jika user nulis Bahasa Indonesia → balas Indonesia. Jika English → balas English. JANGAN campur bahasa.]`;
+
+    // ── Grounding instruction ──
+    const groundingInstruction = contextData
+      ? 'Use the data and knowledge provided above to answer the user accurately. Do not hallucinate facts.'
+      : '';
+
     // Build user content
     const userContent = [];
     if (message) userContent.push({ type: 'text', text: message });
 
-    // Build system prompt
+    // Build system prompt (mirrors processMessage structure)
     const today = new Date().toLocaleDateString('en-US', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
     const systemPrompt = [
+      langRule,
       bot.prompt || bot.systemPrompt || '',
       `[TODAY: ${today}]`,
       contextData,
+      groundingInstruction,
     ].filter(Boolean).join('\n\n');
 
     const providerConfig = { ...(bot.aiProvider || {}) };
