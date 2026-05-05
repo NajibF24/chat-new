@@ -227,15 +227,23 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     const bot = await Bot.findById(botId).lean();
     if (!bot) { sendSSE('error', { error: 'Bot not found' }); res.end(); return; }
 
-    // ── Special commands (PPT, Doc, Excel, Newsletter, Image) → non-streaming fallback
+    // ── Determine if this bot/request needs the full processMessage pipeline ──
+    // Smartsheet, special commands (/ppt, /doc, etc.), file attachments,
+    // and image generation all require the complete processMessage flow
+    // which handles data fetching, context building, and file processing
+    // that cannot be safely duplicated in the streaming path.
     const cleanMsg = (message || '').trim().toLowerCase();
     const isSpecial = cleanMsg.startsWith('/ppt') || cleanMsg.startsWith('/doc') ||
       cleanMsg.startsWith('/pdf') || cleanMsg.startsWith('/excel') ||
       cleanMsg.startsWith('/newsletter') || cleanMsg.startsWith('/image') ||
       cleanMsg.startsWith('/img') || cleanMsg.startsWith('gambarkan');
 
-    if (isSpecial) {
-      // Fall back to normal processMessage for special commands
+    const hasSmartsheet = bot.smartsheetConfig?.enabled;
+    const hasAttachment = !!attachedFile;
+
+    // ✅ FIX: Route through processMessage for Smartsheet bots, special commands,
+    // and file attachments — these require the full pipeline for correct behavior
+    if (isSpecial || hasSmartsheet || hasAttachment) {
       const result = await AICoreService.processMessage({
         userId, botId, message, attachedFile, threadId: reqThreadId,
         history: (history || []).map(m => ({ role: m.role, content: m.content })),
@@ -246,7 +254,9 @@ router.post('/message/stream', requireAuth, async (req, res) => {
       return;
     }
 
-    // ── Create / reuse thread
+    // ── Pure streaming path (no Smartsheet, no attachments, no special commands) ──
+
+    // Create / reuse thread
     let threadId = reqThreadId;
     if (!threadId) {
       const title     = message ? message.substring(0, 30) : `Chat with ${bot.name}`;
@@ -255,8 +265,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
       threadId = newThread._id;
     }
 
-    // ── Build context (reuse same logic as processMessage for Smartsheet, Kouventa, etc.)
-    // For streaming we go directly through AIProviderService with streaming
+    // Build context from Kouventa / Azure Search (these are simple and safe to inline)
     let contextData = '';
 
     if (bot.kouventaConfig?.enabled && bot.kouventaConfig?.endpoint) {
@@ -327,18 +336,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     });
 
     // ── Save to DB ────────────────────────────────────
-    let savedAttachments = [];
-    if (attachedFile) {
-      savedAttachments.push({
-        name: attachedFile.originalname || attachedFile.filename,
-        path: `/api/files/${attachedFile.filename}`,
-        serverPath: attachedFile.path,
-        type: attachedFile.mimetype?.includes('image') ? 'image'
-          : attachedFile.mimetype?.includes('pdf') ? 'pdf' : 'file',
-      });
-    }
-
-    await new Chat({ userId, botId, threadId, role: 'user', content: message || '', attachedFiles: savedAttachments }).save();
+    await new Chat({ userId, botId, threadId, role: 'user', content: message || '' }).save();
     await new Chat({ userId, botId, threadId, role: 'assistant', content: fullResponse }).save();
     await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
@@ -346,7 +344,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     sendToWaha(bot, req.session?.username, message, fullResponse);
 
     // Done
-    sendSSE('done', { threadId, attachedFiles: savedAttachments });
+    sendSSE('done', { threadId });
     res.end();
 
   } catch (error) {
