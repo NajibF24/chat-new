@@ -78,6 +78,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [autoRead, setAutoRead]         = useState(false); // auto-TTS every AI reply
 
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -374,6 +375,8 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
       parseAndOpenArtifact(aiContent);
       if (res.data.threadId) { setCurrentThreadId(res.data.threadId); fetchThreads(); }
       else fetchThreads();
+      // Auto-Read: speak every AI response when toggle is on
+      if (autoRead) voice.speak(aiContent);
     } catch (error) {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, an error occurred on the AI server.' }]);
     } finally {
@@ -814,6 +817,34 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
                   </svg>
                 </button>
+                {/* Auto-Read toggle */}
+                {voice.isSupported && (
+                  <button
+                    type="button"
+                    onClick={() => setAutoRead(prev => !prev)}
+                    title={autoRead ? 'Auto-Read ON — click to turn off' : 'Auto-Read OFF — click to auto-speak AI replies'}
+                    className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl transition-all mb-0.5
+                      ${autoRead
+                        ? 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 ring-1 ring-emerald-400'
+                        : 'text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                  >
+                    {autoRead ? (
+                      /* Speaker ON icon */
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      </svg>
+                    ) : (
+                      /* Speaker OFF icon */
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                      </svg>
+                    )}
+                  </button>
+                )}
               </div>
               <p className="text-center text-[10px] text-gray-400 mt-2 select-none">
                 AI responses may contain inaccuracies. Verify important information before using it for business decisions.
