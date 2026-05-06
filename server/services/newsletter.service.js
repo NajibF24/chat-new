@@ -75,7 +75,7 @@ export default {
       font-family: 'Inter', sans-serif;
       background-color: #E8EAEB;
       color: #1F2937;
-      width: 900px;
+      width: 1400px;
       min-height: 100vh;
       box-sizing: border-box;
       position: relative;
@@ -98,7 +98,7 @@ export default {
     .header {
       background: linear-gradient(135deg, #023828 0%, #056649 100%);
       color: white;
-      padding: 30px 40px;
+      padding: 30px 50px;
       display: flex;
       align-items: center;
       position: relative;
@@ -136,14 +136,14 @@ export default {
     /* Diagonal decorative lines in header */
     .deco-lines { position: absolute; right: -50px; top: -50px; width: 400px; height: 400px; opacity: 0.15; z-index: 1; background: repeating-linear-gradient(45deg, transparent, transparent 10px, #ffffff 10px, #ffffff 12px); }
 
-    .main-content { padding: 30px 40px; display: flex; flex-direction: column; gap: 20px; flex: 1; }
+    .main-content { padding: 30px 50px; display: flex; flex-direction: column; gap: 24px; flex: 1; }
     
     /* Box Styles — slightly transparent white so steel texture peeks through */
     .box {
       background: rgba(255, 255, 255, 0.88);
       border-radius: 12px;
       box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
-      padding: 25px;
+      padding: 28px 32px;
       position: relative;
       border: 1px solid #E5E7EB;
       backdrop-filter: blur(2px);
@@ -156,36 +156,39 @@ export default {
     
     /* Today's Signal */
     .signal-box { border-left: 6px solid #059669; }
-    .signal-headline { font-size: 26px; font-weight: 800; color: #111827; margin-bottom: 15px; line-height: 1.3; }
-    .signal-text { font-size: 15px; color: #4B5563; line-height: 1.6; }
-    .signal-text p { margin-top: 0; margin-bottom: 10px; }
+    .signal-headline { font-size: 28px; font-weight: 800; color: #111827; margin-bottom: 15px; line-height: 1.35; }
+    .signal-text { font-size: 15px; color: #4B5563; line-height: 1.7; }
+    .signal-text p { margin-top: 0; margin-bottom: 12px; }
     .signal-text p:last-child { margin-bottom: 0; }
     
+    /* Two-column top layout: Signal + Key Points side by side */
+    .top-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+    
     /* 3 Columns Layout */
-    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-    .card { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px; }
-    .card-num { width: 24px; height: 24px; background: #064E3B; color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; margin-right: 8px; }
-    .card-title { font-size: 16px; font-weight: 700; color: #1F2937; margin: 0 0 10px 0; display: flex; align-items: flex-start; }
-    .card-text { font-size: 13px; color: #4B5563; line-height: 1.5; margin: 0; }
+    .grid-3 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    .card { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 18px 20px; }
+    .card-num { width: 24px; height: 24px; background: #064E3B; color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; margin-right: 8px; flex-shrink: 0; }
+    .card-title { font-size: 15px; font-weight: 700; color: #1F2937; margin: 0 0 6px 0; display: flex; align-items: center; }
+    .card-text { font-size: 13px; color: #4B5563; line-height: 1.55; margin: 0; }
     
     /* Implication Layout */
-    .impl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 15px; }
+    .impl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 15px; }
     .impl-item { display: flex; flex-direction: column; }
     .impl-header { display: flex; align-items: center; margin-bottom: 8px; }
     .impl-icon { font-size: 24px; margin-right: 10px; color: #059669; }
     .impl-title { font-weight: 700; color: #064E3B; font-size: 15px; }
-    .impl-text { font-size: 13px; color: #4B5563; line-height: 1.5; padding-left: 34px; border-left: 2px solid #E5E7EB; margin-left: 12px; }
+    .impl-text { font-size: 13px; color: #4B5563; line-height: 1.6; padding-left: 34px; border-left: 2px solid #E5E7EB; margin-left: 12px; }
     .impl-intro { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 10px; }
     
     /* Actions Grid */
-    .action-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .action-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
     .action-card { display: flex; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; }
-    .action-icon-wrap { background: #064E3B; padding: 25px 20px; display: flex; align-items: center; justify-content: center; font-size: 32px; color: white; width: 40px; }
-    .action-content { padding: 15px 20px; flex: 1; }
+    .action-icon-wrap { background: #064E3B; padding: 25px 22px; display: flex; align-items: center; justify-content: center; font-size: 32px; color: white; width: 44px; }
+    .action-content { padding: 18px 24px; flex: 1; }
     .action-role { font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 8px 0; }
-    .action-desc { font-size: 13px; color: #4B5563; line-height: 1.5; margin: 0 0 10px 0; }
+    .action-desc { font-size: 13px; color: #4B5563; line-height: 1.6; margin: 0 0 10px 0; }
     .action-rec-label { font-size: 12px; font-weight: 700; color: #059669; margin: 0 0 4px 0; }
-    .action-rec { font-size: 13px; color: #1F2937; font-weight: 500; line-height: 1.4; margin: 0; }
+    .action-rec { font-size: 13px; color: #1F2937; font-weight: 500; line-height: 1.5; margin: 0; }
     
     /* Takeaway */
     .takeaway-box { display: flex; align-items: center; background: #F0FDF4; border: 1px solid #A7F3D0; }
@@ -197,7 +200,7 @@ export default {
     .takeaway-text { font-size: 16px; font-weight: 600; font-style: italic; color: #064E3B; line-height: 1.6; position: relative; z-index: 1; text-align: center; padding: 0 20px; }
     
     /* Footer — normal flow at bottom, NOT absolute */
-    .footer { background: #064E3B; color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; margin-top: 0; }
+    .footer { background: #064E3B; color: white; padding: 20px 50px; display: flex; justify-content: space-between; align-items: center; margin-top: 0; }
     .footer-left strong { font-family: 'Oswald', sans-serif; font-size: 20px; letter-spacing: 0.5px; }
     .footer-left span { font-style: italic; font-size: 13px; color: #A7F3D0; margin-left: 10px; }
     .footer-right { font-size: 12px; color: #D1FAE5; text-align: right; }
@@ -226,30 +229,33 @@ export default {
 
   <div class="main-content">
     
-    <div class="box signal-box">
-      <div class="section-header">
-        <div class="section-icon">${icons.traffic}</div>
-        <h2 class="section-title">Today's Signal</h2>
-      </div>
-      <div class="signal-headline">${data.headline || 'Market Update'}</div>
-      <div class="signal-text">
-        ${(data.summaryParagraphs || []).map(p => `<p>${p}</p>`).join('')}
-      </div>
-    </div>
-
-    <!-- 2. THINGS YOU NEED TO KNOW -->
-    <div class="box">
-      <div class="section-header">
-        <div class="section-icon">${icons.compass}</div>
-        <h2 class="section-title">Things You Need to Know</h2>
-      </div>
-      <div class="grid-3">
-        ${(data.keyPoints || []).slice(0,3).map((kp, idx) => `
-        <div class="card">
-          <h3 class="card-title"><span class="card-num">${idx+1}</span> ${kp.title}</h3>
-          <p class="card-text">${kp.description}</p>
+    <!-- Top Grid: Signal + Key Points side by side -->
+    <div class="top-grid">
+      <div class="box signal-box">
+        <div class="section-header">
+          <div class="section-icon">${icons.traffic}</div>
+          <h2 class="section-title">Today's Signal</h2>
         </div>
-        `).join('')}
+        <div class="signal-headline">${data.headline || 'Market Update'}</div>
+        <div class="signal-text">
+          ${(data.summaryParagraphs || []).map(p => `<p>${p}</p>`).join('')}
+        </div>
+      </div>
+
+      <!-- 2. THINGS YOU NEED TO KNOW -->
+      <div class="box">
+        <div class="section-header">
+          <div class="section-icon">${icons.compass}</div>
+          <h2 class="section-title">Things You Need to Know</h2>
+        </div>
+        <div class="grid-3">
+          ${(data.keyPoints || []).slice(0,3).map((kp, idx) => `
+          <div class="card">
+            <h3 class="card-title"><span class="card-num">${idx+1}</span> ${kp.title}</h3>
+            <p class="card-text">${kp.description}</p>
+          </div>
+          `).join('')}
+        </div>
       </div>
     </div>
 
@@ -360,7 +366,7 @@ export default {
     const page = await browser.newPage();
     
     // Set viewport wide enough; height will be determined by content (fullPage)
-    await page.setViewport({ width: 900, height: 1200, deviceScaleFactor: 2 });
+    await page.setViewport({ width: 1400, height: 900, deviceScaleFactor: 2 });
     
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     
