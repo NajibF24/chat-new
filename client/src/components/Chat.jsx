@@ -931,21 +931,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                   className="hidden"
                   accept="image/*,.pdf,.docx,.xlsx,.xls,.txt,.csv,.pptx"
                 />
-                {/* Voice Mode button (conversational) */}
-                {voice.isSupported && (
-                  <button type="button" onClick={voice.toggleVoiceMode}
-                    title="Voice Mode — have a conversation"
-                    className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl transition-all mb-0.5
-                      ${voice.voiceMode
-                        ? 'text-white bg-primary-dark shadow-md'
-                        : 'text-gray-400 hover:text-primary-dark dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}>
-                    {/* Soundwave icon */}
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                    </svg>
-                  </button>
-                )}
+
                 {/* Mic button (quick STT only — no voice mode) */}
                 {voice.isSupported && (
                   <button type="button" onClick={voice.toggleListening} title={voice.isListening ? "Stop listening" : "Voice typing"}
