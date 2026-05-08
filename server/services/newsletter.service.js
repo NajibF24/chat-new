@@ -75,283 +75,419 @@ export default {
       font-family: 'Inter', sans-serif;
       background-color: #E8EAEB;
       color: #1F2937;
-      width: 1400px;
-      min-height: 100vh;
+      width: 1920px;
+      height: 1080px;
       box-sizing: border-box;
       position: relative;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      ${steelTextureBase64 ? `background-image: url('${steelTextureBase64}'); background-size: cover; background-repeat: repeat;` : ''}
+      ${steelTextureBase64 ? `background-image: url('${steelTextureBase64}'); background-size: cover; background-repeat: no-repeat;` : ''}
     }
-    /* Semi-transparent overlay so steel texture is visible but not overwhelming */
     body::before {
       content: '';
-      position: fixed;
+      position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(245, 247, 246, 0.72);
+      background: rgba(240, 242, 240, 0.85);
       z-index: 0;
-      pointer-events: none;
     }
     body > * { position: relative; z-index: 1; }
     
     /* Header Section */
     .header {
-      background: linear-gradient(135deg, #023828 0%, #056649 100%);
+      background: linear-gradient(135deg, #064E3B 0%, #022c22 100%);
       color: white;
-      padding: 30px 50px;
+      padding: 0 60px;
       display: flex;
       align-items: center;
       position: relative;
-      border-bottom: 5px solid #F59E0B; /* Amber accent */
-      overflow: hidden;
-      height: 120px;
+      border-bottom: 6px solid #D97706; /* Amber accent */
+      height: 140px;
     }
     
     .logo-container {
-      background: transparent;
-      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      margin-right: 40px;
+    }
+    .logo-container img { height: 80px; width: auto; object-fit: contain; }
+    .logo-text-block { display: flex; flex-direction: column; margin-left: 15px; }
+    .logo-text { font-family: 'Inter', sans-serif; font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: 2px; line-height: 1.2; }
+    
+    .divider { width: 1px; height: 80px; background: rgba(255,255,255,0.2); margin: 0 40px; }
+    
+    .header-content { flex: 1; }
+    .title { font-family: 'Inter', sans-serif; font-size: 64px; font-weight: 800; line-height: 1; margin: 0; letter-spacing: -1px; }
+    .subtitle { font-size: 24px; font-weight: 500; color: #FCD34D; margin: 8px 0 0 0; }
+    
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 40px;
+    }
+    
+    .date-block {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .date-text { font-size: 18px; color: #E5E7EB; line-height: 1.4; }
+    
+    .generated-by {
+      font-size: 16px;
+      color: #D1FAE5;
+      text-align: right;
+    }
+    .generated-by span {
+      display: block;
+      color: #FCD34D;
+      font-weight: 600;
+      font-size: 20px;
+      margin-top: 4px;
+    }
+    
+    /* Main Content Area */
+    .main-content { 
+      padding: 30px 60px; 
+      display: grid; 
+      grid-template-columns: 1.1fr 0.9fr; 
+      gap: 30px; 
+      flex: 1; 
+    }
+    
+    /* Left Column */
+    .left-col { display: flex; flex-direction: column; gap: 20px; }
+    
+    .main-card {
+      background: #FFFFFF;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
+      position: relative;
+    }
+    
+    .signal-badge {
+      display: inline-flex;
+      align-items: center;
+      background: #EA580C;
+      color: white;
+      padding: 8px 20px;
       border-radius: 8px;
-      margin-right: 30px;
-      z-index: 2;
+      font-weight: 700;
+      font-size: 18px;
+      margin-bottom: 20px;
+    }
+    .signal-badge svg { margin-right: 8px; }
+    
+    .headline { font-size: 44px; font-weight: 800; color: #064E3B; line-height: 1.2; margin: 0 0 25px 0; letter-spacing: -0.5px; }
+    
+    .signal-split { display: grid; grid-template-columns: 1fr 280px; gap: 30px; }
+    
+    .todays-signal { }
+    .section-title-small { font-size: 16px; font-weight: 800; color: #064E3B; text-transform: uppercase; margin-bottom: 4px; }
+    .section-subtitle { font-size: 16px; color: #4B5563; margin-bottom: 15px; }
+    
+    .bullet-list { list-style: none; padding: 0; margin: 0; }
+    .bullet-list li { display: flex; margin-bottom: 16px; align-items: flex-start; }
+    .bullet-icon { width: 40px; height: 40px; background: #064E3B; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; flex-shrink: 0; }
+    .bullet-text { font-size: 18px; color: #1F2937; line-height: 1.5; padding-top: 6px; }
+    
+    .what-changed-box {
+      border: 2px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .what-changed-box .section-title-small { color: #059669; text-align: center; margin-bottom: 15px; }
+    .change-item { display: flex; align-items: center; margin-bottom: 15px; }
+    .change-item:last-child { margin-bottom: 0; }
+    .change-icon { font-size: 24px; margin-right: 12px; color: #059669; }
+    .change-text { font-size: 14px; color: #374151; line-height: 1.4; }
+    
+    .implication-box {
+      background: #064E3B;
+      border-radius: 16px;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
+    }
+    .impl-header {
+      background: #022c22;
+      color: white;
+      padding: 15px 30px;
+      font-weight: 700;
+      font-size: 20px;
+      display: flex;
       align-items: center;
-      justify-content: center;
     }
-    .logo-container img { max-height: 70px; width: auto; object-fit: contain; }
-    .logo-text { font-family: 'Oswald', sans-serif; font-size: 46px; font-weight: 800; color: #ffffff; letter-spacing: -1px; line-height: 1; }
-    .logo-sub { font-size: 10px; font-weight: 700; color: #A7F3D0; letter-spacing: 0.5px; text-align: center; }
+    .impl-header svg { margin-right: 10px; }
+    .impl-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      padding: 25px 30px;
+      gap: 30px;
+    }
+    .impl-col-title { font-size: 18px; font-weight: 700; color: #34D399; margin-bottom: 15px; text-transform: uppercase; }
+    .impl-list { list-style: none; padding: 0; margin: 0; }
+    .impl-list li { display: flex; align-items: flex-start; margin-bottom: 12px; color: white; font-size: 16px; line-height: 1.5; }
+    .impl-list .icon { margin-right: 12px; color: #34D399; margin-top: 2px; }
     
-    .header-content { z-index: 2; flex: 1; }
-    .title { font-family: 'Oswald', sans-serif; font-size: 58px; font-weight: 600; line-height: 1; margin: 0; letter-spacing: -0.5px; }
-    .subtitle { font-size: 18px; font-weight: 500; color: #D1FAE5; margin: 5px 0 15px 0; }
-    
-    .meta-bar { display: flex; align-items: center; font-size: 13px; color: #A7F3D0; font-weight: 500; }
-    .meta-item { display: flex; align-items: center; margin-right: 20px; }
-    .meta-icon { margin-right: 6px; display: inline-flex; align-items: center; }
-    .separator { margin: 0 15px; color: #6EE7B7; }
-    
-    .watermark { position: absolute; right: 40px; bottom: 20px; font-size: 12px; color: rgba(255,255,255,0.7); font-style: italic; z-index: 2; }
-    
-    /* Diagonal decorative lines in header */
-    .deco-lines { position: absolute; right: -50px; top: -50px; width: 400px; height: 400px; opacity: 0.15; z-index: 1; background: repeating-linear-gradient(45deg, transparent, transparent 10px, #ffffff 10px, #ffffff 12px); }
-
-    .main-content { padding: 30px 50px; display: flex; flex-direction: column; gap: 24px; flex: 1; }
-    
-    /* Box Styles — slightly transparent white so steel texture peeks through */
-    .box {
-      background: rgba(255, 255, 255, 0.88);
+    .monitoring-box {
+      background: #F3F4F6;
       border-radius: 12px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
-      padding: 28px 32px;
-      position: relative;
-      border: 1px solid #E5E7EB;
-      backdrop-filter: blur(2px);
+      padding: 20px 25px;
+      display: flex;
+      align-items: center;
+      border-left: 6px solid #9CA3AF;
     }
-
+    .monitoring-icon { width: 50px; height: 50px; background: #374151; color: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-right: 20px; }
+    .monitoring-content { flex: 1; }
+    .monitoring-title { font-size: 16px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+    .monitoring-text { font-size: 16px; color: #4B5563; }
     
-    .section-header { display: flex; align-items: center; margin-bottom: 15px; }
-    .section-icon { width: 32px; height: 32px; background: #ECFDF5; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-right: 12px; border: 2px solid #059669; }
-    .section-title { font-size: 22px; font-weight: 700; color: #064E3B; margin: 0; }
+    /* Right Column */
+    .right-col { display: flex; flex-direction: column; gap: 20px; }
     
-    /* Today's Signal */
-    .signal-box { border-left: 6px solid #059669; }
-    .signal-headline { font-size: 28px; font-weight: 800; color: #111827; margin-bottom: 15px; line-height: 1.35; }
-    .signal-text { font-size: 15px; color: #4B5563; line-height: 1.7; }
-    .signal-text p { margin-top: 0; margin-bottom: 12px; }
-    .signal-text p:last-child { margin-bottom: 0; }
+    .dark-header-box {
+      background: white;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
+    }
+    .dark-header {
+      background: #064E3B;
+      color: white;
+      padding: 15px 25px;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+    }
+    .dark-header svg { margin-right: 12px; }
     
-    /* Two-column top layout: Signal + Key Points side by side */
-    .top-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+    .watchlist-content { padding: 25px; display: flex; flex-direction: column; gap: 15px; }
+    .watchlist-item { border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; display: flex; gap: 20px; }
+    .watchlist-icon-area { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 60px; }
+    .wl-num { width: 32px; height: 32px; background: #064E3B; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; }
+    .wl-content { flex: 1; }
+    .wl-title { font-size: 20px; font-weight: 700; color: #111827; margin: 0 0 8px 0; }
+    .wl-desc { font-size: 16px; color: #4B5563; line-height: 1.5; margin: 0; }
     
-    /* 3 Columns Layout */
-    .grid-3 { display: grid; grid-template-columns: 1fr; gap: 14px; }
-    .card { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 18px 20px; }
-    .card-num { width: 24px; height: 24px; background: #064E3B; color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; margin-right: 8px; flex-shrink: 0; }
-    .card-title { font-size: 15px; font-weight: 700; color: #1F2937; margin: 0 0 6px 0; display: flex; align-items: center; }
-    .card-text { font-size: 13px; color: #4B5563; line-height: 1.55; margin: 0; }
+    .snapshot-content { padding: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+    .snap-item { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px 10px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+    .snap-title { font-size: 12px; font-weight: 700; color: #111827; margin-bottom: 15px; height: 28px; }
+    .snap-icon { width: 48px; height: 48px; background: #064E3B; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 15px; }
+    .snap-val { font-size: 18px; font-weight: 800; color: #111827; margin-bottom: 5px; }
+    .snap-change { font-size: 16px; font-weight: 700; color: #059669; }
     
-    /* Implication Layout */
-    .impl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 15px; }
-    .impl-item { display: flex; flex-direction: column; }
-    .impl-header { display: flex; align-items: center; margin-bottom: 8px; }
-    .impl-icon { font-size: 24px; margin-right: 10px; color: #059669; }
-    .impl-title { font-weight: 700; color: #064E3B; font-size: 15px; }
-    .impl-text { font-size: 13px; color: #4B5563; line-height: 1.6; padding-left: 34px; border-left: 2px solid #E5E7EB; margin-left: 12px; }
-    .impl-intro { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 10px; }
+    .sources-box {
+      background: white;
+      border-radius: 12px;
+      padding: 20px 25px;
+      display: flex;
+      align-items: center;
+    }
+    .sources-icon { width: 48px; height: 48px; background: #064E3B; color: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-right: 20px; flex-shrink: 0; }
+    .sources-content { flex: 1; }
+    .sources-title { font-size: 16px; font-weight: 700; color: #059669; margin-bottom: 4px; }
+    .sources-list { font-size: 14px; color: #4B5563; }
     
-    /* Actions Grid */
-    .action-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
-    .action-card { display: flex; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; }
-    .action-icon-wrap { background: #064E3B; padding: 25px 22px; display: flex; align-items: center; justify-content: center; font-size: 32px; color: white; width: 44px; }
-    .action-content { padding: 18px 24px; flex: 1; }
-    .action-role { font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 8px 0; }
-    .action-desc { font-size: 13px; color: #4B5563; line-height: 1.6; margin: 0 0 10px 0; }
-    .action-rec-label { font-size: 12px; font-weight: 700; color: #059669; margin: 0 0 4px 0; }
-    .action-rec { font-size: 13px; color: #1F2937; font-weight: 500; line-height: 1.5; margin: 0; }
-    
-    /* Takeaway */
-    .takeaway-box { display: flex; align-items: center; background: #F0FDF4; border: 1px solid #A7F3D0; }
-    .takeaway-icon { width: 60px; height: 60px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-right: 25px; flex-shrink: 0; }
-    .takeaway-content { flex: 1; position: relative; }
-    .quote-mark { font-family: Georgia, serif; font-size: 60px; color: #A7F3D0; position: absolute; line-height: 1; }
-    .quote-start { top: -20px; left: -15px; }
-    .quote-end { bottom: -40px; right: 0; }
-    .takeaway-text { font-size: 16px; font-weight: 600; font-style: italic; color: #064E3B; line-height: 1.6; position: relative; z-index: 1; text-align: center; padding: 0 20px; }
-    
-    /* Footer — normal flow at bottom, NOT absolute */
-    .footer { background: #064E3B; color: white; padding: 20px 50px; display: flex; justify-content: space-between; align-items: center; margin-top: 0; }
-    .footer-left strong { font-family: 'Oswald', sans-serif; font-size: 20px; letter-spacing: 0.5px; }
-    .footer-left span { font-style: italic; font-size: 13px; color: #A7F3D0; margin-left: 10px; }
-    .footer-right { font-size: 12px; color: #D1FAE5; text-align: right; }
-    .footer-right div { margin-bottom: 4px; }
+    /* Footer */
+    .footer {
+      background: #111827;
+      color: white;
+      padding: 20px 60px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+    }
+    .footer-left { font-size: 18px; }
+    .footer-left strong { font-family: 'Inter', sans-serif; font-weight: 700; }
+    .footer-left span { color: #FCD34D; margin: 0 15px; }
+    .footer-right { display: flex; align-items: center; font-size: 16px; color: #D1FAE5; }
+    .footer-right svg { margin-right: 8px; }
   </style>
 </head>
 <body>
 
   <!-- HEADER -->
   <div class="header">
-    <div class="deco-lines"></div>
     <div class="logo-container">
-      ${logoHtml}
+      <img src="${logoBase64}" alt="Logo" />
+      <div class="logo-text-block">
+        <span class="logo-text">GARUDA</span>
+        <span class="logo-text">YAMATO</span>
+        <span class="logo-text">STEEL</span>
+      </div>
     </div>
+    
+    <div class="divider"></div>
+    
     <div class="header-content">
       <h1 class="title">GYS STEEL SIGNAL</h1>
       <div class="subtitle">Daily Market &amp; Industry Intelligence</div>
-      <div class="meta-bar">
-        <div class="meta-item"><span class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#A7F3D0" stroke-width="2" width="16" height="16"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span> ${dateStr}</div>
-        <div class="separator">|</div>
-        <div class="meta-item"><span class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#A7F3D0" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> ${timeStr}</div>
+    </div>
+    
+    <div class="header-right">
+      <div class="date-block">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" width="36" height="36"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <div class="date-text">
+          <div style="font-weight: 700;">${dateStr.split(',')[0]}</div>
+          <div>${dateStr.split(',')[1] ? dateStr.split(',')[1].trim() : dateStr}</div>
+        </div>
+      </div>
+      <div class="generated-by">
+        Generated by
+        <span>GYS Open Claw ${clawIcon}</span>
       </div>
     </div>
-    <div class="watermark">Generated by | GYS Open Claw ${clawIcon}</div>
   </div>
 
   <div class="main-content">
     
-    <!-- Top Grid: Signal + Key Points side by side -->
-    <div class="top-grid">
-      <div class="box signal-box">
-        <div class="section-header">
-          <div class="section-icon">${icons.traffic}</div>
-          <h2 class="section-title">Today's Signal</h2>
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+      <div class="main-card">
+        <div class="signal-badge">
+          <svg viewBox="0 0 24 24" fill="white" width="24" height="24"><path d="M12 2L1 21h22M12 8v7m0 4h.01" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          SIGNAL LEVEL: ${data.signalLevel || 'HIGH'}
         </div>
-        <div class="signal-headline">${data.headline || 'Market Update'}</div>
-        <div class="signal-text">
-          ${(data.summaryParagraphs || []).map(p => `<p>${p}</p>`).join('')}
+        
+        <h2 class="headline">${data.headline || 'Market Update'}</h2>
+        
+        <div class="signal-split">
+          <div class="todays-signal">
+            <div class="section-title-small">TODAY'S SIGNAL</div>
+            <div class="section-subtitle">Why it matters to GYS</div>
+            <ul class="bullet-list">
+              ${(data.todaysSignalBullets || []).map((bullet, idx) => `
+                <li>
+                  <div class="bullet-icon">${idx === 0 ? 'Rp' : idx === 1 ? icons.bar : icons.compass}</div>
+                  <div class="bullet-text">${bullet}</div>
+                </li>
+              `).join('')}
+            </ul>
+          </div>
+          
+          <div class="what-changed-box">
+            <div class="section-title-small">WHAT CHANGED</div>
+            ${(data.whatChanged || []).map(wc => `
+              <div class="change-item">
+                <div class="change-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32"><circle cx="12" cy="12" r="10"/><polyline points="12 16 16 12 12 8"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                </div>
+                <div class="change-text">
+                  ${wc.description}
+                </div>
+              </div>
+            `).join('')}
+          </div>
         </div>
       </div>
 
-      <!-- 2. THINGS YOU NEED TO KNOW -->
-      <div class="box">
-        <div class="section-header">
-          <div class="section-icon">${icons.compass}</div>
-          <h2 class="section-title">Things You Need to Know</h2>
+      <div class="implication-box">
+        <div class="impl-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          WHAT IT MEANS TO GYS / WHAT TO DO
         </div>
-        <div class="grid-3">
-          ${(data.keyPoints || []).slice(0,3).map((kp, idx) => `
-          <div class="card">
-            <h3 class="card-title"><span class="card-num">${idx+1}</span> ${kp.title}</h3>
-            <p class="card-text">${kp.description}</p>
+        <div class="impl-content">
+          <div>
+            <div class="impl-col-title">WHAT IT MEANS TO GYS</div>
+            <ul class="impl-list">
+              ${(data.whatItMeans || []).map(item => `
+                <li><div class="icon">${icons.check}</div><div>${item}</div></li>
+              `).join('')}
+            </ul>
           </div>
+          <div>
+            <div class="impl-col-title">WHAT TO DO</div>
+            <ul class="impl-list">
+              ${(data.whatToDo || []).map(item => `
+                <li><div class="icon">${icons.traffic}</div><div>${item}</div></li>
+              `).join('')}
+            </ul>
+          </div>
+        </div>
+      </div>
+      
+      <div class="monitoring-box">
+        <div class="monitoring-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+        <div class="monitoring-content">
+          <div class="monitoring-title">STILL MONITORING</div>
+          <div class="monitoring-text">${data.stillMonitoring || ''}</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+      <div class="dark-header-box">
+        <div class="dark-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          WATCHLIST
+        </div>
+        <div class="watchlist-content">
+          ${(data.watchlist || []).map((wl, idx) => `
+            <div class="watchlist-item">
+              <div class="watchlist-icon-area">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#064E3B" stroke-width="2" width="40" height="40"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </div>
+              <div class="wl-content">
+                <div class="wl-num">${idx + 1}</div>
+                <div class="wl-title" style="margin-top: 10px;">${wl.title}</div>
+                <div class="wl-desc">${wl.description}</div>
+              </div>
+            </div>
           `).join('')}
         </div>
       </div>
-    </div>
-
-    <!-- 3. COMMERCIAL IMPLICATION -->
-    <div class="box">
-      <div class="section-header">
-        <div class="section-icon">${icons.target}</div>
-        <h2 class="section-title">Commercial Implication for GYS</h2>
+      
+      <div class="dark-header-box">
+        <div class="dark-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          MARKET MOVEMENT SNAPSHOT
+        </div>
+        <div class="snapshot-content">
+          ${(data.marketSnapshot || []).map(snap => `
+            <div class="snap-item">
+              <div class="snap-title">${snap.title}</div>
+              <div class="snap-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+              <div class="snap-val">${snap.value}</div>
+              <div class="snap-change">${snap.change}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div style="font-size: 12px; color: #6B7280; text-align: center; font-style: italic; padding-bottom: 15px;">Indicative market snapshot; basis differs by source and market.</div>
       </div>
-      <div class="impl-intro">${data.implicationIntro || 'The immediate focus should be to monitor whether this news changes:'}</div>
-      <div class="impl-grid">
-        <div class="impl-item">
-          <div class="impl-header">
-            <span class="impl-icon" style="width:24px;height:24px;display:inline-block;">${icons.users}</span>
-            <span class="impl-title">Customer behavior</span>
-          </div>
-          <div class="impl-text">${data.implicationCustomer || ''}</div>
+      
+      <div class="sources-box">
+        <div class="sources-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         </div>
-        <div class="impl-item">
-          <div class="impl-header">
-            <span class="impl-icon" style="width:24px;height:24px;display:inline-block;">${icons.handshake}</span>
-            <span class="impl-title">Supplier behavior</span>
-          </div>
-          <div class="impl-text">${data.implicationSupplier || ''}</div>
-        </div>
-        <div class="impl-item">
-          <div class="impl-header">
-            <span class="impl-icon" style="width:24px;height:24px;display:inline-block;">${icons.trend}</span>
-            <span class="impl-title">Market narrative</span>
-          </div>
-          <div class="impl-text">${data.implicationMarket || ''}</div>
+        <div class="sources-content">
+          <div class="sources-title">SOURCES</div>
+          <div class="sources-list">${(data.sourceLinks || []).join(' | ')}</div>
         </div>
       </div>
     </div>
-
-    <!-- 4. ACTIONS FOR THIS WEEK -->
-    <div class="box">
-      <div class="section-header">
-        <div class="section-icon">${icons.check}</div>
-        <h2 class="section-title">Actions for This Week</h2>
-      </div>
-      <div class="action-grid">
-        <div class="action-card">
-          <div class="action-icon-wrap">${icons.bar}</div>
-          <div class="action-content">
-            <h3 class="action-role">Sales</h3>
-            <p class="action-desc">${data.actionSalesCheck || ''}</p>
-            <p class="action-rec-label">Recommended action:</p>
-            <p class="action-rec">${data.actionSalesRec || ''}</p>
-          </div>
-        </div>
-        <div class="action-card">
-          <div class="action-icon-wrap">${icons.cart}</div>
-          <div class="action-content">
-            <h3 class="action-role">Procurement</h3>
-            <p class="action-desc">${data.actionProcurementCheck || ''}</p>
-            <p class="action-rec-label">Recommended action:</p>
-            <p class="action-rec">${data.actionProcurementRec || ''}</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 5. MANAGEMENT TAKEAWAY -->
-    <div class="box takeaway-box">
-      <div class="takeaway-icon">${icons.pin}</div>
-      <div class="takeaway-content">
-        <span class="quote-mark quote-start">"</span>
-        <div class="takeaway-text">${data.managementTakeaway || ''}</div>
-        <span class="quote-mark quote-end">"</span>
-      </div>
-    </div>
-
-    <!-- 6. SOURCES & REFERENCES -->
-    ${(data.sourceLinks && data.sourceLinks.length > 0) ? `
-    <div class="box" style="padding: 18px 25px; border-left: 4px solid #059669;">
-      <div class="section-header" style="margin-bottom: 8px;">
-        <div class="section-icon" style="width:28px;height:28px;">${icons.link}</div>
-        <h2 class="section-title" style="font-size: 16px;">Sources &amp; References</h2>
-      </div>
-      <div style="font-size: 12px; color: #2563EB; word-break: break-all; padding-left: 40px; line-height: 2;">
-        ${data.sourceLinks.map(l => `<div>&#8226; ${l}</div>`).join('')}
-      </div>
-    </div>` : ''}
-
+    
   </div>
 
   <!-- FOOTER -->
   <div class="footer">
     <div class="footer-left">
       <strong>GYS STEEL SIGNAL</strong>
-      <span>From data to decision. From signal to action.</span>
+      <span>|</span>
+      From data to decision. From signal to action.
     </div>
     <div class="footer-right">
-      <div>Generated by | GYS Open Claw ${clawIcon}</div>
-      <div>${dateStr} | ${timeStr}</div>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      ${dateStr.split(',')[0]} ${dateStr.split(',')[1]} | ${timeStr}
     </div>
   </div>
 

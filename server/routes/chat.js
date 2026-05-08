@@ -240,8 +240,8 @@ router.post('/message/stream', requireAuth, async (req, res) => {
       cleanMsg.startsWith('/presentation') || cleanMsg.startsWith('gambarkan');
 
     // ✅ Check for freeform generation commands (PPT, DOC, image gen patterns)
-    const hasPptPattern = /\b(presentasi|powerpoint|ppt|slide)\b/i.test(cleanMsg) &&
-      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(cleanMsg);
+    const hasPptPattern = /\b(presentasi|presentation|powerpoint|ppt|slide)\b/i.test(cleanMsg) &&
+      /\b(buat|buatkan|bikin|bikinkan|bikinin|create|generate|make|tolong|give me)\b/i.test(cleanMsg);
     const hasDocPattern = /\b(doc|docx|word)\b/i.test(cleanMsg);
     const hasPdfPattern = /\b(pdf)\b/i.test(cleanMsg);
     const hasExcelPattern = /\b(excel|xlsx|spreadsheet|tabel)\b/i.test(cleanMsg);

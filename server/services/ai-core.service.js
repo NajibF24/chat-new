@@ -523,9 +523,9 @@ function isPptCommand(message = '') {
     t.startsWith('/ppt') ||
     t.startsWith('/slide') ||
     t.startsWith('/presentation') ||
-    /^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t) ||
-    (/\b(presentasi|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
-      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t)) ||
+    /^(buatkan|buat|bikin|bikinin|bikinkan|create|generate|tolong buat|please create|please make|give me)\s+(a\s+)?(presentasi|presentation|ppt|slide|powerpoint|deck)/i.test(t) ||
+    (/\b(presentasi|presentation|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
+      /\b(buat|buatkan|bikin|bikinkan|bikinin|create|generate|make|tolong|give me)\b/i.test(t)) ||
     isFreeformLayoutRequest(message)
   );
 }
@@ -1695,7 +1695,7 @@ class AICoreService {
     contentUserMsg += `STEP 1: Search the web for TODAY's latest steel market news (Indonesian and global). Use queries like "Indonesia steel market news today", "harga baja Indonesia terbaru", "steel price Asia today". Find at least 2 real, currently accessible news articles.\n\n`;
     contentUserMsg += `STEP 2: Based ONLY on what you actually found in your web search, generate a JSON for the "GYS Steel Signal" newsletter. Write all content strictly in ENGLISH.\n\n`;
     contentUserMsg += `CRITICAL URL RULE: The "sourceLinks" array MUST contain ONLY real URLs you actually visited and verified. DO NOT invent or guess URLs. If no real URLs found, return sourceLinks as [].\n\n`;
-    const jsonSchema = '{\n  "headline": "String - Main news headline (max 80 chars)",\n  "summaryParagraphs": ["String - Paragraph 1", "String - Paragraph 2"],\n  "keyPoints": [\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" },\n    { "title": "String - Key insight title", "description": "String - Description" }\n  ],\n  "implicationIntro": "String - Short intro to implications",\n  "implicationCustomer": "String - Customer behavior implication",\n  "implicationSupplier": "String - Supplier behavior implication",\n  "implicationMarket": "String - Market narrative implication",\n  "actionSalesCheck": "String - Sales action check",\n  "actionSalesRec": "String - Sales recommended action",\n  "actionProcurementCheck": "String - Procurement action check",\n  "actionProcurementRec": "String - Procurement recommended action",\n  "managementTakeaway": "String - Strong management takeaway",\n  "sourceLinks": ["ONLY real verified URLs — leave empty array [] if none found"]\n}';
+    const jsonSchema = '{\n  "signalLevel": "HIGH or MEDIUM or LOW",\n  "headline": "String - Main news headline (max 80 chars)",\n  "todaysSignalBullets": ["String - Bullet 1", "String - Bullet 2", "String - Bullet 3"],\n  "whatChanged": [\n    { "title": "String - title", "description": "String - description" },\n    { "title": "String - title", "description": "String - description" },\n    { "title": "String - title", "description": "String - description" }\n  ],\n  "watchlist": [\n    { "title": "String - Watchlist item 1", "description": "String - description" },\n    { "title": "String - Watchlist item 2", "description": "String - description" }\n  ],\n  "whatItMeans": ["String - implication bullet 1", "String - implication bullet 2", "String - implication bullet 3"],\n  "whatToDo": ["String - action bullet 1", "String - action bullet 2", "String - action bullet 3"],\n  "stillMonitoring": "String - single line about what is still being monitored",\n  "marketSnapshot": [\n    { "title": "USD/IDR", "value": "17,385", "change": "Record low" },\n    { "title": "TRADE SURPLUS", "value": "USD3.32B", "change": "USD1.28B -> USD3.32B" },\n    { "title": "MANUFACTURING PMI", "value": "49.1", "change": "50.1 -> 49.1" },\n    { "title": "CHINA STEEL", "value": "3,255 CNY/MT", "change": "+5.99% MoM" }\n  ],\n  "sourceLinks": ["ONLY real verified URLs — leave empty array [] if none found"]\n}';
     contentUserMsg += `Output ONLY a raw JSON object (no markdown, no code blocks).\nStructure:\n${jsonSchema}`;
 
     // ✅ FIX: Force webSearch=true for OpenAI provider regardless of what is stored in DB.
