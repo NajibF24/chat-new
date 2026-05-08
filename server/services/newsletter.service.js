@@ -76,7 +76,8 @@ export default {
       background-color: #E8EAEB;
       color: #1F2937;
       width: 1920px;
-      height: 1080px;
+      min-height: 1080px;
+      height: auto;
       box-sizing: border-box;
       position: relative;
       overflow: hidden;
@@ -95,13 +96,13 @@ export default {
     
     /* Header Section */
     .header {
-      background: linear-gradient(135deg, #064E3B 0%, #022c22 100%);
+      background: linear-gradient(135deg, #023828 0%, #056649 100%);
       color: white;
       padding: 0 60px;
       display: flex;
       align-items: center;
       position: relative;
-      border-bottom: 6px solid #D97706; /* Amber accent */
+      border-bottom: 6px solid #F59E0B; /* Amber accent */
       height: 140px;
     }
     
@@ -299,10 +300,7 @@ export default {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
+      margin-top: auto;
     }
     .footer-left { font-size: 18px; }
     .footer-left strong { font-family: 'Inter', sans-serif; font-weight: 700; }
