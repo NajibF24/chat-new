@@ -78,7 +78,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [autoRead, setAutoRead]         = useState(false); // auto-TTS every AI reply
+  const [autoRead, setAutoRead] = useState(false); // auto-TTS every AI reply
 
   const [deletingThreadId, setDeletingThreadId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -92,9 +92,9 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const dragStartX = useRef(0);
   const dragStartW = useRef(0);
 
-  const fileInputRef   = useRef(null);
+  const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const textareaRef    = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => { fetchBots(); fetchThreads(); }, []);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -161,15 +161,15 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   });
 
   // Ref to hold pending voice message for auto-send
-  const voiceSendRef       = useRef(false);
-  const pendingVoiceText   = useRef('');
+  const voiceSendRef = useRef(false);
+  const pendingVoiceText = useRef('');
 
   // When input is set from voice mode, auto-submit via ref flag
   // (uses useEffect so it runs after React re-render with new input value)
   useEffect(() => {
     if (voiceSendRef.current && pendingVoiceText.current) {
       const text = pendingVoiceText.current;
-      voiceSendRef.current    = false;
+      voiceSendRef.current = false;
       pendingVoiceText.current = '';
       setInput('');
       // Inline submit for voice (avoids calling undefined fn)
@@ -190,7 +190,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
         setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, an error occurred.', attachedFiles: [], createdAt: new Date().toISOString() }]);
       }).finally(() => setLoading(false));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input]);
 
   const fetchBots = async () => {
@@ -349,7 +349,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     const currentInput = input.trim();
-    const currentFile  = selectedFile;
+    const currentFile = selectedFile;
     if ((!currentInput && !currentFile) || !selectedBot || loading) return;
     setLoading(true);
     setInput('');
@@ -444,7 +444,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                   m._streamId === aiMsgId ? { ...m, content: 'Error: ' + data.error, isStreaming: false } : m
                 ));
               }
-            } catch {}
+            } catch { }
           }
         }
       }
@@ -517,7 +517,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                 ));
               }
               if (data.threadId) { setCurrentThreadId(data.threadId); fetchThreads(); }
-            } catch {}
+            } catch { }
           }
         }
       }
@@ -546,7 +546,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
     // Auto-send the edited message
     setInput(newContent);
     setTimeout(() => {
-      const fakeEvent = { preventDefault: () => {} };
+      const fakeEvent = { preventDefault: () => { } };
       handleSubmit(fakeEvent);
     }, 100);
   }, []);
@@ -636,11 +636,10 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
             <div className="space-y-0.5">
               {bots.map(bot => (
                 <button key={bot._id} onClick={() => handleBotSelect(bot)}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2.5 transition-all duration-150 ${
-                    selectedBot?._id === bot._id
+                  className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2.5 transition-all duration-150 ${selectedBot?._id === bot._id
                       ? 'bg-primary-dark text-white shadow-sm'
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                  }`}>
+                    }`}>
                   <BotAvatar bot={bot} size="sm" />
                   <div className="flex-1 truncate min-w-0">
                     <div className="font-semibold text-xs truncate">{bot.name}</div>
@@ -678,9 +677,8 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
               )}
               {visibleThreads.map(t => (
                 <div key={t._id}
-                  className={`group flex items-center rounded-xl transition-all cursor-pointer ${
-                    currentThreadId === t._id ? 'bg-primary/8 border border-primary/15' : 'hover:bg-gray-50 border border-transparent'
-                  }`}
+                  className={`group flex items-center rounded-xl transition-all cursor-pointer ${currentThreadId === t._id ? 'bg-primary/8 border border-primary/15' : 'hover:bg-gray-50 border border-transparent'
+                    }`}
                 >
                   <button onClick={() => loadThread(t._id)} className="flex-1 min-w-0 text-left px-3 py-2">
                     <span className={`block text-xs truncate font-medium ${currentThreadId === t._id ? 'text-primary-dark dark:text-primary-light' : 'text-gray-600 dark:text-gray-400'}`}>
@@ -704,8 +702,8 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                     {deletingThreadId === t._id
                       ? <span className="text-[8px] animate-spin">⟳</span>
                       : confirmDeleteId === t._id
-                      ? <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                      : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        ? <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                        : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     }
                   </button>
                 </div>
@@ -847,7 +845,7 @@ const Chat = ({ user, handleLogout, justLoggedIn, onWelcomeDismissed }) => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full max-w-lg">
                     {(selectedBot.starterQuestions?.length > 0 ? selectedBot.starterQuestions : ['What is the project status?', 'Search data', 'Generate a report']).map((txt, i) => (
                       <button key={i}
-                        onClick={() => { setInput(txt); setTimeout(() => handleSubmit({ preventDefault: () => {} }), 0); }}
+                        onClick={() => { setInput(txt); setTimeout(() => handleSubmit({ preventDefault: () => { } }), 0); }}
                         className="p-3.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 hover:border-primary/30 rounded-xl text-sm text-gray-700 dark:text-gray-300 hover:text-primary-dark dark:hover:text-primary-light transition-all shadow-sm text-left font-medium hover:shadow-md group">
                         <span className="flex items-start gap-2">
                           <span className="text-primary/40 text-base leading-none group-hover:text-primary transition-colors flex-shrink-0">›</span>

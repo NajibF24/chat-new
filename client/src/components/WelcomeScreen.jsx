@@ -32,7 +32,7 @@ const FEATURES = [
     badge: 'IMPROVED',
     badgeColor: 'bg-blue-500',
     title: 'PPT with GYS Template',
-    description: 'Presentations now automatically use the official GYS template — colors, fonts, and layouts follow the Brand Guidelines.',
+    description: 'Presentations now automatically use the official GYS template — logo , colors, fonts, and layouts follow the Brand Guidelines.',
   },
   {
     icon: '📎',
@@ -53,10 +53,10 @@ function FloatingParticles() {
           key={i}
           className="absolute rounded-full bg-primary/10 dark:bg-primary-light/10"
           style={{
-            width:  `${6 + Math.random() * 12}px`,
+            width: `${6 + Math.random() * 12}px`,
             height: `${6 + Math.random() * 12}px`,
-            left:   `${Math.random() * 100}%`,
-            top:    `${Math.random() * 100}%`,
+            left: `${Math.random() * 100}%`,
+            top: `${Math.random() * 100}%`,
             animation: `floatUp ${8 + Math.random() * 12}s ease-in-out infinite`,
             animationDelay: `${Math.random() * 6}s`,
             opacity: 0.3 + Math.random() * 0.4,
