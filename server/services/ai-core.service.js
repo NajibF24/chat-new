@@ -1708,9 +1708,12 @@ class AICoreService {
       : {};                   // Other providers do not support webSearch; skip silently
     console.log(`[NEWSLETTER] Provider=${newsletterProvider} | webSearch=${!!newsletterCaps.webSearch}`);
 
+    const baseSystemPrompt = bot?.prompt || bot?.systemPrompt || `You are an expert market intelligence analyst for Garuda Yamato Steel (GYS).`;
+    const finalSystemPrompt = `${baseSystemPrompt}\n\nToday is ${today}. You MUST search the web for TODAY's latest real news before generating content. You output ONLY valid raw JSON. Never invent news or URLs.`;
+
     const aiResponse = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
-      systemPrompt: `You are an expert market intelligence analyst for Garuda Yamato Steel (GYS). Today is ${today}. You MUST search the web for TODAY's latest real news before generating content. You output ONLY valid raw JSON. Never invent news or URLs.`,
+      systemPrompt: finalSystemPrompt,
       messages: history,
       userContent: contentUserMsg,
       capabilities: newsletterCaps,
