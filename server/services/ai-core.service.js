@@ -1692,6 +1692,26 @@ class AICoreService {
 
     const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     let contentUserMsg = `=== USER REQUEST (Format GYS Steel Signal) ===\nToday's date: ${today}\n${message}\n\n`;
+
+    // Implement deduplication history
+    const historyFile = path.join(process.cwd(), 'data', 'newsletter-history.json');
+    let pastTopics = [];
+    try {
+      if (fs.existsSync(historyFile)) {
+        pastTopics = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+      }
+    } catch (err) {
+      console.warn('[NEWSLETTER] Error reading history file:', err.message);
+    }
+    
+    if (pastTopics.length > 0) {
+      contentUserMsg += `CRITICAL DEDUPLICATION RULE:\nThe following topics have already been used in the last 7 days. You MUST NOT use them as the main signal today unless there is a material new development:\n`;
+      pastTopics.forEach((t, i) => {
+        contentUserMsg += `[Day -${i+1}] Headline: "${t.headline}"\n`;
+      });
+      contentUserMsg += `\nIf your search only finds these topics, move them to "Still Monitoring" and pick the NEXT BEST fresh topic for the main signal!\n\n`;
+    }
+
     contentUserMsg += `STEP 1: Search the web for TODAY's latest steel market news (Indonesian and global). Use queries like "Indonesia steel market news today", "harga baja Indonesia terbaru", "steel price Asia today". Find at least 2 real, currently accessible news articles.\n\n`;
     contentUserMsg += `STEP 2: Based ONLY on what you actually found in your web search, generate a JSON for the "GYS Steel Signal" newsletter. Write all content strictly in ENGLISH.\n\n`;
     contentUserMsg += `CRITICAL URL RULE: The "sourceLinks" array MUST contain ONLY real URLs you actually visited and verified. DO NOT invent or guess URLs. If no real URLs found, return sourceLinks as [].\n\n`;
@@ -1731,6 +1751,21 @@ class AICoreService {
     const newsletterData = JSON.parse(rawJson);
     const outputDir = path.join(process.cwd(), 'data', 'files');
     const result = await NewsletterService.generateNewsletterImage({ data: newsletterData, outputDir });
+
+    // Save headline to history to enforce deduplication on next runs
+    try {
+      if (newsletterData.headline && newsletterData.headline.length > 5) {
+        pastTopics.unshift({
+          date: new Date().toISOString(),
+          headline: newsletterData.headline
+        });
+        pastTopics = pastTopics.slice(0, 7); // keep last 7
+        fs.writeFileSync(historyFile, JSON.stringify(pastTopics, null, 2));
+        console.log('[NEWSLETTER] Saved history for deduplication:', newsletterData.headline);
+      }
+    } catch (err) {
+      console.warn('[NEWSLETTER] Error saving history file:', err.message);
+    }
 
     // Build the Markdown: image is clickable (links to first source), then show all sources as real text links below
     const firstLink = (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) ? newsletterData.sourceLinks[0] : null;
