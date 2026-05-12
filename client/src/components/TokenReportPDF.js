@@ -1,6 +1,6 @@
 // TokenReportPDF.js — Premium management-ready PDF report generator
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 // ── Color palette ─────────────────────────────────────────────
 const C = {
@@ -250,7 +250,7 @@ export function generateTokenReport(tokenStats, bots, dateRange) {
   const perUser = (tokenStats.perUser || []).slice(0, 15);
   if (perUser.length > 0) {
     const maxUserTokens = perUser[0]?.totalTokens || 1;
-    doc.autoTable({
+    autoTable(doc, {
       startY: curY,
       margin: { left: margin, right: margin },
       styles: { fontSize: 7, cellPadding: 2.5, lineColor: [229, 231, 235], lineWidth: 0.2, textColor: C.dark, font: 'helvetica' },
@@ -373,7 +373,7 @@ export function generateTokenReport(tokenStats, bots, dateRange) {
   curY += 2;
 
   if (perBot.length > 0) {
-    doc.autoTable({
+    autoTable(doc, {
       startY: curY,
       margin: { left: margin, right: margin },
       styles: { fontSize: 7.5, cellPadding: 2.5, lineColor: [229, 231, 235], lineWidth: 0.2, textColor: C.dark },
@@ -428,7 +428,7 @@ export function generateTokenReport(tokenStats, bots, dateRange) {
 
     // Daily trend table
     if (curY + 10 < ph - 30) {
-      doc.autoTable({
+      autoTable(doc, {
         startY: curY,
         margin: { left: margin, right: margin },
         styles: { fontSize: 6.5, cellPadding: 1.8, lineColor: [229, 231, 235], lineWidth: 0.15, textColor: C.dark },
