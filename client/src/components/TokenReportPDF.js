@@ -325,20 +325,20 @@ export function generateTokenReport(tokenStats, bots, dateRange) {
 
   if (perBot.length > 0) {
     // Donut chart
-    const chartAreaH = 55;
+    const chartAreaH = Math.max(55, perBot.length * 12 + 6);
     drawRoundedRect(doc, margin, curY, contentW, chartAreaH, 3, C.offWhite);
 
-    drawPieChart(doc, margin + 38, curY + chartAreaH / 2, 22, botChartData, pieColors);
+    drawPieChart(doc, margin + 38, curY + 30, 22, botChartData, pieColors);
 
     // Total in center
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(...C.dark);
-    doc.text(fmt(totals.totalTokens), margin + 38, curY + chartAreaH / 2 - 1, { align: 'center' });
+    doc.text(fmt(totals.totalTokens), margin + 38, curY + 29, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
     doc.setTextColor(...C.gray);
-    doc.text('TOTAL', margin + 38, curY + chartAreaH / 2 + 3, { align: 'center' });
+    doc.text('TOTAL', margin + 38, curY + 33, { align: 'center' });
 
     // Legend
     const legX = margin + 72;
@@ -359,7 +359,6 @@ export function generateTokenReport(tokenStats, bots, dateRange) {
       const maxBot = perBot[0]?.totalTokens || 1;
       drawGradientBar(doc, legX + 6, legY + 8, 80, 1.5, pct(b.totalTokens, maxBot), color);
       legY += 12;
-      if (legY > curY + chartAreaH - 4) return;
     });
 
     curY += chartAreaH + 6;
