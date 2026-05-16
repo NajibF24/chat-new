@@ -1,78 +1,20 @@
-stages:
-  - build
-  - deploy
-
 variables:
-  IMAGE_CLIENT: harbor.gyssteel.com/portalai/client
-  IMAGE_SERVER: harbor.gyssteel.com/portalai/server
+  TEST_BE_IMAGE: harbor.gyssteel.com/base_images/php-test:8.3
+  TEST_FE_IMAGE: node:18-alpine
 
-build_client:
-  stage: build
-  tags:
-    - CI-Shell
-  rules:
-    - if: $CI_COMMIT_BRANCH == "development"
-      changes:
-        - client/**/*
-  script:
-    - >
-      docker build
-      --build-arg REACT_APP_API_URL=/server
-      -f client/Dockerfile
-      -t $IMAGE_CLIENT:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA client/
+stages:
+  - test
+  - code-quality
+  - build
+  - approval
+  - semver
 
-    - docker push $IMAGE_CLIENT:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
-    - docker rmi $IMAGE_CLIENT:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
-
-build_server:
-  stage: build
-  tags:
-    - CI-Shell
-  rules:
-    - if: $CI_COMMIT_BRANCH == "development"
-      changes:
-        - server/**/*
-  script:
-    - >
-      docker build
-      -f server/Dockerfile
-      -t $IMAGE_SERVER:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA server/
-
-    - docker push $IMAGE_SERVER:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
-    - docker rmi $IMAGE_SERVER:$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
-
-#DEPLOY#
-
-deploy_client:
-  stage: deploy
-  tags:
-    - gys-dev
-  needs:
-    - job: build_client
-      optional: true
-  rules:
-    - if: $CI_COMMIT_BRANCH == "development"
-      changes:
-        - client/**/*
-  script:
-    - export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-    - export IMAGE_TAG=$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
-    - sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" client/deploy-client.yaml
-    - kubectl apply -f client/deploy-client.yaml
-
-deploy_server:
-  stage: deploy
-  tags:
-    - gys-dev
-  needs:
-    - job: build_server
-      optional: true
-  rules:
-    - if: $CI_COMMIT_BRANCH == "development"
-      changes:
-        - server/**/*
-  script:
-    - export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-    - export IMAGE_TAG=$CI_COMMIT_BRANCH-$CI_COMMIT_SHORT_SHA
-    - sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" server/deploy-dev.yaml
-    - kubectl apply -f server/deploy-dev.yaml
+include:
+  - project: $DEPLOYMENT_PATH
+    ref: main
+    file:
+      - unit-test.yaml
+      - sonarqube.yaml
+      - build.yaml
+      - approval.yaml
+      - semver.yaml
