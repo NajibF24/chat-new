@@ -956,28 +956,10 @@ async function deepReadDocument(filePath, originalName, mimetype) {
       content = fs.readFileSync(filePath, 'utf8');
     }
 
-    const MAX_CHARS = 8000;
+    // ✅ ENHANCED: Increased from 8K to 200K chars to read FULL documents
+    const MAX_CHARS = 200000;
     if (content.length > MAX_CHARS) {
-      const lines = content.split('\n');
-      let smartContent = '';
-      let charCount = 0;
-      
-      for (const line of lines) {
-        const trimmed = line.trim();
-        const isHeading = trimmed.length < 80 && trimmed.length > 3 && 
-                          !trimmed.startsWith('•') && !trimmed.startsWith('-') &&
-                          !/^\s*\d+\.\s/.test(trimmed) === false ||
-                          /^[A-Z][A-Z\s]+$/.test(trimmed) ||
-                          /^\d+\.\s/.test(trimmed);
-        
-        if (charCount + line.length > MAX_CHARS && !isHeading) {
-          smartContent += '\n\n[... konten dipotong, fokus pada struktur utama ...]';
-          break;
-        }
-        smartContent += line + '\n';
-        charCount += line.length;
-      }
-      content = smartContent;
+      content = content.substring(0, MAX_CHARS) + '\n\n[... konten dipotong ...]';
     }
   } catch (err) {
     console.error(`[AICoreService] deepReadDocument error "${originalName}":`, err.message);
@@ -1045,22 +1027,57 @@ class AICoreService {
     return false;
   }
 
-  async extractFileContent(attachedFile) {
+  /**
+   * ✅ ENHANCED v2.0: Full document reading + image extraction
+   *
+   * Returns { text: string, images: Array<{ path, mimeType }> }
+   * - text: the FULL document content (up to MAX_DOC_CHARS)
+   * - images: embedded images from DOCX/PPTX for vision AI
+   *
+   * For backward compatibility, when called with legacy code that expects
+   * a string return, the toString() of the returned object yields the text.
+   */
+  async extractFileContent(attachedFile, options = {}) {
     let physicalPath = attachedFile.serverPath || attachedFile.path;
     // Resolve relative paths (multer returns relative paths like "data/files/...")
     if (physicalPath && !path.isAbsolute(physicalPath)) {
       physicalPath = path.join(process.cwd(), physicalPath);
     }
-    if (!physicalPath || !fs.existsSync(physicalPath)) return '';
+    if (!physicalPath || !fs.existsSync(physicalPath)) return { text: '', images: [], toString() { return ''; } };
     const originalName = attachedFile.originalname || '';
     const ext = path.extname(originalName).toLowerCase();
+
+    // ✅ Dynamic content limit: use large limit to read FULL documents.
+    // Modern models (GPT-4.1, Claude, Gemini) support 128K–1M tokens.
+    // 200,000 chars ≈ ~50,000 tokens — safely within all modern model limits.
+    const MAX_DOC_CHARS = options.maxChars || 200000;
+    const extractImages = options.extractImages !== false; // default: true
+    const images = [];
+
     try {
+      let content = '';
+
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
-        return `\n\n[ISI FILE: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
+        content = data.text || '';
+
       } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
-        return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
+        content = result.value || '';
+
+        // ✅ NEW: Extract embedded images from DOCX for vision AI
+        if (extractImages && ext === '.docx') {
+          try {
+            const docImages = await extractImagesFromUploadedFile(physicalPath, originalName);
+            images.push(...docImages);
+            if (docImages.length > 0) {
+              console.log(`[AICoreService] Extracted ${docImages.length} images from DOCX "${originalName}"`);
+            }
+          } catch (imgErr) {
+            console.warn(`[AICoreService] Image extraction from DOCX failed:`, imgErr.message);
+          }
+        }
+
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(physicalPath);
@@ -1070,13 +1087,11 @@ class AICoreService {
           sheet.eachRow(row => {
             rows.push(row.values.slice(1).map(v => (v == null ? '' : String(v))).join(','));
           });
-          parts.push(rows.join('\n'));
+          parts.push(`=== Sheet: ${sheet.name} ===\n${rows.join('\n')}`);
         });
-        const content = parts.join('\n');
-        return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+        content = parts.join('\n\n');
+
       } else if (ext === '.pptx' || ext === '.ppt') {
-        // ✅ FIX: Extract text from PPTX slides using JSZip (same as deepReadDocument)
-        // Previously fell through to utf8 read which returned corrupted binary content.
         try {
           const JSZip = (await import('jszip')).default;
           const data  = fs.readFileSync(physicalPath);
@@ -1092,20 +1107,57 @@ class AICoreService {
             const text    = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').trim();
             if (text) slideTexts.push(`[Slide ${slideTexts.length + 1}]\n${text}`);
           }
-          const content = slideTexts.join('\n\n');
-          if (!content) return '';
-          return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+          content = slideTexts.join('\n\n');
+
+          // ✅ NEW: Extract embedded images from PPTX for vision AI
+          if (extractImages && ext === '.pptx') {
+            try {
+              const pptImages = await extractImagesFromUploadedFile(physicalPath, originalName);
+              images.push(...pptImages);
+              if (pptImages.length > 0) {
+                console.log(`[AICoreService] Extracted ${pptImages.length} images from PPTX "${originalName}"`);
+              }
+            } catch (imgErr) {
+              console.warn(`[AICoreService] Image extraction from PPTX failed:`, imgErr.message);
+            }
+          }
         } catch (e) {
           console.warn(`[AICoreService] PPTX extraction failed for "${originalName}":`, e.message);
-          return '';
         }
+
       } else if (['.txt', '.md', '.csv'].includes(ext)) {
-        return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
+        content = fs.readFileSync(physicalPath, 'utf8');
       } else {
         // Unknown binary format — skip rather than returning garbage
-        return '';
+        const result = { text: '', images: [], toString() { return ''; } };
+        return result;
       }
-    } catch { return ''; }
+
+      // ✅ Apply smart truncation only if content exceeds the large limit
+      if (content.length > MAX_DOC_CHARS) {
+        console.log(`[AICoreService] Document "${originalName}" is ${content.length} chars, truncating to ${MAX_DOC_CHARS}`);
+        content = content.substring(0, MAX_DOC_CHARS) + `\n\n[... dokumen terlalu besar, ditampilkan ${MAX_DOC_CHARS} karakter dari total ${content.length} karakter ...]`;
+      }
+
+      // Add image info annotation to text so AI knows images exist
+      const imgAnnotation = images.length > 0
+        ? `\n[CATATAN: File ini mengandung ${images.length} gambar/visual yang juga dikirim untuk analisis visual]\n`
+        : '';
+
+      const fullText = content
+        ? `\n\n[ISI FILE: ${originalName}]\n${content}${imgAnnotation}\n[END FILE]\n`
+        : '';
+
+      return {
+        text: fullText,
+        images,
+        toString() { return fullText; },
+      };
+
+    } catch (err) {
+      console.error(`[AICoreService] extractFileContent error for "${originalName}":`, err.message);
+      return { text: '', images: [], toString() { return ''; } };
+    }
   }
 
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
@@ -1277,9 +1329,9 @@ class AICoreService {
 
       } else if (isPdf && supportsVision) {
         // Try text extraction first; fall back to vision if text is empty (scanned PDF)
-        const text = await this.extractFileContent(attachedFile);
-        if (text && text.trim().length > 50) {
-          userContent.push({ type: 'text', text });
+        const extracted = await this.extractFileContent(attachedFile);
+        if (extracted.text && extracted.text.trim().length > 50) {
+          userContent.push({ type: 'text', text: extracted.text });
         } else {
           // Scanned/image-based PDF — inform the user we can't read it via vision
           userContent.push({
@@ -1288,9 +1340,43 @@ class AICoreService {
           });
         }
       } else {
-        // All other file types: extract text content
-        const text = await this.extractFileContent(attachedFile);
-        if (text) userContent.push({ type: 'text', text });
+        // ✅ ENHANCED: Extract text AND images from DOCX/PPTX uploads
+        const extracted = await this.extractFileContent(attachedFile, { extractImages: supportsVision });
+        if (extracted.text) userContent.push({ type: 'text', text: extracted.text });
+
+        // ✅ NEW: Send extracted document images to AI vision model
+        // This lets the AI "see" diagrams, charts, tables, signatures, etc. inside Word/PPT docs
+        if (extracted.images && extracted.images.length > 0 && supportsVision) {
+          // Limit to max 10 images to avoid overloading the vision API
+          const maxImages = 10;
+          const imagesToSend = extracted.images
+            .filter(img => img.path && fs.existsSync(img.path))
+            .slice(0, maxImages);
+
+          for (const img of imagesToSend) {
+            try {
+              const imgBuffer = fs.readFileSync(img.path);
+              const b64 = imgBuffer.toString('base64');
+              const mime = img.mimeType || 'image/png';
+
+              if (provider === 'anthropic') {
+                userContent.push({
+                  type:   'image',
+                  source: { type: 'base64', media_type: mime, data: b64 },
+                });
+              } else {
+                userContent.push({
+                  type:      'image_url',
+                  image_url: { url: `data:${mime};base64,${b64}` },
+                });
+              }
+            } catch (imgReadErr) {
+              console.warn(`[AICoreService] Failed to read extracted image:`, imgReadErr.message);
+            }
+          }
+
+          console.log(`[AICoreService] Sent ${imagesToSend.length} document images to ${provider} vision (from ${attachedFile.originalname})`);
+        }
       }
     }
 
@@ -2040,7 +2126,7 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
         }
 
         if (knowledgeCtx) {
-          contentUserMsg += `=== KNOWLEDGE BASE ===\n${knowledgeCtx.substring(0, 2000)}\n\n`;
+          contentUserMsg += `=== KNOWLEDGE BASE ===\n${knowledgeCtx}\n\n`;
         }
 
         contentUserMsg += `=== PERMINTAAN USER ===\n${userRequest}\n\n`;

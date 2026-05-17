@@ -27,7 +27,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "build:apk": "react-scripts build && npx cap sync android",
-    "test": "echo \"Error: no test specified\" && exit 0"
+    "test": "react-scripts test --watchAll=false --coverage"
   },
   "devDependencies": {
     "@capacitor/android": "^6.2.0",
