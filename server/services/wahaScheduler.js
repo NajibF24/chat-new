@@ -1,6 +1,6 @@
 // server/services/wahaScheduler.js
 // ============================================================
-// GYS Portal AI — Flexible WAHA WhatsApp Scheduler
+// GYS Portal AI — Flexible WhatsApp Scheduler (Baileys)
 //
 // Supports 3 schedule types per bot:
 //   1. 'daily'    — send once at a fixed time e.g. "08:00"
@@ -14,9 +14,12 @@
 // Checks every 1 minute, fires when current HH:MM matches.
 // ============================================================
 
-import axios   from 'axios';
 import Bot     from '../models/Bot.js';
 import AIProviderService from './ai-provider.service.js';
+import AICoreService, { isNewsletterCommand } from './ai-core.service.js';
+import BaileysService from './baileys.service.js';
+import fs from 'fs';
+import path from 'path';
 
 // Track last-fired times to avoid double-firing within same minute
 // Key: `${botId}:${scheduleId}:${YYYY-MM-DD HH:MM}` → true
@@ -47,39 +50,47 @@ function currentMinutes() {
   return now.getHours() * 60 + now.getMinutes();
 }
 
-// ── Send message via WAHA API ─────────────────────────────────
-async function sendWahaMessage(wahaConfig, chatId, text) {
-  if (!wahaConfig.endpoint || !chatId) return;
-
-  const sendUrl = wahaConfig.endpoint.replace(/\/$/, '') + '/api/sendText';
-  const payload = {
-    session: wahaConfig.session || 'default',
-    chatId,
-    text,
-  };
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(wahaConfig.apiKey && { 'X-Api-Key': wahaConfig.apiKey }),
-  };
-
-  try {
-    await axios.post(sendUrl, payload, { headers, timeout: 15000 });
-    console.log(`[WahaScheduler] ✅ Sent to ${chatId}: ${text.substring(0, 60)}...`);
-  } catch (err) {
-    console.error(`[WahaScheduler] ❌ Failed ${chatId}:`, err.response?.data?.message || err.message);
-  }
+// ── Send text via Baileys ─────────────────────────────────────
+async function sendMessage(chatId, text) {
+  if (!chatId) return;
+  const ok = await BaileysService.sendText(chatId, text);
+  if (!ok) console.warn(`[Scheduler] ⚠️ Could not send text to ${chatId} (Baileys offline?)`);
 }
+
+// ── Send image via Baileys (with text fallback) ───────────────
+async function sendImage(chatId, imagePath, caption, publicImageUrl) {
+  if (!chatId) return;
+
+  if (fs.existsSync(imagePath)) {
+    const ok = await BaileysService.sendImage(chatId, imagePath, caption);
+    if (ok) return;
+  }
+
+  // Fallback: send text + link if Baileys fails or file missing
+  console.warn(`[Scheduler] ↩️ Image send failed, falling back to text+URL for ${chatId}`);
+  const fallback = publicImageUrl
+    ? `${caption}\n\n🖼️ *GYS Steel Signal Newsletter:*\n${publicImageUrl}`
+    : caption;
+  await sendMessage(chatId, fallback);
+}
+
 
 // ── Generate AI response for a schedule prompt ────────────────
 async function generateAIResponse(bot, prompt) {
   try {
+    // ✅ FIX: Pass bot.capabilities so web search (and other tools) are active
+    // Without this, the bot ignores its capability settings and generates
+    // fabricated news from training data instead of doing a real web search.
+    const capabilities = bot.capabilities || {};
+
     const result = await AIProviderService.generateCompletion({
       providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
       systemPrompt:   bot.prompt || bot.systemPrompt || 'You are a professional AI assistant.',
       messages:       [],
       userContent:    prompt,
+      capabilities,
     });
-    return result.text || 'Maaf, tidak ada respons dari AI.';
+    return result.text || 'No response from AI.';
   } catch (err) {
     console.error('[WahaScheduler] AI error:', err.message);
     return null;
@@ -93,11 +104,38 @@ async function fireSchedule(bot, schedule) {
 
   console.log(`[WahaScheduler] 🔔 Firing schedule "${schedule.label || schedule._id}" for bot "${bot.name}"`);
 
-  // Generate AI response
-  const aiText = await generateAIResponse(bot, prompt);
-  if (!aiText) return;
+  let isImage = false;
+  let imagePath = '';
+  let publicImageUrl = '';
+  let formattedMsg = '';
 
-  const formattedMsg = `🤖 *${bot.name}*\n\n${aiText}`;
+  if (isNewsletterCommand(prompt)) {
+    try {
+      const { result, newsletterData } = await AICoreService.generateNewsletterDataCore({ bot, message: prompt, history: [] });
+      isImage = true;
+      imagePath = path.join(process.cwd(), 'data', 'files', result.fileName);
+      
+      // Build public URL so fallback text message has a clickable link
+      // Priority: SERVER_PUBLIC_URL env var > PUBLIC_URL > safe fallback
+      const serverBase = (process.env.SERVER_PUBLIC_URL || process.env.PUBLIC_URL || '').replace(/\/$/, '');
+      if (!serverBase) console.warn('[WahaScheduler] ⚠️ SERVER_PUBLIC_URL not set — image links may not work!');
+      publicImageUrl = serverBase ? `${serverBase}${result.fileUrl}` : result.fileUrl;
+
+      let sourceLinks = '';
+      if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
+        sourceLinks = '\n\n🔗 *Sources:*\n' + newsletterData.sourceLinks.map(l => `- ${l}`).join('\n');
+      }
+      formattedMsg = `🤖 *${bot.name}*\n\nHere is your latest GYS Steel Signal.${sourceLinks}`;
+    } catch (error) {
+      console.error('[WahaScheduler] Newsletter generation error:', error);
+      formattedMsg = `🤖 *${bot.name}*\n\nFailed to generate Newsletter: ${error.message}`;
+    }
+  } else {
+    // Generate Text AI response
+    const aiText = await generateAIResponse(bot, prompt);
+    if (!aiText) return;
+    formattedMsg = `🤖 *${bot.name}*\n\n${aiText}`;
+  }
 
   // Determine which targets to send to
   let targets = (wahaConfig.targets || []).filter(t => t.active);
@@ -117,12 +155,20 @@ async function fireSchedule(bot, schedule) {
 
   // Send to all resolved targets
   for (const target of targets) {
-    await sendWahaMessage(wahaConfig, target.chatId, formattedMsg);
+    if (isImage && imagePath) {
+      await sendImage(target.chatId, imagePath, formattedMsg, publicImageUrl);
+    } else {
+      await sendMessage(target.chatId, formattedMsg);
+    }
   }
 
   // Send to legacy chatId if no new targets configured
   if (targets.length === 0 && legacyChatId) {
-    await sendWahaMessage(wahaConfig, legacyChatId, formattedMsg);
+    if (isImage && imagePath) {
+      await sendImage(legacyChatId, imagePath, formattedMsg, publicImageUrl);
+    } else {
+      await sendMessage(legacyChatId, formattedMsg);
+    }
   }
 }
 

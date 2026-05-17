@@ -14,9 +14,12 @@ import chatRoutes      from './routes/chat.js';
 import smartsheetRoutes from './routes/smartsheet.js';
 import embedRoutes     from './routes/embed.js';
 import pptxRoutes      from './routes/pptx.js';
-import wahaRoutes      from './routes/waha.js'; // ✅ NEW: WAHA webhook
+import wahaRoutes, { handleBaileysMessage } from './routes/waha.js';
+import newsletterRoutes from './routes/newsletter.js';
 
-import { startWahaScheduler } from './services/wahaScheduler.js'; // ✅ UPDATED scheduler
+import { startWahaScheduler } from './services/wahaScheduler.js';
+import BaileysService from './services/baileys.service.js';
+import CleanupService from './services/cleanup.service.js';
 
 dotenv.config();
 
@@ -40,6 +43,10 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
+// ✅ Session config — mendukung Web + Capacitor APK
+// Session expires after 3 days of inactivity → user must re-login.
+// Capacitor HTTP plugin mengelola cookies secara native,
+// jadi sameSite: 'lax' tetap bekerja untuk APK.
 app.use(session({
   secret: process.env.SESSION_SECRET || 'gys-secret-key-fallback',
   resave: false,
@@ -47,13 +54,13 @@ app.use(session({
   store: MongoStore.create({
     mongoUrl:       process.env.MONGODB_URI,
     collectionName: 'sessions',
-    ttl:            24 * 60 * 60,
+    ttl:            3 * 24 * 60 * 60, // 3 days in seconds
   }),
   cookie: {
-    secure:   false,
+    secure:   process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge:   24 * 60 * 60 * 1000,
-    sameSite: 'lax',
+    maxAge:   3 * 24 * 60 * 60 * 1000, // 3 days in milliseconds
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path:     '/',
   },
 }));
@@ -86,6 +93,28 @@ console.log('🖼️  Serving avatars from:', avatarsPath);
     await fs.mkdir(avatarsPath,      { recursive: true });
     await fs.mkdir(path.join(process.cwd(), 'data', 'tmp'), { recursive: true });
     console.log('✅ Directories ensured');
+
+    // ✅ Ensure GYS logo is available in server/data/ for newsletter generation
+    const logoDestPath = path.join(process.cwd(), 'data', 'gys-logo.webp');
+    const logoSrcPaths = [
+      path.join(process.cwd(), '../client/public/assets/gys-logo.webp'),
+      path.join(__dirname, '../client/public/assets/gys-logo.webp'),
+    ];
+    try {
+      const logoExists = await fs.access(logoDestPath).then(() => true).catch(() => false);
+      if (!logoExists) {
+        for (const src of logoSrcPaths) {
+          const srcExists = await fs.access(src).then(() => true).catch(() => false);
+          if (srcExists) {
+            await fs.copyFile(src, logoDestPath);
+            console.log('✅ GYS logo copied to server/data/');
+            break;
+          }
+        }
+      }
+    } catch (logoErr) {
+      console.warn('⚠️ Could not copy GYS logo (newsletter will use text fallback):', logoErr.message);
+    }
   } catch (e) {
     console.error('❌ Failed to create directories:', e);
   }
@@ -113,8 +142,60 @@ app.use('/api/smartsheet',  smartsheetRoutes);
 app.use('/api/embed',       embedRoutes);
 app.use('/api/pptx',        pptxRoutes);
 app.use('/api/waha',        wahaRoutes); // ✅ NEW: WAHA webhook receiver
+app.use('/api/newsletter',  newsletterRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+// ── Baileys Admin Endpoints (must be before 404 handler) ───────────
+app.get('/api/admin/baileys/status', (req, res) => {
+  res.json({
+    status: BaileysService.getStatus(),
+    connected: BaileysService.isConnected(),
+  });
+});
+
+app.get('/api/admin/baileys/qr', (req, res) => {
+  const qr = BaileysService.getQRBase64();
+  if (!qr) {
+    const st = BaileysService.getStatus();
+    return res.status(202).json({
+      message: st === 'connected' ? 'Already connected — no QR needed' : 'QR not ready yet, wait a moment and refresh',
+      status: st,
+    });
+  }
+  res.send(`<!DOCTYPE html>
+<html><head><title>GYS WhatsApp QR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111;color:#fff;font-family:sans-serif}
+h1{color:#25D366}p{color:#aaa;font-size:14px}img{border-radius:12px;max-width:300px}</style>
+</head><body>
+<h1>📱 Scan QR Code</h1>
+<p>WhatsApp → Linked Devices → Link a Device</p>
+<img src="${qr}" alt="QR Code" />
+<p style="margin-top:16px;color:#666">Page auto-refreshes every 30s</p>
+</body></html>`);
+});
+
+// ── GET /api/admin/baileys/groups — list all groups the bot has joined ─────────
+// Use this to find the correct group JID and verify bot membership.
+// Fields: id (JID to use in wahaConfig), name, size (member count),
+//         announce (true = only admins can send → bot cannot send if not admin)
+app.get('/api/admin/baileys/groups', async (req, res) => {
+  if (!BaileysService.isConnected()) {
+    return res.status(503).json({ error: 'WhatsApp not connected', status: BaileysService.getStatus() });
+  }
+  try {
+    const groups = await BaileysService.getGroups();
+    res.json({
+      total: groups.length,
+      groups,
+      hint: 'Copy the "id" field into the wahaConfig.targets[].chatId in your bot settings.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.use((req, res)       => res.status(404).json({ error: 'Endpoint Not Found' }));
 app.use((err, req, res, next) => {
@@ -124,6 +205,17 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  // ✅ Start WAHA flexible scheduler
+
+  // 🔹 Start Baileys WhatsApp service
+  BaileysService.init().then(() => {
+    BaileysService.setMessageHandler(handleBaileysMessage);
+  }).catch(err => {
+    console.error('❌ Baileys init failed:', err.message);
+  });
+
+  // 🔹 Start WhatsApp Scheduler
   startWahaScheduler();
-});
+
+  // 🔹 Start File Cleanup Scheduler
+  CleanupService.start();
+});

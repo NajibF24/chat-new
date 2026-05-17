@@ -26,6 +26,9 @@ import FileManagerService     from './file-manager.service.js';
 import KouventaService        from './kouventa.service.js';
 import AzureSearchService     from './azure-search.service.js';
 import PptxService            from './pptx.service.js';
+import DocService             from './doc.service.js';
+import ExcelService           from './excel.service.js';
+import NewsletterService      from './newsletter.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
@@ -520,12 +523,35 @@ function isPptCommand(message = '') {
     t.startsWith('/ppt') ||
     t.startsWith('/slide') ||
     t.startsWith('/presentation') ||
-    /^(buatkan|buat|create|generate|tolong buat|please create|please make)\s+(presentasi|ppt|slide|powerpoint|deck)/i.test(t) ||
-    (/\b(presentasi|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
-      /\b(buat|buatkan|create|generate|make|tolong)\b/i.test(t)) ||
+    /^(buatkan|buat|bikin|bikinin|bikinkan|create|generate|tolong buat|please create|please make|give me)\s+(a\s+)?(presentasi|presentation|ppt|slide|powerpoint|deck)/i.test(t) ||
+    (/\b(presentasi|presentation|powerpoint|ppt|slide deck|deck)\b/i.test(t) &&
+      /\b(buat|buatkan|bikin|bikinkan|bikinin|create|generate|make|tolong|give me)\b/i.test(t)) ||
     isFreeformLayoutRequest(message)
   );
 }
+
+export function isDocCommand(text) {
+  if (!text) return false;
+  return /\b(doc|docx|word)\b/i.test(text) || text.toLowerCase().includes('/doc');
+}
+
+export function isPdfCommand(text) {
+  if (!text) return false;
+  return /\b(pdf)\b/i.test(text) || text.toLowerCase().includes('/pdf');
+}
+
+export function isExcelCommand(text) {
+  if (!text) return false;
+  return /\b(excel|xlsx|spreadsheet|tabel)\b/i.test(text) || text.toLowerCase().includes('/excel');
+}
+
+export function isNewsletterCommand(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return lower.includes('/newsletter') || lower.includes('signal') || lower.includes('newsletter');
+}
+
+
 
 // ─────────────────────────────────────────────────────────────
 // ✅ NEW: IMAGE GENERATION DETECTOR
@@ -930,28 +956,10 @@ async function deepReadDocument(filePath, originalName, mimetype) {
       content = fs.readFileSync(filePath, 'utf8');
     }
 
-    const MAX_CHARS = 8000;
+    // ✅ ENHANCED: Increased from 8K to 200K chars to read FULL documents
+    const MAX_CHARS = 200000;
     if (content.length > MAX_CHARS) {
-      const lines = content.split('\n');
-      let smartContent = '';
-      let charCount = 0;
-      
-      for (const line of lines) {
-        const trimmed = line.trim();
-        const isHeading = trimmed.length < 80 && trimmed.length > 3 && 
-                          !trimmed.startsWith('•') && !trimmed.startsWith('-') &&
-                          !/^\s*\d+\.\s/.test(trimmed) === false ||
-                          /^[A-Z][A-Z\s]+$/.test(trimmed) ||
-                          /^\d+\.\s/.test(trimmed);
-        
-        if (charCount + line.length > MAX_CHARS && !isHeading) {
-          smartContent += '\n\n[... konten dipotong, fokus pada struktur utama ...]';
-          break;
-        }
-        smartContent += line + '\n';
-        charCount += line.length;
-      }
-      content = smartContent;
+      content = content.substring(0, MAX_CHARS) + '\n\n[... konten dipotong ...]';
     }
   } catch (err) {
     console.error(`[AICoreService] deepReadDocument error "${originalName}":`, err.message);
@@ -1019,22 +1027,57 @@ class AICoreService {
     return false;
   }
 
-  async extractFileContent(attachedFile) {
+  /**
+   * ✅ ENHANCED v2.0: Full document reading + image extraction
+   *
+   * Returns { text: string, images: Array<{ path, mimeType }> }
+   * - text: the FULL document content (up to MAX_DOC_CHARS)
+   * - images: embedded images from DOCX/PPTX for vision AI
+   *
+   * For backward compatibility, when called with legacy code that expects
+   * a string return, the toString() of the returned object yields the text.
+   */
+  async extractFileContent(attachedFile, options = {}) {
     let physicalPath = attachedFile.serverPath || attachedFile.path;
     // Resolve relative paths (multer returns relative paths like "data/files/...")
     if (physicalPath && !path.isAbsolute(physicalPath)) {
       physicalPath = path.join(process.cwd(), physicalPath);
     }
-    if (!physicalPath || !fs.existsSync(physicalPath)) return '';
+    if (!physicalPath || !fs.existsSync(physicalPath)) return { text: '', images: [], toString() { return ''; } };
     const originalName = attachedFile.originalname || '';
     const ext = path.extname(originalName).toLowerCase();
+
+    // ✅ Dynamic content limit: use large limit to read FULL documents.
+    // Modern models (GPT-4.1, Claude, Gemini) support 128K–1M tokens.
+    // 200,000 chars ≈ ~50,000 tokens — safely within all modern model limits.
+    const MAX_DOC_CHARS = options.maxChars || 200000;
+    const extractImages = options.extractImages !== false; // default: true
+    const images = [];
+
     try {
+      let content = '';
+
       if (ext === '.pdf') {
         const data = await pdf(fs.readFileSync(physicalPath));
-        return `\n\n[ISI FILE: ${originalName}]\n${data.text.substring(0, 8000)}\n[END FILE]\n`;
+        content = data.text || '';
+
       } else if (ext === '.docx' || ext === '.doc') {
         const result = await mammoth.extractRawText({ path: physicalPath });
-        return `\n\n[ISI FILE: ${originalName}]\n${result.value.substring(0, 8000)}\n[END FILE]\n`;
+        content = result.value || '';
+
+        // ✅ NEW: Extract embedded images from DOCX for vision AI
+        if (extractImages && ext === '.docx') {
+          try {
+            const docImages = await extractImagesFromUploadedFile(physicalPath, originalName);
+            images.push(...docImages);
+            if (docImages.length > 0) {
+              console.log(`[AICoreService] Extracted ${docImages.length} images from DOCX "${originalName}"`);
+            }
+          } catch (imgErr) {
+            console.warn(`[AICoreService] Image extraction from DOCX failed:`, imgErr.message);
+          }
+        }
+
       } else if (ext === '.xlsx' || ext === '.xls') {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(physicalPath);
@@ -1044,13 +1087,11 @@ class AICoreService {
           sheet.eachRow(row => {
             rows.push(row.values.slice(1).map(v => (v == null ? '' : String(v))).join(','));
           });
-          parts.push(rows.join('\n'));
+          parts.push(`=== Sheet: ${sheet.name} ===\n${rows.join('\n')}`);
         });
-        const content = parts.join('\n');
-        return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+        content = parts.join('\n\n');
+
       } else if (ext === '.pptx' || ext === '.ppt') {
-        // ✅ FIX: Extract text from PPTX slides using JSZip (same as deepReadDocument)
-        // Previously fell through to utf8 read which returned corrupted binary content.
         try {
           const JSZip = (await import('jszip')).default;
           const data  = fs.readFileSync(physicalPath);
@@ -1066,20 +1107,57 @@ class AICoreService {
             const text    = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').trim();
             if (text) slideTexts.push(`[Slide ${slideTexts.length + 1}]\n${text}`);
           }
-          const content = slideTexts.join('\n\n');
-          if (!content) return '';
-          return `\n\n[ISI FILE: ${originalName}]\n${content.substring(0, 8000)}\n[END FILE]\n`;
+          content = slideTexts.join('\n\n');
+
+          // ✅ NEW: Extract embedded images from PPTX for vision AI
+          if (extractImages && ext === '.pptx') {
+            try {
+              const pptImages = await extractImagesFromUploadedFile(physicalPath, originalName);
+              images.push(...pptImages);
+              if (pptImages.length > 0) {
+                console.log(`[AICoreService] Extracted ${pptImages.length} images from PPTX "${originalName}"`);
+              }
+            } catch (imgErr) {
+              console.warn(`[AICoreService] Image extraction from PPTX failed:`, imgErr.message);
+            }
+          }
         } catch (e) {
           console.warn(`[AICoreService] PPTX extraction failed for "${originalName}":`, e.message);
-          return '';
         }
+
       } else if (['.txt', '.md', '.csv'].includes(ext)) {
-        return `\n\n[ISI FILE: ${originalName}]\n${fs.readFileSync(physicalPath, 'utf8').substring(0, 8000)}\n[END FILE]\n`;
+        content = fs.readFileSync(physicalPath, 'utf8');
       } else {
         // Unknown binary format — skip rather than returning garbage
-        return '';
+        const result = { text: '', images: [], toString() { return ''; } };
+        return result;
       }
-    } catch { return ''; }
+
+      // ✅ Apply smart truncation only if content exceeds the large limit
+      if (content.length > MAX_DOC_CHARS) {
+        console.log(`[AICoreService] Document "${originalName}" is ${content.length} chars, truncating to ${MAX_DOC_CHARS}`);
+        content = content.substring(0, MAX_DOC_CHARS) + `\n\n[... dokumen terlalu besar, ditampilkan ${MAX_DOC_CHARS} karakter dari total ${content.length} karakter ...]`;
+      }
+
+      // Add image info annotation to text so AI knows images exist
+      const imgAnnotation = images.length > 0
+        ? `\n[CATATAN: File ini mengandung ${images.length} gambar/visual yang juga dikirim untuk analisis visual]\n`
+        : '';
+
+      const fullText = content
+        ? `\n\n[ISI FILE: ${originalName}]\n${content}${imgAnnotation}\n[END FILE]\n`
+        : '';
+
+      return {
+        text: fullText,
+        images,
+        toString() { return fullText; },
+      };
+
+    } catch (err) {
+      console.error(`[AICoreService] extractFileContent error for "${originalName}":`, err.message);
+      return { text: '', images: [], toString() { return ''; } };
+    }
   }
 
   async processMessage({ userId, botId, message, attachedFile, threadId, history = [] }) {
@@ -1094,8 +1172,20 @@ class AICoreService {
     }
 
     if (isPptCommand(message)) {
-      return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
-    }
+        return this._handlePptCommand({ userId, botId, bot, message, threadId, history, attachedFile });
+      }
+
+      if (isDocCommand(message) || isPdfCommand(message)) {
+        return this._handleDocCommand({ userId, botId, bot, message, threadId, history, attachedFile, isPdf: isPdfCommand(message) && !isDocCommand(message) });
+      }
+
+      if (isExcelCommand(message)) {
+        return this._handleExcelCommand({ userId, botId, bot, message, threadId, history, attachedFile });
+      }
+
+      if (isNewsletterCommand(message)) {
+        return this._handleNewsletterCommand({ userId, botId, bot, message, threadId, history, attachedFile });
+      }
 
     // ── ✅ NEW: Image Generation Handler ───────────────────────
     // Skip if user attached a file — they want to analyze it, not generate a new image
@@ -1239,9 +1329,9 @@ class AICoreService {
 
       } else if (isPdf && supportsVision) {
         // Try text extraction first; fall back to vision if text is empty (scanned PDF)
-        const text = await this.extractFileContent(attachedFile);
-        if (text && text.trim().length > 50) {
-          userContent.push({ type: 'text', text });
+        const extracted = await this.extractFileContent(attachedFile);
+        if (extracted.text && extracted.text.trim().length > 50) {
+          userContent.push({ type: 'text', text: extracted.text });
         } else {
           // Scanned/image-based PDF — inform the user we can't read it via vision
           userContent.push({
@@ -1250,9 +1340,43 @@ class AICoreService {
           });
         }
       } else {
-        // All other file types: extract text content
-        const text = await this.extractFileContent(attachedFile);
-        if (text) userContent.push({ type: 'text', text });
+        // ✅ ENHANCED: Extract text AND images from DOCX/PPTX uploads
+        const extracted = await this.extractFileContent(attachedFile, { extractImages: supportsVision });
+        if (extracted.text) userContent.push({ type: 'text', text: extracted.text });
+
+        // ✅ NEW: Send extracted document images to AI vision model
+        // This lets the AI "see" diagrams, charts, tables, signatures, etc. inside Word/PPT docs
+        if (extracted.images && extracted.images.length > 0 && supportsVision) {
+          // Limit to max 10 images to avoid overloading the vision API
+          const maxImages = 10;
+          const imagesToSend = extracted.images
+            .filter(img => img.path && fs.existsSync(img.path))
+            .slice(0, maxImages);
+
+          for (const img of imagesToSend) {
+            try {
+              const imgBuffer = fs.readFileSync(img.path);
+              const b64 = imgBuffer.toString('base64');
+              const mime = img.mimeType || 'image/png';
+
+              if (provider === 'anthropic') {
+                userContent.push({
+                  type:   'image',
+                  source: { type: 'base64', media_type: mime, data: b64 },
+                });
+              } else {
+                userContent.push({
+                  type:      'image_url',
+                  image_url: { url: `data:${mime};base64,${b64}` },
+                });
+              }
+            } catch (imgReadErr) {
+              console.warn(`[AICoreService] Failed to read extracted image:`, imgReadErr.message);
+            }
+          }
+
+          console.log(`[AICoreService] Sent ${imagesToSend.length} document images to ${provider} vision (from ${attachedFile.originalname})`);
+        }
       }
     }
 
@@ -1261,7 +1385,13 @@ class AICoreService {
     // ✅ FIX: Do NOT fall back to { provider: 'openai' } — use whatever the bot actually has.
     // Falling back to 'openai' when the bot uses 'custom' (Azure) or another provider
     // causes a "API Key not found for openai" error even though the bot has a valid key.
-    const providerConfig = { ...(bot.aiProvider || {}) };
+    const providerConfig = { ...(bot.aiProvider?.toObject?.() || bot.aiProvider || {}) };
+    // ✅ DEBUG: Log what provider/model is actually read from DB
+    console.log(`[AI DEBUG] Bot "${bot.name}" aiProvider from DB:`, JSON.stringify({
+      provider: providerConfig.provider,
+      model:    providerConfig.model,
+      hasApiKey: !!providerConfig.apiKey,
+    }));
     if (!providerConfig.provider) {
       // Only set openai as default if bot truly has no provider configured at all
       providerConfig.provider = 'openai';
@@ -1375,6 +1505,27 @@ class AICoreService {
     const isSmartsheetQuery = bot.smartsheetConfig?.enabled && hasSmartsheetData;
     const messagesForAI = isSmartsheetQuery ? [] : history.slice(-6);
 
+    // ✅ FIX: Strip capabilities that are not supported by the current provider.
+    // This prevents stale DB data (e.g. webSearch=true saved when provider was openai,
+    // but provider has since been changed to anthropic/google) from routing to the wrong
+    // API path (e.g. _callOpenAIWithWebSearch when provider is now anthropic).
+    const PROVIDER_CAPABILITIES = {
+      openai:    ['webSearch', 'codeInterpreter', 'imageGeneration', 'canvas', 'fileSearch'],
+      anthropic: ['fileSearch'],
+      google:    [],
+      custom:    [],
+    };
+    const currentProvider = providerConfig.provider || 'openai';
+    const allowedCaps     = PROVIDER_CAPABILITIES[currentProvider] || [];
+    const rawCaps         = bot.capabilities?.toObject?.() || bot.capabilities || {};
+    const filteredCaps    = Object.fromEntries(
+      Object.entries(rawCaps).filter(([k]) => allowedCaps.includes(k)).map(([k, v]) => [k, v])
+    );
+
+    // ✅ DEBUG: Log capabilities being passed to AI provider
+    console.log(`[AI DEBUG] Bot "${bot.name}" filteredCaps:`, JSON.stringify(filteredCaps));
+    console.log(`[AI DEBUG] webSearch=${!!filteredCaps.webSearch} | provider=${currentProvider} | model=${providerConfig.model}`);
+
     const result = await AIProviderService.generateCompletion({
       providerConfig,
       systemPrompt,
@@ -1382,9 +1533,9 @@ class AICoreService {
       userContent:     userContent.length === 1 && userContent[0].type === 'text'
         ? userContent[0].text
         : userContent,
-      // ✅ FIX: Pass bot capabilities so web search / code interpreter tools are actually enabled.
-      // Previously buildTools() was never given capabilities, so tools were never sent to OpenAI.
-      capabilities:    bot.capabilities || {},
+      // ✅ FIX: Pass filtered capabilities — only capabilities valid for the current provider.
+      // Prevents stale DB capabilities from routing to the wrong provider API path.
+      capabilities:    filteredCaps,
     });
 
     // ✅ FIX: Strip HTML tags from AI response for Smartsheet bots.
@@ -1571,7 +1722,228 @@ class AICoreService {
   //   - Chunked large document reading (100+ pages)
   //   - Freeform requests skip corporate template constraints
   // ─────────────────────────────────────────────────────────
-  async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+  
+  async _handleDocCommand({ userId, botId, bot, message, threadId, history = [], attachedFile, isPdf }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      
+      const formatName = isPdf ? 'PDF' : 'Word';
+      console.log(`[DOC] Generating ${formatName} Document...`);
+
+      let contentUserMsg = `=== PERMINTAAN USER (Format ${formatName}) ===\n${message}\n\n`;
+      contentUserMsg += `Please write a highly detailed, professional document in Markdown format. Use extensive headers (H1, H2, H3), lists, paragraphs, and bold text. Do not output JSON. Just output pure Markdown. Start with a main # Header (Title).`;
+
+      const aiResponse = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: "You are a professional document writer and technical author. You write comprehensive, structured Markdown documents.",
+        messages: history,
+        userContent: contentUserMsg,
+        timeout: 120000,
+        maxTokens: 4000,
+      });
+
+      const markdownContent = aiResponse.text;
+      const titleMatch = markdownContent.match(/^#\s+(.+)/m);
+      const title = titleMatch ? titleMatch[1].trim().substring(0, 60) : 'Generated Document';
+
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      let result;
+      if (isPdf) {
+        result = await DocService.generatePdf({ markdownContent, title, outputDir });
+      } else {
+        result = await DocService.generateWord({ markdownContent, title, outputDir });
+      }
+
+      const responseMarkdown = `✅ **Dokumen ${formatName} berhasil dibuat!**\n\n📊 **Judul:** ${title}\n\n---\n### [⬇️ Download ${formatName}](${result.fileUrl})`;
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      };
+    } catch (error) {
+      console.error('❌ [DOC Command]', error);
+      throw new Error(`Gagal membuat dokumen ${isPdf ? 'PDF' : 'Word'}: ${error.message}`);
+    }
+  }
+
+  
+  async generateNewsletterDataCore({ bot, message, history = [] }) {
+    console.log('[NEWSLETTER CORE] Generating GYS Steel Signal Image...');
+
+    const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    let contentUserMsg = `=== USER REQUEST (Format GYS Steel Signal) ===\nToday's date: ${today}\n${message}\n\n`;
+
+    // Implement deduplication history
+    const historyFile = path.join(process.cwd(), 'data', 'newsletter-history.json');
+    let pastTopics = [];
+    try {
+      if (fs.existsSync(historyFile)) {
+        pastTopics = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+      }
+    } catch (err) {
+      console.warn('[NEWSLETTER] Error reading history file:', err.message);
+    }
+    
+    if (pastTopics.length > 0) {
+      contentUserMsg += `CRITICAL DEDUPLICATION RULE:\nThe following topics have already been used in the last 7 days. You MUST NOT use them as the main signal today unless there is a material new development:\n`;
+      pastTopics.forEach((t, i) => {
+        contentUserMsg += `[Day -${i+1}] Headline: "${t.headline}"\n`;
+      });
+      contentUserMsg += `\nIf your search only finds these topics, move them to "Still Monitoring" and pick the NEXT BEST fresh topic for the main signal!\n\n`;
+    }
+
+    contentUserMsg += `STEP 1: Search the web for TODAY's latest steel market news (Indonesian and global). Use queries like "Indonesia steel market news today", "harga baja Indonesia terbaru", "steel price Asia today". Find at least 2 real, currently accessible news articles.\n\n`;
+    contentUserMsg += `STEP 2: Based ONLY on what you actually found in your web search, generate a JSON for the "GYS Steel Signal" newsletter. Write all content strictly in ENGLISH.\n\n`;
+    contentUserMsg += `CRITICAL URL RULE: The "sourceLinks" array MUST contain ONLY real URLs you actually visited and verified. DO NOT invent or guess URLs. If no real URLs found, return sourceLinks as [].\n\n`;
+    const jsonSchema = '{\n  "signalLevel": "HIGH or MEDIUM or LOW",\n  "headline": "String - Main news headline (max 80 chars)",\n  "todaysSignalBullets": ["String - Bullet 1", "String - Bullet 2", "String - Bullet 3"],\n  "whatChanged": [\n    { "title": "String - title", "description": "String - description" },\n    { "title": "String - title", "description": "String - description" },\n    { "title": "String - title", "description": "String - description" }\n  ],\n  "watchlist": [\n    { "title": "String - Watchlist item 1", "description": "String - description" },\n    { "title": "String - Watchlist item 2", "description": "String - description" }\n  ],\n  "whatItMeans": ["String - implication bullet 1", "String - implication bullet 2", "String - implication bullet 3"],\n  "whatToDo": ["String - action bullet 1", "String - action bullet 2", "String - action bullet 3"],\n  "stillMonitoring": "String - single line about what is still being monitored",\n  "marketSnapshot": [\n    { "title": "USD/IDR", "value": "17,385", "change": "Record low" },\n    { "title": "TRADE SURPLUS", "value": "USD3.32B", "change": "USD1.28B -> USD3.32B" },\n    { "title": "MANUFACTURING PMI", "value": "49.1", "change": "50.1 -> 49.1" },\n    { "title": "CHINA STEEL", "value": "3,255 CNY/MT", "change": "+5.99% MoM" }\n  ],\n  "sourceLinks": ["ONLY real verified URLs — leave empty array [] if none found"]\n}';
+    contentUserMsg += `Output ONLY a raw JSON object (no markdown, no code blocks).\nStructure:\n${jsonSchema}`;
+
+    // ✅ FIX: Force webSearch=true for OpenAI provider regardless of what is stored in DB.
+    // This is the newsletter generator — it MUST search the web to get real news.
+    // We also bypass the regular processMessage() filteredCaps check by building
+    // a clean capabilities object that directly reflects what this specific call needs.
+    const newsletterProvider = bot.aiProvider?.provider || 'openai';
+    const newsletterCaps = newsletterProvider === 'openai'
+      ? { webSearch: true }   // Always force web search for OpenAI on newsletter generation
+      : {};                   // Other providers do not support webSearch; skip silently
+    console.log(`[NEWSLETTER] Provider=${newsletterProvider} | webSearch=${!!newsletterCaps.webSearch}`);
+
+    const baseSystemPrompt = bot?.prompt || bot?.systemPrompt || `You are an expert market intelligence analyst for Garuda Yamato Steel (GYS).`;
+    const finalSystemPrompt = `${baseSystemPrompt}\n\nToday is ${today}. You MUST search the web for TODAY's latest real news before generating content. You output ONLY valid raw JSON. Never invent news or URLs.`;
+
+    const aiResponse = await AIProviderService.generateCompletion({
+      providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+      systemPrompt: finalSystemPrompt,
+      messages: history,
+      userContent: contentUserMsg,
+      capabilities: newsletterCaps,
+      timeout: 120000,
+      maxTokens: 4000,
+    });
+
+    let rawJson = aiResponse.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    const jsonStart = rawJson.indexOf('{');
+    const jsonEnd = rawJson.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+    }
+    
+    const newsletterData = JSON.parse(rawJson);
+    const outputDir = path.join(process.cwd(), 'data', 'files');
+    const result = await NewsletterService.generateNewsletterImage({ data: newsletterData, outputDir });
+
+    // Save headline to history to enforce deduplication on next runs
+    try {
+      if (newsletterData.headline && newsletterData.headline.length > 5) {
+        pastTopics.unshift({
+          date: new Date().toISOString(),
+          headline: newsletterData.headline
+        });
+        pastTopics = pastTopics.slice(0, 7); // keep last 7
+        fs.writeFileSync(historyFile, JSON.stringify(pastTopics, null, 2));
+        console.log('[NEWSLETTER] Saved history for deduplication:', newsletterData.headline);
+      }
+    } catch (err) {
+      console.warn('[NEWSLETTER] Error saving history file:', err.message);
+    }
+
+    // Build the Markdown: image is clickable (links to first source), then show all sources as real text links below
+    const firstLink = (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) ? newsletterData.sourceLinks[0] : null;
+    
+    // Image wrapped in link pointing to first source
+    const imageMarkdown = firstLink 
+      ? `[![GYS Steel Signal](${result.fileUrl})](${firstLink})`
+      : `![GYS Steel Signal](${result.fileUrl})`;
+
+    // Source links as real, clickable Markdown text below the image 
+    let sourceMarkdown = '';
+    if (newsletterData.sourceLinks && newsletterData.sourceLinks.length > 0) {
+      sourceMarkdown = '\n\n**Sources & References:**\n' +
+        newsletterData.sourceLinks.map(l => `- [${l}](${l})`).join('\n');
+    }
+
+    const responseMarkdown = imageMarkdown + sourceMarkdown;
+
+    return { result, responseMarkdown, newsletterData };
+  }
+
+  async _handleNewsletterCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      
+      const { result, responseMarkdown } = await this.generateNewsletterDataCore({ bot, message, history });
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [], // Do not attach file to avoid double rendering, Markdown handles the clickable image
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [],
+      };
+    } catch (error) {
+      console.error('❌ [NEWSLETTER Command]', error);
+      throw new Error(`Gagal membuat newsletter: ${error.message}`);
+    }
+  }
+
+async _handleExcelCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      console.log('[EXCEL] Generating Spreadsheet...');
+
+      let contentUserMsg = `=== PERMINTAAN USER (Format Excel) ===\n${message}\n\n`;
+      contentUserMsg += `Please generate a spreadsheet representation in JSON format. Your output MUST be ONLY a raw JSON object (no markdown formatting, no code blocks). Structure:\n{"sheets": [{"name": "Sheet1", "columns": ["Col1", "Col2"], "rows": [["Val1", "Val2"]]}]}`;
+
+      const aiResponse = await AIProviderService.generateCompletion({
+        providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+        systemPrompt: "You are an expert data analyst. You output ONLY valid raw JSON.",
+        messages: history,
+        userContent: contentUserMsg,
+        timeout: 120000,
+        maxTokens: 4000,
+      });
+
+      let rawJson = aiResponse.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+      const jsonStart = rawJson.indexOf('{');
+      const jsonEnd = rawJson.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+      }
+      
+      const sheetData = JSON.parse(rawJson);
+      const title = sheetData.sheets && sheetData.sheets[0] && sheetData.sheets[0].name ? sheetData.sheets[0].name : 'Spreadsheet';
+
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      const result = await ExcelService.generateExcel({ sheetData, title, outputDir });
+
+      const responseMarkdown = `✅ **Spreadsheet Excel berhasil dibuat!**\n\n📊 **Judul:** ${title}\n\n---\n### [⬇️ Download Excel (.xlsx)](${result.fileUrl})`;
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [{ name: result.fileName, path: result.fileUrl, type: 'file', size: '0' }],
+      };
+    } catch (error) {
+      console.error('❌ [EXCEL Command]', error);
+      throw new Error(`Gagal membuat spreadsheet: ${error.message}`);
+    }
+  }
+
+async _handlePptCommand({ userId, botId, bot, message, threadId, history = [], attachedFile }) {
     try {
       // ── Detect if this is a freeform designer-style request ─────────────────
       const freeformMode = isFreeformLayoutRequest(message || '');
@@ -1710,6 +2082,9 @@ class AICoreService {
 
       const rawExtractedImages = [...uploadedDocImages, ...kbExtractedImages];
 
+      // ✅ Save User Message to DB early so it is preserved even if generation times out
+      await new Chat({ userId, botId, threadId, role: 'user', content: message || '/ppt' }).save();
+
       // ── STEP 2: Build content generation prompt ──────────────────────────────
       const userRequest = message || '';
       let contentUserMsg = '';
@@ -1751,7 +2126,7 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
         }
 
         if (knowledgeCtx) {
-          contentUserMsg += `=== KNOWLEDGE BASE ===\n${knowledgeCtx.substring(0, 2000)}\n\n`;
+          contentUserMsg += `=== KNOWLEDGE BASE ===\n${knowledgeCtx}\n\n`;
         }
 
         contentUserMsg += `=== PERMINTAAN USER ===\n${userRequest}\n\n`;
@@ -1790,7 +2165,7 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
         systemPrompt:   PPT_CONTENT_SYSTEM_PROMPT,
         messages:       [],
         userContent:    contentUserMsg,
-        timeout:        120000,
+        timeout:        240000, // 4 min — large system prompt + long narratives need more time
         maxTokens:      contentMaxTokens,
       });
 
@@ -1829,7 +2204,7 @@ Preserve all user-provided text verbatim. Match their language exactly.`;
         systemPrompt:   PPT_JSON_SYSTEM_PROMPT,
         messages:       [],
         userContent:    `Convert this presentation to JSON:${jsonSlideCountNote}\n\n${slideContentForJson}`,
-        timeout:        120000,
+        timeout:        180000, // 3 min — JSON conversion of large presentations
         maxTokens:      freeformMode ? 4000 : jsonTokens,
       });
 
@@ -1948,7 +2323,6 @@ ${layoutSummary}`
 **Layout per slide:**
 ${layoutSummary}`;
 
-      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,
         attachedFiles: [{ name: result.pptxName, path: result.pptxUrl, type: 'file', size: '0' }],

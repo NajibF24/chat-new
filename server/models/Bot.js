@@ -23,12 +23,18 @@ const knowledgeFileSchema = new mongoose.Schema({
 
 // ── AI Provider Config Sub-Schema ────────────────────────────
 const aiProviderSchema = new mongoose.Schema({
-  provider:    { type: String, enum: ['openai', 'anthropic', 'google', 'custom'], default: 'openai' },
+  provider:    { type: String, enum: ['openai', 'anthropic', 'google', 'custom', 'external'], default: 'openai' },
   model:       { type: String, default: 'gpt-4.1' },
   apiKey:      { type: String, default: '' },
   endpoint:    { type: String, default: '' },
   temperature: { type: Number, default: 0.1 },
-  maxTokens:   { type: Number, default: 8000 }, // ✅ UPDATED: default 8000
+  maxTokens:   { type: Number, default: 8000 },
+
+  // ── External Bot / HTTP Proxy fields ─────────────────────
+  // Used only when provider === 'external'
+  apiKeyHeader:  { type: String, default: 'Authorization' }, // 'Authorization'|'X-Api-Key'|'api-key'|'custom'
+  requestFormat: { type: String, enum: ['openai', 'simple'], default: 'openai' },
+  responseField: { type: String, default: '' }, // dot-notation, e.g. 'answer' or auto-detect if empty
 }, { _id: false });
 
 // ── Bot Capabilities Sub-Schema ───────────────────────────────
@@ -45,7 +51,8 @@ const wahaTargetSchema = new mongoose.Schema({
   chatId:   { type: String, required: true },  // 628xxxx@c.us or 12036xxxx@g.us
   label:    { type: String, default: '' },     // user-friendly label e.g. "HR Group"
   type:     { type: String, enum: ['private', 'group'], default: 'private' },
-  tagOnly:  { type: Boolean, default: false }, // group only: only reply when tagged
+  tagOnly:  { type: Boolean, default: false }, // legacy: kept for compatibility
+  replyAll: { type: Boolean, default: false }, // group only: reply to all messages without tag
   active:   { type: Boolean, default: true },
 }, { _id: true });
 

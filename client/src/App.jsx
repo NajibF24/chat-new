@@ -5,9 +5,23 @@ import Login from './components/Login';
 import Chat from './components/Chat';
 import AdminDashboard from './components/AdminDashboard';
 import EmbedChat from './components/EmbedChat';
+
+// ✅ Capacitor platform detection (untuk APK mobile)
+let isNativePlatform = false;
+try {
+  const { Capacitor } = require('@capacitor/core');
+  isNativePlatform = Capacitor.isNativePlatform();
+} catch (e) {
+  // @capacitor/core tidak tersedia (web build) — tidak masalah
+}
+
 // ✅ CRITICAL: Configure axios for HTTPS with credentials
 axios.defaults.withCredentials = true; // ✅ MUST for cookies/session
-axios.defaults.baseURL = ''; // ✅ Empty = relative URLs (nginx proxies to backend)
+// Di mobile (Capacitor APK), arahkan ke server production.
+// Di web, tetap pakai relative URL (nginx proxies to backend).
+axios.defaults.baseURL = isNativePlatform
+  ? 'https://chat.gyssteel.com'
+  : ''; // ✅ Empty = relative URLs (nginx proxies to backend)
 
 // ✅ Set default headers
 axios.defaults.headers.common['Accept'] = 'application/json';
@@ -72,6 +86,7 @@ axios.interceptors.response.use(
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -98,12 +113,19 @@ function App() {
     }
   };
 
+  // Called by Login component on successful login
+  const handleLogin = (userData) => {
+    setJustLoggedIn(true);
+    setUser(userData);
+  };
+
   const handleLogout = async () => {
     try {
       await axios.post('/api/auth/logout');
       setUser(null);
+      setJustLoggedIn(false);
 
-      // Clear any local storage if needed
+      // Clear all client-side storage
       localStorage.clear();
       sessionStorage.clear();
 
@@ -115,11 +137,11 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-steel-50">
+      <div className="min-h-screen flex items-center justify-center bg-steel-50 dark:bg-gray-950">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <div className="text-xl text-steel-600">Loading...</div>
-          <div className="text-sm text-steel-500 mt-2">GYS Portal AI</div>
+          <div className="text-xl text-steel-600 dark:text-gray-300">Loading...</div>
+          <div className="text-sm text-steel-500 dark:text-gray-500 mt-2">GYS Portal AI</div>
         </div>
       </div>
     );
@@ -133,14 +155,21 @@ function App() {
         {/* Auth-gated routes */}
         {!user ? (
           <>
-            <Route path="/login" element={<Login setUser={setUser} />} />
+            <Route path="/login" element={<Login setUser={handleLogin} />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </>
         ) : (
           <>
             <Route
               path="/"
-              element={<Chat user={user} handleLogout={handleLogout} />}
+              element={
+                <Chat
+                  user={user}
+                  handleLogout={handleLogout}
+                  justLoggedIn={justLoggedIn}
+                  onWelcomeDismissed={() => setJustLoggedIn(false)}
+                />
+              }
             />
             {(user.isAdmin || user.isBotCreator) && (
               <Route

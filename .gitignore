@@ -7,3 +7,19 @@ data/
 *.bckp
 *.backup
 *.bck*
+
+# Capacitor / Android APK build
+client/android/
+apk-output/
+client/node_modules/
+node_modules/
+client/build/
+build/
+
+# Docker and GitLab CI
+docker-compose.yml
+docker-compose.*.yml
+.gitlab-ci.yml
+Dockerfile
+server/Dockerfile
+client/Dockerfile

@@ -1,0 +1,111 @@
+# ================================================================
+# Dockerfile.apk — Build GYS Portal AI APK via Docker
+# ================================================================
+# Penggunaan:
+#   docker build -f client/Dockerfile.apk -t gys-apk-builder ./client
+#   docker run --rm -v "%cd%/apk-output:/output" gys-apk-builder
+#
+# Hasil APK akan tersedia di folder: ./apk-output/app-release-unsigned.apk
+# ================================================================
+
+# ── Stage 1: Build React App ────────────────────────────────────
+FROM node:20-alpine AS react-build
+
+WORKDIR /app
+
+# Copy package files dan install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy source code dan build
+COPY . .
+RUN npm run build
+
+# ── Stage 2: Capacitor + Android SDK + Build APK ────────────────
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH="${PATH}:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools"
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    unzip \
+    openjdk-17-jdk-headless \
+    git \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Install Android SDK Command-Line Tools ──────────────────────
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools \
+    && cd ${ANDROID_HOME}/cmdline-tools \
+    && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+        -o cmdline-tools.zip \
+    && unzip -q cmdline-tools.zip \
+    && mv cmdline-tools latest \
+    && rm cmdline-tools.zip
+
+# Accept licenses dan install SDK components
+RUN yes | sdkmanager --licenses > /dev/null 2>&1 \
+    && sdkmanager \
+        "platforms;android-34" \
+        "build-tools;34.0.0" \
+        "platform-tools"
+
+WORKDIR /app
+
+# Copy package files dan install (termasuk Capacitor)
+COPY package*.json ./
+COPY capacitor.config.json ./
+RUN npm install
+
+# Copy React build dari stage 1
+COPY --from=react-build /app/build ./build
+
+# ── Initialize Capacitor Android Project ────────────────────────
+RUN npx cap add android
+
+# ── Sync web assets ke Android project ──────────────────────────
+RUN npx cap sync android
+
+# ── Generate Android Icons (GYS Logo) ───────────────────────────
+RUN apt-get update && apt-get install -y imagemagick \
+    && mkdir -p resources \
+    && convert build/assets/gys-logo.webp -resize 1024x1024 -background transparent -gravity center -extent 1024x1024 resources/icon.png \
+    && convert build/assets/gys-logo.webp -resize 2732x2732 -background white -gravity center -extent 2732x2732 resources/splash.png \
+    && npx --yes @capacitor/assets generate --android
+
+# ── Configure Android for HTTPS (production URL) ────────────────
+# Tambahkan network security config untuk mengizinkan HTTPS ke chat.gyssteel.com
+RUN mkdir -p android/app/src/main/res/xml \
+    && echo '<?xml version="1.0" encoding="utf-8"?>\n\
+<network-security-config>\n\
+    <domain-config cleartextTrafficPermitted="false">\n\
+        <domain includeSubdomains="true">chat.gyssteel.com</domain>\n\
+    </domain-config>\n\
+    <!-- Development only: uncomment to allow HTTP -->\n\
+    <!-- <domain-config cleartextTrafficPermitted="true">\n\
+        <domain includeSubdomains="false">172.16.31.48</domain>\n\
+    </domain-config> -->\n\
+</network-security-config>' > android/app/src/main/res/xml/network_security_config.xml
+
+# ── Patch AndroidManifest.xml ───────────────────────────────────
+# Tambah INTERNET permission dan network security config
+RUN sed -i 's|<application|<application android:networkSecurityConfig="@xml/network_security_config" android:usesCleartextTraffic="false"|' \
+    android/app/src/main/AndroidManifest.xml \
+    # Pastikan INTERNET permission ada
+    && grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml \
+    || sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET" />' \
+        android/app/src/main/AndroidManifest.xml
+
+# ── Build APK ───────────────────────────────────────────────────
+WORKDIR /app/android
+RUN chmod +x gradlew \
+    && ./gradlew assembleDebug --no-daemon -x lint
+
+# ── Output: copy APK ke /output saat container run ──────────────
+WORKDIR /app
+CMD ["sh", "-c", "echo \"📦 Copying APK to /output...\" && cp android/app/build/outputs/apk/debug/app-debug.apk /output/GYS-Portal-AI.apk && echo \"✅ APK berhasil dibuild!\" && echo \"📁 File: /output/GYS-Portal-AI.apk\" && ls -lh /output/GYS-Portal-AI.apk"]

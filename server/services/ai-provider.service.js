@@ -64,6 +64,16 @@ export const AI_PROVIDERS = {
     envKey:       null,
     description:  'Works with Azure OpenAI, AWS Bedrock (OpenAI-compatible), Ollama, LM Studio, etc.',
   },
+
+  // ── External Bot / HTTP Proxy (no portal tokens consumed) ──
+  external: {
+    label:        'External Bot / HTTP Proxy',
+    icon:         '🌐',
+    models:       [],
+    capabilities: [],
+    envKey:       null,
+    description:  'Proxy requests to any external bot endpoint (Azure Bot, internal API, etc.). Portal only provides the UI — all AI processing happens on the external server.',
+  },
 };
 
 // ── Capabilities that can be toggled per-bot ──────────────────
@@ -245,8 +255,9 @@ class AIProviderService {
     const temp       = providerConfig?.temperature ?? 0.1;
     // ✅ caller's maxTokens takes priority over providerConfig, then falls back to 2000
     const maxTok     = maxTokens ?? providerConfig?.maxTokens ?? 2000;
-    // ✅ caller's timeout takes priority, default 60s for normal calls
-    const reqTimeout = timeout ?? 60000;
+    // ✅ caller's timeout takes priority, default 180s for normal calls
+    // Anthropic (Slide Architect) can take 2-3 min for large prompts
+    const reqTimeout = timeout ?? 180000;
     const apiKey     = this.getApiKey(providerConfig);
     const endpoint   = providerConfig?.endpoint?.trim() || '';
 
@@ -264,6 +275,21 @@ class AIProviderService {
       } else {
         return this._callCustom({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, endpoint, timeout: reqTimeout });
       }
+    }
+
+    // ✅ External Bot: pure HTTP proxy — no portal tokens consumed
+    if (provider === 'external') {
+      return this._callExternal({
+        apiKey,
+        endpoint,
+        systemPrompt,
+        messages,
+        userContent,
+        apiKeyHeader:  providerConfig?.apiKeyHeader  || 'Authorization',
+        requestFormat: providerConfig?.requestFormat || 'openai',
+        responseField: providerConfig?.responseField || '',
+        timeout: reqTimeout,
+      });
     }
 
     switch (provider) {
@@ -399,9 +425,10 @@ class AIProviderService {
       // openai.responses is available in SDK >= 4.77.0
       // For older SDK versions, fall back to chat completions without web search
       if (typeof openai.responses?.create === 'function') {
+        console.log(`[WebSearch] ✅ openai.responses.create available — calling Responses API...`);
         response = await openai.responses.create(responseBody);
       } else {
-        console.warn('[WebSearch] openai.responses API not available in this SDK version. Falling back to chat completions without web search.');
+        console.warn('[WebSearch] ❌ openai.responses API not available in this SDK version. Falling back to chat completions without web search.');
         const fallback = await openai.chat.completions.create({
           model,
           messages: [
@@ -416,7 +443,29 @@ class AIProviderService {
         return { text, usage };
       }
     } catch (err) {
-      console.error(`[WebSearch] Responses API error: ${err.message}. Falling back to chat completions.`);
+      // ✅ FIX: Do NOT fall back to chat completions for quota/auth errors —
+      // the fallback would hit the same OpenAI key and fail again with the same error.
+      // Throw immediately with a clear, user-friendly message instead.
+      const isQuotaError = err.code === 'insufficient_quota' || err.status === 429 ||
+        (err.message || '').toLowerCase().includes('quota') ||
+        (err.message || '').toLowerCase().includes('billing');
+      const isAuthError = err.status === 401 || err.code === 'invalid_api_key';
+
+      if (isQuotaError) {
+        throw new Error(
+          'OpenAI quota habis (insufficient_quota). ' +
+          'Silakan periksa billing di https://platform.openai.com/account/billing, ' +
+          'atau ganti provider bot ke Anthropic/Google di Admin Dashboard.'
+        );
+      }
+      if (isAuthError) {
+        throw new Error(
+          'OpenAI API Key tidak valid atau tidak ditemukan. ' +
+          'Periksa konfigurasi API Key di Admin Dashboard atau file .env.'
+        );
+      }
+
+      console.error(`[WebSearch] ❌ Responses API error: ${err.message}. Falling back to chat completions (NO web search).`);
       const fallback = await openai.chat.completions.create({
         model,
         messages: [
@@ -429,6 +478,18 @@ class AIProviderService {
       const text = fallback.choices[0]?.message?.content || '';
       const usage = normalizeUsage(fallback.usage, 'openai', model);
       return { text, usage };
+    }
+
+    // ── DEBUG: Log full Responses API output structure ──────────
+    const outputTypes = (response.output || []).map(o => o.type);
+    console.log(`[WebSearch] Response output types: [${outputTypes.join(', ')}]`);
+    
+    // Log web search calls specifically
+    const searchCalls = (response.output || []).filter(o => o.type === 'web_search_call');
+    if (searchCalls.length > 0) {
+      console.log(`[WebSearch] ✅ ${searchCalls.length} web search call(s) made by model`);
+    } else {
+      console.warn(`[WebSearch] ⚠️ Model did NOT make any web search calls despite tool being available`);
     }
 
     // Extract text from Responses API output
@@ -510,8 +571,9 @@ class AIProviderService {
   }
 
   // ── Anthropic Claude ───────────────────────────────────────
-  // ✅ PATCH v1.3.0: Added `timeout` param (was hardcoded 60000)
-  async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 60000 }) {
+  // ✅ PATCH v1.4.0: Increased default timeout from 60s to 180s (3 min)
+  // Slide Architect and other bots with large prompts/documents need more time.
+  async _callAnthropic({ apiKey, model, temp, maxTok, systemPrompt, messages, userContent, timeout = 180000 }) {
     // Build Anthropic-format content blocks (supports text + image)
     let anthropicUserContent;
     if (Array.isArray(userContent)) {
@@ -654,8 +716,107 @@ class AIProviderService {
     return { text, usage };
   }
 
+  // ── ✅ NEW: External Bot / HTTP Proxy ──────────────────────
+  // Forwards the user message to any arbitrary HTTP endpoint.
+  // The external server does ALL the AI work — portal only proxies.
+  //
+  // Request format 'openai' → standard OpenAI chat completions body
+  // Request format 'simple' → { message, system, history }
+  //
+  // Response field auto-detection order:
+  //   choices[0].message.content → answer → response → text → output → message → result
   // ─────────────────────────────────────────────────────────────
-  // ✅ NEW: generateImage — DALL-E 3 image generation
+  async _callExternal({ apiKey, endpoint, systemPrompt, messages, userContent, apiKeyHeader, requestFormat, responseField, timeout = 60000 }) {
+    if (!endpoint) throw new Error(
+      'External bot membutuhkan Endpoint URL. Masukkan URL endpoint di konfigurasi bot.'
+    );
+
+    const userText = Array.isArray(userContent)
+      ? userContent.map(b => b.text || '').join('\n')
+      : String(userContent);
+
+    // ── Build request headers ──────────────────────────────
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) {
+      if (apiKeyHeader === 'Authorization') {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      } else if (apiKeyHeader === 'X-Api-Key') {
+        headers['X-Api-Key'] = apiKey;
+      } else if (apiKeyHeader === 'api-key') {
+        headers['api-key'] = apiKey;
+      } else {
+        // custom header name — use as-is
+        headers[apiKeyHeader] = apiKey;
+      }
+    }
+
+    // ── Build request body ────────────────────────────────
+    let body;
+    if (requestFormat === 'simple') {
+      body = {
+        message: userText,
+        system:  systemPrompt,
+        history: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+      };
+    } else {
+      // OpenAI-compatible format
+      body = {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          { role: 'user', content: userText },
+        ],
+      };
+    }
+
+    console.log(`[External] → POST ${endpoint} | format=${requestFormat} | header=${apiKeyHeader}`);
+
+    let response;
+    try {
+      response = await axios.post(endpoint, body, { headers, timeout });
+    } catch (err) {
+      const status = err.response?.status;
+      const msg    = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+      if (status === 401 || status === 403) throw new Error(`External bot: Unauthorized — cek API Key dan header. (${msg})`);
+      if (status === 404) throw new Error(`External bot: URL tidak ditemukan. Pastikan endpoint URL benar. (${msg})`);
+      if (status === 429) throw new Error(`External bot: Rate limit. Coba beberapa saat lagi. (${msg})`);
+      throw new Error(`External bot error ${status || ''}: ${msg}`);
+    }
+
+    const data = response.data;
+
+    // ── Extract response text ──────────────────────────────
+    let text = '';
+
+    if (responseField) {
+      // User-configured dot-notation field, e.g. 'data.answer' or 'choices.0.message.content'
+      const parts = responseField.split('.');
+      let val = data;
+      for (const p of parts) {
+        val = val?.[p];
+        if (val === undefined) break;
+      }
+      text = typeof val === 'string' ? val : JSON.stringify(val);
+    } else {
+      // Auto-detect common response shapes
+      text =
+        data?.choices?.[0]?.message?.content   // OpenAI-compatible
+        || data?.message?.content              // Azure Bot Service
+        || data?.answer                        // QnA-style
+        || data?.response                      // generic
+        || data?.text                          // simple text field
+        || data?.output                        // LangChain / n8n
+        || data?.message                       // simple message field
+        || data?.result                        // some APIs
+        || data?.content                       // fallback
+        || (typeof data === 'string' ? data : JSON.stringify(data)); // last resort
+    }
+
+    console.log(`[External] ✅ Response received (${String(text).length} chars)`);
+    return { text: String(text), usage: null };
+  }
+
+  // ── ✅ NEW: Generate image — DALL-E 3 ───────────────────────
   //
   // @param {object} providerConfig  - bot.aiProvider config
   // @param {string} prompt          - image description prompt
@@ -734,6 +895,111 @@ class AIProviderService {
 
     console.log(`[ImageGen] Success — URL: ${imageUrl.substring(0, 80)}...`);
     return { imageUrl, revisedPrompt };
+  }
+
+  /**
+   * Stream tokens via a callback.  onToken(text) is called for each chunk.
+   * Returns the full accumulated text when done.
+   * Falls back to non-streaming generateCompletion for unsupported providers.
+   */
+  async streamCompletion({ providerConfig = {}, systemPrompt, messages, userContent, capabilities = {}, onToken }) {
+    const provider = providerConfig?.provider || 'openai';
+    const model    = providerConfig?.model    || 'gpt-4o';
+    const temp     = providerConfig?.temperature ?? 0.1;
+    const maxTok   = providerConfig?.maxTokens ?? 2000;
+    const apiKey   = this.getApiKey(providerConfig);
+    const endpoint = providerConfig?.endpoint?.trim() || '';
+
+    // ── OpenAI streaming ──────────────────────────────────
+    if (provider === 'openai' || (provider === 'custom' && !isAzureEndpoint(endpoint))) {
+      const clientConfig = { apiKey };
+      if (endpoint) clientConfig.baseURL = endpoint;
+      clientConfig.timeout = 300000;
+      const openai = new OpenAI(clientConfig);
+
+      const tokenParams = getModelParams(model, temp, maxTok);
+      const body = {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          { role: 'user', content: userContent },
+        ],
+        ...tokenParams,
+        stream: true,
+      };
+
+      let fullText = '';
+      const stream = await openai.chat.completions.create(body);
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullText += delta;
+          if (onToken) onToken(delta);
+        }
+      }
+      return { text: fullText, usage: null };
+    }
+
+    // ── Anthropic streaming ───────────────────────────────
+    if (provider === 'anthropic') {
+      const userText = Array.isArray(userContent)
+        ? userContent.filter(c => c.type === 'text').map(c => c.text).join('\n')
+        : String(userContent);
+
+      const anthropicMessages = [
+        ...messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: userText },
+      ];
+
+      let fullText = '';
+      const response = await axios.post('https://api.anthropic.com/v1/messages', {
+        model,
+        max_tokens: maxTok,
+        system: systemPrompt,
+        messages: anthropicMessages,
+        stream: true,
+      }, {
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        responseType: 'stream',
+        timeout: 300000,
+      });
+
+      return new Promise((resolve, reject) => {
+        let buffer = '';
+        response.data.on('data', (chunk) => {
+          buffer += chunk.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const json = line.slice(6).trim();
+            if (json === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(json);
+              if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                fullText += parsed.delta.text;
+                if (onToken) onToken(parsed.delta.text);
+              }
+            } catch {}
+          }
+        });
+        response.data.on('end', () => resolve({ text: fullText, usage: null }));
+        response.data.on('error', reject);
+      });
+    }
+
+    // ── Fallback: non-streaming for Google, custom, external ──
+    const result = await this.generateCompletion({
+      providerConfig, systemPrompt, messages, userContent, capabilities,
+    });
+    // Send entire text as a single "chunk"
+    if (onToken && result.text) onToken(result.text);
+    return result;
   }
 
   async testConnection(providerConfig) {

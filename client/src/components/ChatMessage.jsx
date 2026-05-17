@@ -2,13 +2,18 @@ import React, { memo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import BotAvatar from './BotAvatar';
+import { cleanForSpeech, detectLang } from '../hooks/useVoice';
+import axios from 'axios';
 
 const getFileUrl = (path) => {
   if (!path) return '';
   if (path.startsWith('http') || path.startsWith('https')) return path;
-  if (path.startsWith('/api')) return path;
-  if (path.startsWith('/')) return path;
-  return `/api/files/${path}`;
+  
+  const baseUrl = axios.defaults.baseURL || '';
+  
+  if (path.startsWith('/api')) return `${baseUrl}${path}`;
+  if (path.startsWith('/')) return `${baseUrl}${path}`;
+  return `${baseUrl}/api/files/${path}`;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -123,15 +128,101 @@ function CodeBlock({ lang, code, isUser, onOpenArtifact }) {
 // ─────────────────────────────────────────────────────────────
 // ChatMessage
 // ─────────────────────────────────────────────────────────────
-const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
+const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming, onRegenerate, onEdit, msgIndex, isLast }) => {
   const isUser = message.role === 'user';
   const [visible, setVisible] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [copied, setCopied]       = useState(false);
+  const [editing, setEditing]     = useState(false);
+  const [editText, setEditText]   = useState('');
+  const synthRef = useRef(null);
 
   // Fade-in on mount
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 10);
     return () => clearTimeout(t);
   }, []);
+
+  // ── Text-to-Speech (TTS) ──
+  useEffect(() => {
+    synthRef.current = window.speechSynthesis;
+    return () => {
+      if (synthRef.current && isPlaying) {
+        synthRef.current.cancel();
+      }
+    };
+  }, [isPlaying]);
+
+  const toggleSpeech = () => {
+    if (!synthRef.current) {
+      alert("Text-to-Speech is not supported in this browser.");
+      return;
+    }
+
+    if (isPlaying) {
+      synthRef.current.cancel();
+      setIsPlaying(false);
+      return;
+    }
+
+    const cleaned  = cleanForSpeech(message.content || '');
+    const lang     = detectLang(cleaned);
+    const voices   = synthRef.current.getVoices();
+
+    // Pick best voice: prefer Google > Microsoft > any matching lang
+    const [primary] = lang.split('-');
+    const candidates = voices.filter(v => v.lang === lang || v.lang.startsWith(primary + '-'));
+    const bestVoice  = candidates.find(v => v.name.toLowerCase().includes('google'))
+                    || candidates.find(v => v.name.toLowerCase().includes('microsoft'))
+                    || candidates[0];
+
+    const utterance  = new SpeechSynthesisUtterance(cleaned);
+    utterance.lang   = lang;
+    utterance.rate   = 1.0;
+    utterance.pitch  = 1.0;
+    utterance.volume = 1.0;
+    if (bestVoice) utterance.voice = bestVoice;
+
+    utterance.onstart = () => setIsPlaying(true);
+    utterance.onend   = () => setIsPlaying(false);
+    utterance.onerror = () => setIsPlaying(false);
+
+    // Chrome: voices might not be loaded yet
+    if (voices.length === 0) {
+      window.speechSynthesis.addEventListener('voiceschanged', () => {
+        const v2 = window.speechSynthesis.getVoices();
+        const c2 = v2.filter(v => v.lang === lang || v.lang.startsWith(primary + '-'));
+        const bv2 = c2.find(v => v.name.toLowerCase().includes('google')) || c2[0];
+        if (bv2) utterance.voice = bv2;
+        synthRef.current.speak(utterance);
+      }, { once: true });
+    } else {
+      synthRef.current.speak(utterance);
+      setIsPlaying(true);
+    }
+  };
+
+  // ── Copy entire message ──
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content || '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  // ── Edit mode ──
+  const startEdit = () => {
+    setEditText(message.content || '');
+    setEditing(true);
+  };
+  const submitEdit = () => {
+    if (editText.trim() && onEdit) {
+      onEdit(msgIndex, editText.trim());
+    }
+    setEditing(false);
+  };
+  const cancelEdit = () => setEditing(false);
 
   return (
     <div
@@ -158,10 +249,10 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
         <div className={`px-4 py-3 shadow-sm transition-all ${
           isUser
             ? 'bg-primary-dark text-white rounded-2xl rounded-tr-sm max-w-[85%]'
-            : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-sm w-full min-w-0 shadow-sm'
+            : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-tl-sm w-full min-w-0 shadow-sm'
         }`}>
 
-          <div className={`prose max-w-none leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800'}`}>
+          <div className={`prose max-w-full min-w-0 break-words leading-relaxed text-sm ${isUser ? 'prose-invert text-white' : 'text-gray-800 dark:text-gray-200 dark:prose-invert'}`}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -186,7 +277,7 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
 
                   return (
                     <code
-                      className={`${isUser ? 'bg-white/20 text-white' : 'bg-gray-100 text-primary-dark'} px-1.5 py-0.5 rounded text-xs font-mono`}
+                      className={`${isUser ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-700 text-primary-dark dark:text-primary-light'} px-1.5 py-0.5 rounded text-xs font-mono`}
                       {...props}>
                       {children}
                     </code>
@@ -235,35 +326,39 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
                 h3: ({ node, ...props }) => <h3 className="text-sm font-bold mt-2 mb-1" {...props} />,
                 strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
                 blockquote: ({ node, ...props }) => (
-                  <blockquote className={`border-l-4 pl-4 my-3 italic text-sm ${isUser ? 'border-white/40 text-white/80' : 'border-primary/30 text-gray-500'}`} {...props} />
+                  <blockquote className={`border-l-4 pl-4 my-3 italic text-sm ${isUser ? 'border-white/40 text-white/80' : 'border-primary/30 text-gray-500 dark:text-gray-400'}`} {...props} />
                 ),
 
                 table: ({ node, ...props }) => (
-                  <div className={`overflow-x-auto my-4 rounded-xl border shadow-sm w-full ${isUser ? 'border-white/20' : 'border-gray-100'}`}>
-                    <table className={`w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-gray-100'}`} {...props} />
+                  <div className={`block max-w-full overflow-x-auto my-4 rounded-xl border shadow-sm ${isUser ? 'border-white/20' : 'border-gray-100 dark:border-gray-700'}`}>
+                    <table className={`min-w-full divide-y text-sm ${isUser ? 'divide-white/20' : 'divide-gray-100 dark:divide-gray-700'}`} {...props} />
                   </div>
                 ),
-                thead: ({ node, ...props }) => <thead className={`${isUser ? 'bg-white/10' : 'bg-gray-50'} font-semibold`} {...props} />,
+                thead: ({ node, ...props }) => <thead className={`${isUser ? 'bg-white/10' : 'bg-gray-50 dark:bg-gray-700'} font-semibold`} {...props} />,
                 th: ({ node, ...props }) => <th className="px-4 py-2.5 text-left text-xs font-bold uppercase tracking-wider whitespace-nowrap" {...props} />,
-                tr: ({ node, ...props }) => <tr className={`transition-colors ${isUser ? 'hover:bg-white/5' : 'hover:bg-gray-50/80'}`} {...props} />,
+                tr: ({ node, ...props }) => <tr className={`transition-colors ${isUser ? 'hover:bg-white/5' : 'hover:bg-gray-50/80 dark:hover:bg-gray-700/50'}`} {...props} />,
                 td: ({ node, ...props }) => <td className="px-4 py-2.5 border-r last:border-r-0 text-sm" {...props} />,
                 a: ({ node, ...props }) => <a className={`underline font-medium hover:opacity-80 text-sm ${isUser ? 'text-white' : 'text-primary'}`} target="_blank" rel="noreferrer" {...props} />,
               }}
             >
               {message.content || ''}
             </ReactMarkdown>
+            {/* Streaming cursor */}
+            {isStreaming && (
+              <span className="inline-block w-2 h-4 ml-0.5 bg-primary-dark dark:bg-primary-light animate-pulse rounded-sm" />
+            )}
           </div>
 
           {/* Attachments */}
           {message.attachedFiles && message.attachedFiles.length > 0 && (
-            <div className={`mt-3 pt-3 border-t ${isUser ? 'border-white/20' : 'border-gray-100'}`}>
+            <div className={`mt-3 pt-3 border-t ${isUser ? 'border-white/20' : 'border-gray-100 dark:border-gray-700'}`}>
               <div className="grid grid-cols-1 gap-2.5">
                 {message.attachedFiles.map((file, idx) => {
                   const fileName = file.name?.toLowerCase() || '';
                   const isImage  = file.type === 'image' || /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
                   const fullPath = getFileUrl(file.path);
                   return (
-                    <div key={idx} className={`rounded-xl border overflow-hidden ${isUser ? 'bg-white/10 border-white/20' : 'bg-gray-50 border-gray-100'}`}>
+                    <div key={idx} className={`rounded-xl border overflow-hidden ${isUser ? 'bg-white/10 border-white/20' : 'bg-gray-50 dark:bg-gray-700 border-gray-100 dark:border-gray-600'}`}>
                       {isImage ? (
                         <div className="cursor-pointer group" onClick={() => window.open(fullPath, '_blank')}>
                           <div style={{ minHeight: '120px' }} className="flex items-center justify-center overflow-hidden">
@@ -298,10 +393,94 @@ const ChatMessage = memo(({ message, bot, onOpenArtifact, isStreaming }) => {
             </div>
           )}
 
-          {/* Timestamp */}
-          <div className={`text-[10px] mt-2 text-right tabular-nums ${isUser ? 'text-white/40' : 'text-gray-400'}`}>
-            {new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {/* Footer: Timestamp & Actions */}
+          <div className={`flex items-center gap-1 mt-2 flex-wrap ${isUser ? 'justify-end' : 'justify-start'}`}>
+
+            {/* AI message actions */}
+            {!isUser && !isStreaming && message.content && (
+              <>
+                {/* Copy */}
+                <button onClick={handleCopy}
+                  title="Copy response"
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+                    ${copied ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                  {copied ? (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>                  ) : (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Copy</>                  )}
+                </button>
+
+                {/* Regenerate (only on last AI message) */}
+                {isLast && onRegenerate && (
+                  <button onClick={onRegenerate}
+                    title="Regenerate response"
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    Regenerate
+                  </button>
+                )}
+
+                {/* TTS */}
+                <button onClick={toggleSpeech}
+                  title={isPlaying ? "Stop audio" : "Listen"}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+                    ${isPlaying ? 'text-primary bg-primary/10' : 'text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                  {isPlaying ? (
+                    <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>Stop</>                  ) : (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>Listen</>                  )}
+                </button>
+              </>
+            )}
+
+            {/* User message actions */}
+            {isUser && !isStreaming && (
+              <>
+                <button onClick={handleCopy}
+                  title="Copy message"
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+                    ${copied ? 'text-emerald-300 bg-emerald-500/20' : 'text-white/40 hover:text-white/70 hover:bg-white/10'}`}>
+                  {copied ? (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>                  ) : (
+                    <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Copy</>                  )}
+                </button>
+                {onEdit && (
+                  <button onClick={startEdit}
+                    title="Edit & resend"
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    Edit
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Timestamp */}
+            <div className={`text-[10px] tabular-nums ml-auto ${isUser ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
+              {new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
           </div>
+
+          {/* Edit modal overlay */}
+          {editing && (
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+              <textarea
+                value={editText}
+                onChange={e => setEditText(e.target.value)}
+                className="w-full bg-gray-50 dark:bg-gray-700 text-sm text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                rows={3}
+                autoFocus
+              />
+              <div className="flex gap-2 mt-2">
+                <button onClick={submitEdit}
+                  className="px-3 py-1.5 bg-primary-dark text-white text-xs font-bold rounded-lg hover:bg-primary transition-colors">
+                  Send Edited
+                </button>
+                <button onClick={cancelEdit}
+                  className="px-3 py-1.5 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -114,8 +114,8 @@ class KnowledgeBaseService {
         }
       }
 
-      // Truncate very large content
-      const MAX_CHARS = 80000;
+      // ✅ ENHANCED: Increased from 80K to 200K chars to read FULL documents
+      const MAX_CHARS = 200000;
       if (content.length > MAX_CHARS) {
         content = content.substring(0, MAX_CHARS) + '\n\n[... konten dipotong ...]';
       }
@@ -314,7 +314,8 @@ class KnowledgeBaseService {
 
     for (const f of filesToInclude) {
       context += `--- File: ${f.originalName} ---\n`;
-      context += (f.content || '(kosong)').substring(0, 15000);
+      // ✅ ENHANCED: Increased from 15K to 60K per file to include full document content
+      context += (f.content || '(kosong)').substring(0, 60000);
 
       // Mention extracted images in context so AI knows about them
       const imgs = f.extractedImages || [];
