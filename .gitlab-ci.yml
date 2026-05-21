@@ -170,8 +170,8 @@ deploy_server_dev:
     - echo "🚀 [DEV] Updating Server Service..."
     - echo "$DOT_ENV_FILE_DEV" > .env
     - docker pull $SERVER_IMAGE_DEV_LATEST
+    - docker compose -f docker-compose.dev.yml up -d mongo
     - docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate server
-    - docker network connect project-portal-ai_internal-chat-network mongo || true
     - docker image prune -f
 
 deploy_client_dev:
