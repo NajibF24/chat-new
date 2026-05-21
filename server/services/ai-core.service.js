@@ -1958,11 +1958,47 @@ Respond ONLY with a raw JSON object in this exact format: {"fromDate": "YYYY-MM-
       // Fetch data
       const data = await OpenClawService.fetchProductionReport(fromDate, toDate);
       
+      // Generate AI Analysis
+      let aiAnalysis = '';
+      try {
+        console.log('[OPENCLAW] Requesting AI analysis for the data...');
+        const summaryData = data?.data?.map(i => ({
+          date: i.production_date,
+          order: i.order_no,
+          desc: i.description,
+          outputTon: i.production_ton,
+          yieldPct: i.yield_percentage,
+          delaySec: i.total_delay_seconds
+        })) || [];
+        
+        const analysisPrompt = `You are a Steel Mill Production Analyst.
+I will give you production data from OpenClaw L2 system for period ${fromDate} to ${toDate}.
+Please write a short, sharp, and insightful "Key Observations" paragraph (max 3-4 sentences).
+Highlight the best performing order, any major delays, or yield anomalies (target yield is 97%-100%, over 100% is anomalous).
+Output ONLY the analysis text. You can use markdown bold. Do not use generic greetings.
+
+DATA:
+${JSON.stringify(summaryData)}`;
+
+        const analysisResponse = await AIProviderService.generateCompletion({
+          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+          systemPrompt: "You are an expert manufacturing data analyst.",
+          messages: [],
+          userContent: analysisPrompt,
+          timeout: 20000,
+          maxTokens: 300,
+        });
+
+        aiAnalysis = analysisResponse.text.trim();
+      } catch (analysisError) {
+        console.error('[OPENCLAW] AI Analysis failed:', analysisError.message);
+      }
+      
       // Generate image
       const outputDir = path.join(process.cwd(), 'data', 'files');
-      const result = await OpenClawService.generateReportImage({ data, outputDir, fromDate, toDate });
+      const result = await OpenClawService.generateReportImage({ data, outputDir, fromDate, toDate, aiAnalysis });
 
-      const responseMarkdown = `✅ **L2 Production Report berhasil dibuat!**\n\n📅 **Periode:** ${fromDate} s/d ${toDate}\n\n![OpenClaw Report](${result.fileUrl})\n\n---\n### [⬇️ Download Report (.png)](${result.fileUrl})`;
+      const responseMarkdown = `✅ **L2 Production Report berhasil dibuat!**\n\n📅 **Periode:** ${fromDate} s/d ${toDate}\n\n**Analisis AI:**\n${aiAnalysis || 'Analisis otomatis menggunakan data default karena AI timeout'}\n\n![OpenClaw Report](${result.fileUrl})\n\n---\n### [⬇️ Download Report (.png)](${result.fileUrl})`;
 
       await new Chat({
         userId, botId, threadId, role: 'assistant', content: responseMarkdown,

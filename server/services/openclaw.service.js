@@ -23,7 +23,7 @@ export default {
   /**
    * Generate PNG Image from Production Data (McKenzie Style)
    */
-  async generateReportImage({ data, outputDir, fromDate, toDate }) {
+  async generateReportImage({ data, outputDir, fromDate, toDate, aiAnalysis }) {
     const filename = `OpenClaw-L2-${Date.now()}.png`;
     const filepath = path.join(outputDir, filename);
 
@@ -44,14 +44,24 @@ export default {
     const logoPath     = path.join(process.cwd(), 'assets', 'gys-logo.webp');
     const logoPathAlt  = path.join(process.cwd(), 'data', 'gys-logo.webp');
     const logoPathAlt2 = path.join(process.cwd(), '../client/public/assets/gys-logo.webp');
+    const logoPathAlt3 = path.join(process.cwd(), 'server', 'assets', 'gys-logo.webp');
     let logoBase64 = '';
     const resolvedLogoPath = fs.existsSync(logoPath) ? logoPath
       : fs.existsSync(logoPathAlt) ? logoPathAlt
       : fs.existsSync(logoPathAlt2) ? logoPathAlt2
+      : fs.existsSync(logoPathAlt3) ? logoPathAlt3
       : null;
     if (resolvedLogoPath) {
       const logoBuf = fs.readFileSync(resolvedLogoPath);
       logoBase64 = 'data:image/webp;base64,' + logoBuf.toString('base64');
+    }
+
+    // OpenClaw Logo
+    let openClawLogoBase64 = '';
+    const openClawLogoPath = path.join(process.cwd(), 'server', 'assets', 'openclaw-seeklogo.png');
+    if (fs.existsSync(openClawLogoPath)) {
+      const ocLogoBuf = fs.readFileSync(openClawLogoPath);
+      openClawLogoBase64 = 'data:image/png;base64,' + ocLogoBuf.toString('base64');
     }
 
     // Data Processing
@@ -162,6 +172,10 @@ export default {
       }
     }
 
+    if (aiAnalysis) {
+      observations = aiAnalysis.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+    }
+
     const logoHtml = logoBase64
       ? `<img src="${logoBase64}" alt="Logo" style="height:40px;max-width:120px;object-fit:contain;" />`
       : '<div style="font-size:20px;font-weight:bold;color:#0D5C46;">GYS</div>';
@@ -213,11 +227,12 @@ export default {
 
   <div class="header-bg">
     <div class="logo-box">${logoHtml}</div>
-    <div class="header-text">
+    <div class="header-text" style="flex:1; margin-right: 30px;">
       <div class="subtitle">OPERATIONS INTELLIGENCE &middot; STEEL DIVISION</div>
       <h1>L2 Production <strong>Report</strong></h1>
       <div class="date">Rolling Mill Performance &middot; ${dateRangeLabel}</div>
     </div>
+    ${openClawLogoBase64 ? `<img src="${openClawLogoBase64}" style="height:48px; object-fit:contain; filter: brightness(0) invert(1) opacity(0.9);" />` : ''}
   </div>
 
   <div class="content">
