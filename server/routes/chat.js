@@ -235,7 +235,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     // Special commands — must match the same detectors as processMessage
     const isSpecial = cleanMsg.startsWith('/ppt') || cleanMsg.startsWith('/doc') ||
       cleanMsg.startsWith('/pdf') || cleanMsg.startsWith('/excel') ||
-      cleanMsg.startsWith('/newsletter') || cleanMsg.startsWith('/image') ||
+      cleanMsg.startsWith('/newsletter') || cleanMsg.startsWith('/openclaw') || cleanMsg.startsWith('/image') ||
       cleanMsg.startsWith('/img') || cleanMsg.startsWith('/slide') ||
       cleanMsg.startsWith('/presentation') || cleanMsg.startsWith('gambarkan');
 
@@ -246,6 +246,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     const hasPdfPattern = /\b(pdf)\b/i.test(cleanMsg);
     const hasExcelPattern = /\b(excel|xlsx|spreadsheet|tabel)\b/i.test(cleanMsg);
     const hasNewsletterPattern = /\b(newsletter|signal)\b/i.test(cleanMsg);
+    const hasOpenClawPattern = /\b(openclaw|production report|l2 report|report produksi)\b/i.test(cleanMsg);
     const hasImageGenPattern = /^(create|generate|make|draw|buatkan?|buat|gambarkan|lukiskan|desainkan)\s+(a\s+|an\s+)?(image|photo|picture|illustration|gambar|foto|ilustrasi)/i.test(cleanMsg);
 
     const hasSmartsheet   = bot.smartsheetConfig?.enabled;
@@ -255,7 +256,7 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     // ✅ FIX: Route through processMessage for ANY complex pipeline requirement
     if (isSpecial || hasSmartsheet || hasAttachment || hasKnowledge ||
         hasPptPattern || hasDocPattern || hasPdfPattern || hasExcelPattern ||
-        hasNewsletterPattern || hasImageGenPattern) {
+        hasNewsletterPattern || hasOpenClawPattern || hasImageGenPattern) {
       const result = await AICoreService.processMessage({
         userId, botId, message, attachedFile, threadId: reqThreadId,
         history: (history || []).map(m => ({ role: m.role, content: m.content })),
