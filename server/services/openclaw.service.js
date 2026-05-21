@@ -58,8 +58,17 @@ export default {
 
     // OpenClaw Logo
     let openClawLogoBase64 = '';
-    const openClawLogoPath = path.join(process.cwd(), 'server', 'assets', 'openclaw-seeklogo.png');
-    if (fs.existsSync(openClawLogoPath)) {
+    const ocPath1 = path.join(process.cwd(), 'assets', 'openclaw-seeklogo.png');
+    const ocPath2 = path.join(process.cwd(), 'server', 'assets', 'openclaw-seeklogo.png');
+    const ocPath3 = path.join(process.cwd(), 'data', 'openclaw-seeklogo.png');
+    const ocPath4 = path.join(process.cwd(), '../server', 'assets', 'openclaw-seeklogo.png');
+    const openClawLogoPath = fs.existsSync(ocPath1) ? ocPath1 
+      : fs.existsSync(ocPath2) ? ocPath2 
+      : fs.existsSync(ocPath3) ? ocPath3 
+      : fs.existsSync(ocPath4) ? ocPath4
+      : null;
+    
+    if (openClawLogoPath) {
       const ocLogoBuf = fs.readFileSync(openClawLogoPath);
       openClawLogoBase64 = 'data:image/png;base64,' + ocLogoBuf.toString('base64');
     }
@@ -125,31 +134,32 @@ export default {
         ? item.production_date
         : dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
-      const color = item.description.includes('SS 400') ? '#0D5C46'
-        : item.description.includes('SN 490') ? '#10B981' : '#3B82F6';
+      const color1 = item.description.includes('SS 400') ? '#059669' : item.description.includes('SN 490') ? '#10B981' : '#3B82F6';
+      const color2 = item.description.includes('SS 400') ? '#047857' : item.description.includes('SN 490') ? '#059669' : '#2563EB';
 
       barChartHtml += `
-        <div style="display:flex;align-items:center;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;margin-bottom:12px;">
           <div style="width:140px;font-size:11px;color:#4B5563;">${dateStr} - #${item.order_no.slice(-5)}</div>
           <div style="flex:1;display:flex;align-items:center;">
-            <div style="height:14px;background-color:${color};width:${widthPct}%;"></div>
-            <div style="margin-left:10px;font-size:11px;font-weight:600;">${prodTon}</div>
+            <div style="height:14px;background:linear-gradient(90deg, ${color1}, ${color2});width:${widthPct}%;border-radius:3px;box-shadow:inset 0 -1px 1px rgba(0,0,0,0.1);"></div>
+            <div style="margin-left:10px;font-size:11px;font-weight:600;color:#374151;">${prodTon.toFixed(2)}</div>
           </div>
         </div>`;
 
       const yieldVal   = parseFloat(item.yield_percentage || 0);
       const yieldWidth = Math.min((yieldVal / 120) * 100, 100);
-      const yieldColor = yieldVal > 100 ? '#1D4ED8' : yieldVal >= 97 ? '#059669' : '#D97706';
+      const yieldColor1 = yieldVal > 100 ? '#3B82F6' : yieldVal >= 97 ? '#10B981' : '#F59E0B';
+      const yieldColor2 = yieldVal > 100 ? '#1D4ED8' : yieldVal >= 97 ? '#059669' : '#D97706';
       const benchmarkPct = ((100 / 120) * 100).toFixed(2);
 
       yieldChartHtml += `
-        <div style="display:flex;align-items:center;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;margin-bottom:12px;">
           <div style="width:140px;font-size:11px;color:#4B5563;">#${item.order_no.slice(-5)} - ${dateStr}</div>
-          <div style="flex:1;position:relative;height:14px;">
-            <div style="position:absolute;left:0;top:0;height:100%;background-color:${yieldColor};width:${yieldWidth}%;"></div>
-            <div style="position:absolute;left:${benchmarkPct}%;top:-2px;bottom:-2px;width:2px;background-color:#EF4444;opacity:0.5;"></div>
+          <div style="flex:1;position:relative;height:14px;background:#F3F4F6;border-radius:3px;overflow:hidden;">
+            <div style="position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg, ${yieldColor1}, ${yieldColor2});width:${yieldWidth}%;border-radius:3px;box-shadow:inset 0 -1px 1px rgba(0,0,0,0.1);"></div>
+            <div style="position:absolute;left:${benchmarkPct}%;top:0;bottom:0;width:2px;background-color:#EF4444;box-shadow:0 0 2px rgba(239,68,68,0.5);z-index:1;"></div>
           </div>
-          <div style="width:50px;text-align:right;font-size:11px;font-weight:600;color:${yieldColor};">${yieldVal}%</div>
+          <div style="width:50px;text-align:right;font-size:11px;font-weight:600;color:${yieldColor2};">${yieldVal}%</div>
         </div>`;
     });
 
@@ -175,6 +185,11 @@ export default {
     let analyticalHtml = '<div style="color:#9CA3AF;font-size:12px;font-style:italic;">No AI analysis generated.</div>';
     if (aiAnalysis) {
       analyticalHtml = aiAnalysis
+        .replace(/📈/g, '<i data-lucide="trending-up" class="ar-icon"></i>')
+        .replace(/🏆/g, '<i data-lucide="award" class="ar-icon"></i>')
+        .replace(/⚠️/g, '<i data-lucide="alert-triangle" class="ar-icon"></i>')
+        .replace(/🚨/g, '<i data-lucide="alert-octagon" class="ar-icon"></i>')
+        .replace(/⏱️|⏱/g, '<i data-lucide="clock" class="ar-icon"></i>')
         .replace(/### (.*)/g, '<div class="ar-section-title">$1</div>')
         .replace(/## (.*)/g, '<div class="ar-highlight">$1</div>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -191,6 +206,7 @@ export default {
 <head>
   <meta charset="utf-8">
   <title>L2 Production Report</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     body { margin:0;padding:0;font-family:'Inter',sans-serif;background:#F8FAF9;color:#1F2937;width:1600px;min-height:900px;box-sizing:border-box; }
@@ -238,6 +254,7 @@ export default {
     .ar-highlight { font-size:16px; color:#1D4ED8; font-weight:700; margin-bottom:4px; margin-top:2px; }
     .ar-spacing { height: 16px; }
     .ar-content { font-size:12px; color:#374151; line-height:1.6; }
+    .ar-icon { width:15px; height:15px; stroke-width:2.5px; vertical-align:-3px; margin-right:4px; color:#0D5C46; }
     
     .footer { background:#0D5C46;color:#A7F3D0;padding:18px 50px;display:flex;justify-content:space-between;font-size:10px;margin-top:auto; }
     .footer strong { color:#D4AF37; }
@@ -309,7 +326,7 @@ export default {
     </table>
 
     <div class="obs">
-      <div class="obs-icon">&#128203;</div>
+      <div class="obs-icon"><i data-lucide="info" style="width:24px;height:24px;color:#059669;stroke-width:2px;"></i></div>
       <div class="obs-text"><strong>Key Observations:</strong> ${basicObservations}</div>
     </div>
 
@@ -350,7 +367,9 @@ export default {
       Member of Yamato Group
     </div>
   </div>
-
+  <script>
+    lucide.createIcons();
+  </script>
 </body>
 </html>`;
 
