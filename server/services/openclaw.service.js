@@ -202,7 +202,7 @@ export default {
     body { margin:0;padding:0;font-family:'Inter',sans-serif;background:#F8FAF9;color:#1F2937;width:1600px;min-height:900px;box-sizing:border-box; }
     .header-bg { background-color:#0D5C46;height:110px;padding:0 50px;display:flex;justify-content:space-between;align-items:center;position:relative; }
     .header-bg::after { content:'';position:absolute;bottom:0;left:0;right:0;height:6px;background-color:#D4AF37; }
-    .logo-box { background:white;padding:12px 20px;border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;height:44px; }
+    .logo-box { background:transparent; display:flex;align-items:center;justify-content:center;height:44px; }
     .header-text { text-align:right;color:white; }
     .header-text .subtitle { font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#A7F3D0;margin-bottom:5px; }
     .header-text h1 { margin:0;font-size:30px;font-weight:300;letter-spacing:-0.5px; }
@@ -259,7 +259,7 @@ export default {
       <h1>L2 Production <strong>Report</strong></h1>
       <div class="date">Rolling Mill Performance &middot; ${dateRangeLabel}</div>
     </div>
-    ${openClawLogoBase64 ? `<img src="${openClawLogoBase64}" style="height:48px; object-fit:contain; filter: brightness(0) invert(1) opacity(0.9);" />` : ''}
+    ${openClawLogoBase64 ? `<img src="${openClawLogoBase64}" style="height:48px; object-fit:contain; opacity:0.9;" />` : ''}
   </div>
 
   <div class="content">
