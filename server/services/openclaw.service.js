@@ -187,8 +187,8 @@ export default {
     }
 
     const logoHtml = logoBase64
-      ? `<img src="${logoBase64}" alt="Logo" style="height:40px;max-width:120px;object-fit:contain;" />`
-      : '<div style="font-size:20px;font-weight:bold;color:#0D5C46;">GYS</div>';
+      ? `<img src="${logoBase64}" alt="Logo" style="height:65px;max-width:220px;object-fit:contain;" />`
+      : '<div style="font-size:32px;font-weight:bold;color:#0D5C46;">GYS</div>';
 
     const htmlContent = `<!DOCTYPE html>
 <html>
@@ -204,10 +204,10 @@ export default {
     .header-bg::after { content:'';position:absolute;bottom:0;left:0;right:0;height:6px;background-color:#D4AF37; }
     .logo-box { background:transparent; display:flex;align-items:center;justify-content:center;height:44px; }
     .header-text { text-align:right;color:white; }
-    .header-text .subtitle { font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#A7F3D0;margin-bottom:5px; }
-    .header-text h1 { margin:0;font-size:30px;font-weight:300;letter-spacing:-0.5px; }
+    .header-text .subtitle { font-size:14px;text-transform:uppercase;letter-spacing:2px;color:#A7F3D0;margin-bottom:6px; }
+    .header-text h1 { margin:0;font-size:42px;font-weight:300;letter-spacing:-0.5px; }
     .header-text h1 strong { font-weight:700; }
-    .header-text .date { font-size:13px;color:#D1FAE5;margin-top:6px; }
+    .header-text .date { font-size:15px;color:#D1FAE5;margin-top:8px; }
     .content { padding:40px 50px; }
     .kpi-row { display:flex;gap:16px;margin-bottom:36px; }
     .kpi-card { flex:1;background:white;border-top:3px solid #0D5C46;padding:18px;box-shadow:0 1px 3px rgba(0,0,0,0.06); }
@@ -253,13 +253,21 @@ export default {
 <body>
 
   <div class="header-bg">
-    <div class="logo-box">${logoHtml}</div>
-    <div class="header-text" style="flex:1; margin-right: 30px;">
+    <div style="display:flex;align-items:center;gap:32px;">
+      <div class="logo-box">${logoHtml}</div>
+      <div style="color:white; border-left: 2px solid rgba(255,255,255,0.2); padding-left: 32px;">
+        <div style="font-size:28px;font-weight:700;letter-spacing:2px;margin-bottom:4px;">PLANT 1</div>
+        <div style="font-size:13px;color:#A7F3D0;letter-spacing:3px;text-transform:uppercase;">PT Garuda Yamato Steel</div>
+      </div>
+    </div>
+    
+    <div class="header-text" style="flex:1; margin-right: 40px;">
       <div class="subtitle">OPERATIONS INTELLIGENCE &middot; STEEL DIVISION</div>
       <h1>L2 Production <strong>Report</strong></h1>
       <div class="date">Rolling Mill Performance &middot; ${dateRangeLabel}</div>
     </div>
-    ${openClawLogoBase64 ? `<img src="${openClawLogoBase64}" style="height:48px; object-fit:contain; opacity:0.9;" />` : ''}
+    
+    ${openClawLogoBase64 ? `<img src="${openClawLogoBase64}" style="height:60px; object-fit:contain; opacity:0.9;" />` : ''}
   </div>
 
   <div class="content">
