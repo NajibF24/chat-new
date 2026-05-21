@@ -121,47 +121,36 @@ export default {
       });
     }
 
-    // Bar Charts
-    let barChartHtml = '';
-    let yieldChartHtml = '';
-    const maxProdTon = Math.max(...items.map(i => parseFloat(i.production_ton || 0)), 1);
+    // Chart Data Preparation for ApexCharts
+    const categoriesProd = [];
+    const dataProd = [];
+    const categoriesYield = [];
+    const dataYield = [];
 
-    items.forEach(item => {
-      const prodTon  = parseFloat(item.production_ton || 0);
-      const widthPct = (prodTon / maxProdTon) * 100;
-      const dateObj  = new Date(item.production_date);
-      const dateStr  = isNaN(dateObj.getTime())
-        ? item.production_date
-        : dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    if (items.length > 0) {
+      items.forEach(item => {
+        const prodTon  = parseFloat(item.production_ton || 0);
+        const yieldVal = parseFloat(item.yield_percentage || 0);
+        
+        const dateObj  = new Date(item.production_date);
+        const dateStr  = isNaN(dateObj.getTime())
+          ? item.production_date
+          : dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
-      const color1 = item.description.includes('SS 400') ? '#059669' : item.description.includes('SN 490') ? '#10B981' : '#3B82F6';
-      const color2 = item.description.includes('SS 400') ? '#047857' : item.description.includes('SN 490') ? '#059669' : '#2563EB';
+        categoriesProd.push(`${dateStr} - #${item.order_no.slice(-5)}`);
+        dataProd.push(prodTon.toFixed(2));
+        
+        categoriesYield.push(`#${item.order_no.slice(-5)} - ${dateStr}`);
+        dataYield.push(yieldVal.toFixed(2));
+      });
+    }
 
-      barChartHtml += `
-        <div style="display:flex;align-items:center;margin-bottom:12px;">
-          <div style="width:140px;font-size:11px;color:#4B5563;">${dateStr} - #${item.order_no.slice(-5)}</div>
-          <div style="flex:1;display:flex;align-items:center;">
-            <div style="height:14px;background:linear-gradient(90deg, ${color1}, ${color2});width:${widthPct}%;border-radius:3px;box-shadow:inset 0 -1px 1px rgba(0,0,0,0.1);"></div>
-            <div style="margin-left:10px;font-size:11px;font-weight:600;color:#374151;">${prodTon.toFixed(2)}</div>
-          </div>
-        </div>`;
-
-      const yieldVal   = parseFloat(item.yield_percentage || 0);
-      const yieldWidth = Math.min((yieldVal / 120) * 100, 100);
-      const yieldColor1 = yieldVal > 100 ? '#3B82F6' : yieldVal >= 97 ? '#10B981' : '#F59E0B';
-      const yieldColor2 = yieldVal > 100 ? '#1D4ED8' : yieldVal >= 97 ? '#059669' : '#D97706';
-      const benchmarkPct = ((100 / 120) * 100).toFixed(2);
-
-      yieldChartHtml += `
-        <div style="display:flex;align-items:center;margin-bottom:12px;">
-          <div style="width:140px;font-size:11px;color:#4B5563;">#${item.order_no.slice(-5)} - ${dateStr}</div>
-          <div style="flex:1;position:relative;height:14px;background:#F3F4F6;border-radius:3px;overflow:hidden;">
-            <div style="position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg, ${yieldColor1}, ${yieldColor2});width:${yieldWidth}%;border-radius:3px;box-shadow:inset 0 -1px 1px rgba(0,0,0,0.1);"></div>
-            <div style="position:absolute;left:${benchmarkPct}%;top:0;bottom:0;width:2px;background-color:#EF4444;box-shadow:0 0 2px rgba(239,68,68,0.5);z-index:1;"></div>
-          </div>
-          <div style="width:50px;text-align:right;font-size:11px;font-weight:600;color:${yieldColor2};">${yieldVal}%</div>
-        </div>`;
-    });
+    const chartDataObj = {
+      categoriesProd,
+      dataProd,
+      categoriesYield,
+      dataYield
+    };
 
     // Key Observations
     const dummy = { yield_percentage: 0, order_no: '0000000000' };
@@ -207,6 +196,7 @@ export default {
   <meta charset="utf-8">
   <title>L2 Production Report</title>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     body { margin:0;padding:0;font-family:'Inter',sans-serif;background:#F8FAF9;color:#1F2937;width:1600px;min-height:900px;box-sizing:border-box; }
@@ -334,12 +324,11 @@ export default {
       <div class="left-col">
         <div class="chart-card">
           <div class="chart-title">Production Output by Order (Metric Tons)</div>
-          ${barChartHtml || '<div style="color:#9CA3AF;font-size:12px;">No data</div>'}
+          <div id="prodChart"></div>
         </div>
         <div class="chart-card">
           <div class="chart-title">Yield Performance vs. 100% Benchmark</div>
-          <div style="margin-bottom:10px;font-size:10px;color:#6B7280;text-align:right;">Target &ge; 97.0% (Red line = 100%)</div>
-          ${yieldChartHtml || '<div style="color:#9CA3AF;font-size:12px;">No data</div>'}
+          <div id="yieldChart"></div>
         </div>
       </div>
       
@@ -369,6 +358,44 @@ export default {
   </div>
   <script>
     lucide.createIcons();
+
+    const chartData = ${JSON.stringify(chartDataObj)};
+    const commonOptions = {
+      chart: { type: 'bar', height: 280, animations: { enabled: false }, toolbar: { show: false } },
+      plotOptions: { bar: { horizontal: true, borderRadius: 3, dataLabels: { position: 'top' } } },
+      dataLabels: { enabled: true, textAnchor: 'start', style: { colors: ['#374151'], fontSize: '11px', fontWeight: 600 }, offsetX: 20 },
+      xaxis: { labels: { style: { colors: '#6B7280', fontSize: '10px' } } },
+      yaxis: { labels: { style: { colors: '#4B5563', fontSize: '11px', fontWeight: 500 } } },
+      grid: { borderColor: '#F3F4F6', strokeDashArray: 4 },
+      tooltip: { enabled: false }
+    };
+
+    if (chartData.dataProd.length > 0) {
+      new ApexCharts(document.querySelector("#prodChart"), {
+        ...commonOptions,
+        series: [{ name: 'Production (MT)', data: chartData.dataProd }],
+        xaxis: { categories: chartData.categoriesProd },
+        colors: ['#0D5C46'],
+        dataLabels: { ...commonOptions.dataLabels, formatter: function(val) { return val + " MT" } }
+      }).render();
+
+      new ApexCharts(document.querySelector("#yieldChart"), {
+        ...commonOptions,
+        series: [{ name: 'Yield (%)', data: chartData.dataYield }],
+        xaxis: { categories: chartData.categoriesYield, max: 120 },
+        annotations: {
+          xaxis: [
+            { x: 97, strokeDashArray: 0, borderColor: '#F59E0B', label: { style: { color: '#fff', background: '#F59E0B', fontSize: '10px', padding: { top: 2, bottom: 2, left: 4, right: 4 } }, text: 'Target 97%' } },
+            { x: 100, strokeDashArray: 0, borderColor: '#EF4444', label: { style: { color: '#fff', background: '#EF4444', fontSize: '10px', padding: { top: 2, bottom: 2, left: 4, right: 4 } }, text: '100%' } }
+          ]
+        },
+        plotOptions: { bar: { horizontal: true, borderRadius: 3, colors: { ranges: [{ from: 0, to: 96.99, color: '#D97706' }, { from: 97, to: 100, color: '#10B981' }, { from: 100.01, to: 1000, color: '#1D4ED8' }] }, dataLabels: { position: 'top' } } },
+        dataLabels: { ...commonOptions.dataLabels, formatter: function(val) { return val + "%" } }
+      }).render();
+    } else {
+      document.querySelector("#prodChart").innerHTML = '<div style="color:#9CA3AF;font-size:12px;">No data</div>';
+      document.querySelector("#yieldChart").innerHTML = '<div style="color:#9CA3AF;font-size:12px;">No data</div>';
+    }
   </script>
 </body>
 </html>`;
