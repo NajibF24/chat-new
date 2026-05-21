@@ -162,18 +162,24 @@ export default {
       ? items.reduce((min, i) => parseFloat(i.yield_percentage) < parseFloat(min.yield_percentage) ? i : min, items[0])
       : dummy;
 
-    let observations = `Production across ${dateRangeLabel} totalled <strong>${totalProdTon.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MT</strong> across ${items.length} orders. `;
+    let basicObservations = `Production across ${dateRangeLabel} totalled <strong>${totalProdTon.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MT</strong> across ${items.length} orders. `;
     if (items.length > 0) {
       if (parseFloat(highestYield.yield_percentage) > 100) {
-        observations += `Order <strong>#${highestYield.order_no.slice(-5)}</strong> recorded an anomalous over-yield of ${highestYield.yield_percentage}% &mdash; data verification recommended. `;
+        basicObservations += `Order <strong>#${highestYield.order_no.slice(-5)}</strong> recorded an anomalous over-yield of ${highestYield.yield_percentage}% &mdash; data verification recommended. `;
       }
       if (parseFloat(lowestYield.yield_percentage) < 97) {
-        observations += `Order <strong>#${lowestYield.order_no.slice(-5)}</strong> fell below the 97% threshold (${lowestYield.yield_percentage}%); root cause analysis advised.`;
+        basicObservations += `Order <strong>#${lowestYield.order_no.slice(-5)}</strong> fell below the 97% threshold (${lowestYield.yield_percentage}%); root cause analysis advised.`;
       }
     }
 
+    let analyticalHtml = '<div style="color:#9CA3AF;font-size:12px;font-style:italic;">No AI analysis generated.</div>';
     if (aiAnalysis) {
-      observations = aiAnalysis.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+      analyticalHtml = aiAnalysis
+        .replace(/### (.*)/g, '<div class="ar-section-title">$1</div>')
+        .replace(/## (.*)/g, '<div class="ar-highlight">$1</div>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n\n/g, '<div class="ar-spacing"></div>')
+        .replace(/\n/g, '<br>');
     }
 
     const logoHtml = logoBase64
@@ -187,7 +193,7 @@ export default {
   <title>L2 Production Report</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-    body { margin:0;padding:0;font-family:'Inter',sans-serif;background:#F8FAF9;color:#1F2937;width:1400px;min-height:900px;box-sizing:border-box; }
+    body { margin:0;padding:0;font-family:'Inter',sans-serif;background:#F8FAF9;color:#1F2937;width:1600px;min-height:900px;box-sizing:border-box; }
     .header-bg { background-color:#0D5C46;height:110px;padding:0 50px;display:flex;justify-content:space-between;align-items:center;position:relative; }
     .header-bg::after { content:'';position:absolute;bottom:0;left:0;right:0;height:6px;background-color:#D4AF37; }
     .logo-box { background:white;padding:12px 20px;border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;height:44px; }
@@ -214,12 +220,26 @@ export default {
     td { padding:11px 14px;border-bottom:1px solid #E5E7EB;color:#374151; }
     tr:nth-child(even) { background:#F9FAFB; }
     .charts-row { display:flex;gap:24px;margin-bottom:28px; }
-    .chart-card { flex:1;background:white;border:1px solid #E5E7EB;padding:22px;box-shadow:0 1px 3px rgba(0,0,0,0.05); }
+    .chart-card { background:white;border:1px solid #E5E7EB;padding:22px;box-shadow:0 1px 3px rgba(0,0,0,0.05); }
     .chart-title { font-size:13px;color:#0D5C46;font-weight:600;margin-bottom:20px; }
-    .obs { background:#ECFDF5;border-left:4px solid #10B981;padding:18px;display:flex;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,0.05); }
+    .obs { background:#ECFDF5;border-left:4px solid #10B981;padding:18px;display:flex;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,0.05); margin-bottom:24px; }
     .obs-icon { font-size:22px;flex-shrink:0; }
     .obs-text { font-size:12px;color:#065F46;line-height:1.7; }
-    .footer { background:#0D5C46;color:#A7F3D0;padding:18px 50px;display:flex;justify-content:space-between;font-size:10px;margin-top:36px; }
+
+    .bottom-row { display:flex; gap:24px; margin-bottom:28px; }
+    .left-col { flex:0 0 45%; display:flex; flex-direction:column; gap:24px; }
+    .right-col { flex:1; background:white; border:1px solid #E5E7EB; border-top:4px solid #0D5C46; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,0.05); }
+    
+    .ar-label { font-size:10px; color:white; background:#0D5C46; padding:4px 8px; display:inline-block; font-weight:700; letter-spacing:1px; margin-bottom:12px; }
+    .ar-title { font-size:18px; color:#111827; font-weight:800; letter-spacing:-0.5px; text-transform:uppercase; margin-bottom:4px; }
+    .ar-subtitle { font-size:11px; color:#6B7280; margin-bottom:24px; border-bottom:1px solid #E5E7EB; padding-bottom:12px; }
+    
+    .ar-section-title { font-size:11px; font-weight:700; color:#0D5C46; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; background:#ECFDF5; padding:6px 10px; display:inline-block; border-radius:4px; }
+    .ar-highlight { font-size:16px; color:#1D4ED8; font-weight:700; margin-bottom:4px; margin-top:2px; }
+    .ar-spacing { height: 16px; }
+    .ar-content { font-size:12px; color:#374151; line-height:1.6; }
+    
+    .footer { background:#0D5C46;color:#A7F3D0;padding:18px 50px;display:flex;justify-content:space-between;font-size:10px;margin-top:auto; }
     .footer strong { color:#D4AF37; }
   </style>
 </head>
@@ -288,21 +308,32 @@ export default {
       <tbody>${tableRowsHtml}</tbody>
     </table>
 
-    <div class="charts-row">
-      <div class="chart-card">
-        <div class="chart-title">Production Output by Order (Metric Tons)</div>
-        ${barChartHtml || '<div style="color:#9CA3AF;font-size:12px;">No data</div>'}
-      </div>
-      <div class="chart-card">
-        <div class="chart-title">Yield Performance vs. 100% Benchmark</div>
-        <div style="margin-bottom:10px;font-size:10px;color:#6B7280;text-align:right;">Target &ge; 97.0% (Red line = 100%)</div>
-        ${yieldChartHtml || '<div style="color:#9CA3AF;font-size:12px;">No data</div>'}
-      </div>
-    </div>
-
     <div class="obs">
       <div class="obs-icon">&#128203;</div>
-      <div class="obs-text"><strong>Key Observations:</strong> ${observations}</div>
+      <div class="obs-text"><strong>Key Observations:</strong> ${basicObservations}</div>
+    </div>
+
+    <div class="bottom-row">
+      <div class="left-col">
+        <div class="chart-card">
+          <div class="chart-title">Production Output by Order (Metric Tons)</div>
+          ${barChartHtml || '<div style="color:#9CA3AF;font-size:12px;">No data</div>'}
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Yield Performance vs. 100% Benchmark</div>
+          <div style="margin-bottom:10px;font-size:10px;color:#6B7280;text-align:right;">Target &ge; 97.0% (Red line = 100%)</div>
+          ${yieldChartHtml || '<div style="color:#9CA3AF;font-size:12px;">No data</div>'}
+        </div>
+      </div>
+      
+      <div class="right-col">
+        <div class="ar-label">ANALYTICAL REPORT</div>
+        <div class="ar-title">PRODUCTION PERFORMANCE ANALYSIS</div>
+        <div class="ar-subtitle">Period: ${dateRangeLabel} &middot; L2 Rolling Mill</div>
+        <div class="ar-content">
+          ${analyticalHtml}
+        </div>
+      </div>
     </div>
 
   </div>
@@ -328,7 +359,7 @@ export default {
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     const page = await browser.newPage();
-    await page.setViewport({ width: 1400, height: 900, deviceScaleFactor: 2 });
+    await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 2 });
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     await page.screenshot({ path: filepath, fullPage: true, type: 'png' });
     await browser.close();

@@ -1973,9 +1973,23 @@ Respond ONLY with a raw JSON object in this exact format: {"fromDate": "YYYY-MM-
         
         const analysisPrompt = `You are a Steel Mill Production Analyst.
 I will give you production data from OpenClaw L2 system for period ${fromDate} to ${toDate}.
-Please write a short, sharp, and insightful "Key Observations" paragraph (max 3-4 sentences).
-Highlight the best performing order, any major delays, or yield anomalies (target yield is 97%-100%, over 100% is anomalous).
-Output ONLY the analysis text. You can use markdown bold. Do not use generic greetings.
+Please write a detailed "ANALYTICAL REPORT" using Markdown. 
+Use this exact structure (with emojis):
+
+### 📈 OVERALL PERFORMANCE
+## [Value]% Avg Yield
+[Short analysis sentence. Example: Weekly weighted average of 98.21% exceeds the 97% target...]
+
+### 🏆 BEST PERFORMING ORDERS
+## Orders #[Order Numbers]
+[Short analysis sentence about best yield/volume]
+
+### ⚠️ DATA ANOMALY / 🚨 CRITICAL FAILURE (if any, otherwise skip or replace with ⏱️ DELAY PATTERN ANALYSIS)
+## [Value]% Yield Flag
+[Short analysis sentence about anomaly or delay]
+
+Make it sharp and insightful. Highlight the best performing order, any major delays, or yield anomalies (target yield is 97%-100%, over 100% is anomalous).
+Output ONLY the markdown text. Do not use generic greetings.
 
 DATA:
 ${JSON.stringify(summaryData)}`;
