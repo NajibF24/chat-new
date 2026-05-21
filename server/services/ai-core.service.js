@@ -29,6 +29,7 @@ import PptxService            from './pptx.service.js';
 import DocService             from './doc.service.js';
 import ExcelService           from './excel.service.js';
 import NewsletterService      from './newsletter.service.js';
+import OpenClawService        from './openclaw.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
@@ -549,6 +550,12 @@ export function isNewsletterCommand(text) {
   if (!text) return false;
   const lower = text.toLowerCase();
   return lower.includes('/newsletter') || lower.includes('signal') || lower.includes('newsletter');
+}
+
+export function isOpenClawCommand(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return lower.includes('/openclaw') || lower.includes('production report') || lower.includes('l2 report') || lower.includes('report produksi');
 }
 
 
@@ -1185,6 +1192,10 @@ class AICoreService {
 
       if (isNewsletterCommand(message)) {
         return this._handleNewsletterCommand({ userId, botId, bot, message, threadId, history, attachedFile });
+      }
+
+      if (isOpenClawCommand(message)) {
+        return this._handleOpenClawCommand({ userId, botId, bot, message, threadId, history });
       }
 
     // ── ✅ NEW: Image Generation Handler ───────────────────────
@@ -1892,6 +1903,46 @@ class AICoreService {
     } catch (error) {
       console.error('❌ [NEWSLETTER Command]', error);
       throw new Error(`Gagal membuat newsletter: ${error.message}`);
+    }
+  }
+
+  async _handleOpenClawCommand({ userId, botId, bot, message, threadId, history = [] }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      
+      console.log('[OPENCLAW] Generating Production Report Image...');
+      
+      // Basic date parsing from message if needed, or default to yesterday & today
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      const fromDate = yesterday.toISOString().split('T')[0];
+      const toDate = today.toISOString().split('T')[0];
+
+      // Fetch data
+      const data = await OpenClawService.fetchProductionReport(fromDate, toDate);
+      
+      // Generate image
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      const result = await OpenClawService.generateReportImage({ data, outputDir, fromDate, toDate });
+
+      const responseMarkdown = `✅ **L2 Production Report berhasil dibuat!**\n\n📅 **Periode:** ${fromDate} s/d ${toDate}\n\n![OpenClaw Report](${result.fileUrl})\n\n---\n### [⬇️ Download Report (.png)](${result.fileUrl})`;
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: [],
+      }).save();
+      
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: [],
+      };
+    } catch (error) {
+      console.error('❌ [OPENCLAW Command]', error);
+      throw new Error(`Gagal membuat report OpenClaw: ${error.message}`);
     }
   }
 
