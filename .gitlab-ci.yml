@@ -183,6 +183,7 @@ deploy_client_dev:
       changes:
         - client/**/*
         - .gitlab-ci.yml
+# Trigger rebuild
   needs: ["build_client_dev"]
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
@@ -270,5 +271,4 @@ deploy_client_release:
     - echo "$DOT_ENV_FILE" > .env
     - docker pull $CLIENT_IMAGE_TAG
     - docker compose up -d --no-deps --force-recreate client
-    - docker image prune -f 
- 
+    - docker image prune -f
