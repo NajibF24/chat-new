@@ -136,4 +136,5 @@ services:
 
 networks:
   internal-chat-network:
+    name: internal-chat-network
     driver: bridge
