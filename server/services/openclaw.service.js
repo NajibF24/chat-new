@@ -199,7 +199,7 @@ export default {
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-    body { margin:0;padding:0;font-family:'Inter',sans-serif;background:#F8FAF9;color:#1F2937;width:1600px;min-height:900px;box-sizing:border-box; }
+    body { margin:0;padding:0;font-family:'Inter',sans-serif;background:#F8FAF9;color:#1F2937;width:1920px;min-height:1080px;box-sizing:border-box; }
     .header-bg { background-color:#0D5C46;height:110px;padding:0 50px;display:flex;justify-content:space-between;align-items:center;position:relative; }
     .header-bg::after { content:'';position:absolute;bottom:0;left:0;right:0;height:6px;background-color:#D4AF37; }
     .logo-box { background:transparent; display:flex;align-items:center;justify-content:center;height:44px; }
@@ -405,7 +405,7 @@ export default {
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     const page = await browser.newPage();
-    await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 2 });
+    await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 2 });
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     await page.screenshot({ path: filepath, fullPage: true, type: 'png' });
     await browser.close();
