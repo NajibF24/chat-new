@@ -29,7 +29,11 @@ export default {
 
     // Format current date and time
     const now = new Date();
-    const generatedTime = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + ' ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+    const generatedTime = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + ' · ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+
+    const fromDateStr = new Date(fromDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const toDateStr = new Date(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const dateRangeLabel = fromDate === toDate ? fromDateStr : `${new Date(fromDate).getDate()} - ${toDateStr}`;
 
     // Logo
     const logoPath = path.join(process.cwd(), 'assets', 'gys-logo.webp');
@@ -45,36 +49,107 @@ export default {
       logoBase64 = 'data:image/webp;base64,' + logoBuf.toString('base64');
     }
 
-    // Prepare table rows from API data
+    // Data Processing
     const items = data?.data || [];
-    let tableRowsHtml = '';
     let totalRawTon = 0;
     let totalProdTon = 0;
+    let totalPieces = 0;
+    let totalConsumption = 0;
+    
+    items.forEach(item => {
+      totalRawTon += parseFloat(item.raw_material_ton || 0);
+      totalProdTon += parseFloat(item.production_ton || 0);
+      totalPieces += parseInt(item.production_pcs || 0);
+      totalConsumption += parseInt(item.total_consumption || 0);
+    });
 
+    const avgYield = totalRawTon > 0 ? (totalProdTon / totalRawTon) * 100 : 0;
+
+    // Generate Table Rows
+    let tableRowsHtml = '';
     if (items.length === 0) {
-      tableRowsHtml = `<tr><td colspan="9" style="text-align:center; padding: 30px;">No production data available for this date range.</td></tr>`;
+      tableRowsHtml = `<tr><td colspan="10" style="text-align:center; padding: 30px;">No production data available for this date range.</td></tr>`;
     } else {
-      items.forEach(item => {
-        totalRawTon += parseFloat(item.raw_material_ton || 0);
-        totalProdTon += parseFloat(item.production_ton || 0);
+      items.forEach((item, index) => {
+        const yieldVal = parseFloat(item.yield_percentage);
+        let yieldColor = yieldVal > 100 ? '#1D4ED8' : yieldVal >= 97 ? '#059669' : '#D97706';
+        let delayColor = parseInt(item.total_delay_seconds) > 300 ? '#DC2626' : parseInt(item.total_delay_seconds) > 100 ? '#D97706' : '#059669';
         
+        let dateObj = new Date(item.production_date);
+        let dateStr = isNaN(dateObj) ? item.production_date : dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
         tableRowsHtml += `
           <tr>
-            <td>${item.rn}</td>
-            <td>${item.order_no}</td>
+            <td style="text-align:center;">${index + 1}</td>
+            <td><strong>${item.order_no}</strong><br><span style="font-size:11px; color:#6B7280;">${dateStr}</span></td>
             <td>${item.description}</td>
             <td style="text-align: right;">${item.raw_material_pcs}</td>
             <td style="text-align: right;">${item.raw_material_ton}</td>
-            <td style="text-align: right;">${item.production_pcs}</td>
             <td style="text-align: right;">${item.production_ton}</td>
-            <td style="text-align: right; font-weight: bold; color: ${parseFloat(item.yield_percentage) > 95 ? '#059669' : '#DC2626'};">${item.yield_percentage}%</td>
-            <td style="text-align: center;">${item.total_delay_seconds}s</td>
+            <td style="text-align: right;">${item.production_pcs}</td>
+            <td style="text-align: right; font-weight: bold; color: ${yieldColor};">${yieldVal}%</td>
+            <td style="text-align: right;"><span style="color:${delayColor}; margin-right:4px;">●</span> ${item.total_delay_seconds}</td>
+            <td style="text-align: right;">${item.total_consumption}</td>
           </tr>
         `;
       });
     }
 
-    const htmlContent = `
+    // Generate Chart Data
+    let barChartHtml = '';
+    let yieldChartHtml = '';
+    const maxProdTon = Math.max(...items.map(i => parseFloat(i.production_ton || 0)), 1);
+    
+    items.forEach((item, index) => {
+      const prodTon = parseFloat(item.production_ton || 0);
+      const widthPct = (prodTon / maxProdTon) * 100;
+      let dateObj = new Date(item.production_date);
+      let dateStr = isNaN(dateObj) ? item.production_date : dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      
+      const isSS400 = item.description.includes('SS 400');
+      const isSN490 = item.description.includes('SN 490');
+      const color = isSS400 ? '#0D5C46' : isSN490 ? '#10B981' : '#3B82F6';
+
+      barChartHtml += `
+        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+          <div style="width: 140px; font-size: 11px; color: #4B5563;">${dateStr} - #${item.order_no.slice(-5)}</div>
+          <div style="flex: 1; display: flex; align-items: center;">
+            <div style="height: 14px; background-color: ${color}; width: ${widthPct}%;"></div>
+            <div style="margin-left: 10px; font-size: 11px; font-weight: 600;">${prodTon}</div>
+          </div>
+        </div>
+      `;
+
+      const yieldVal = parseFloat(item.yield_percentage || 0);
+      const yieldWidth = Math.min((yieldVal / 120) * 100, 100); // Scale up to 120%
+      const yieldColor = yieldVal > 100 ? '#1D4ED8' : yieldVal >= 97 ? '#059669' : '#D97706';
+
+      yieldChartHtml += `
+        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+          <div style="width: 140px; font-size: 11px; color: #4B5563;">#${item.order_no.slice(-5)} - ${dateStr}</div>
+          <div style="flex: 1; position: relative; height: 14px;">
+            <div style="position: absolute; left: 0; top: 0; height: 100%; background-color: ${yieldColor}; width: ${yieldWidth}%;"></div>
+            <div style="position: absolute; left: ${(100/120)*100}%; top: -2px; bottom: -2px; width: 2px; background-color: #EF4444; opacity: 0.5;"></div>
+          </div>
+          <div style="width: 50px; text-align: right; font-size: 11px; font-weight: 600; color: ${yieldColor};">${yieldVal}%</div>
+        </div>
+      `;
+    });
+
+    // Key Observations
+    let highestYield = items.reduce((max, i) => parseFloat(i.yield_percentage) > parseFloat(max.yield_percentage) ? i : max, items[0] || {yield_percentage:0});
+    let lowestYield = items.reduce((min, i) => parseFloat(i.yield_percentage) < parseFloat(min.yield_percentage) ? i : min, items[0] || {yield_percentage:0});
+    let observations = `Production across ${dateRangeLabel} totalled <strong>${totalProdTon.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} MT</strong> across ${items.length} orders. `;
+    if (items.length > 0) {
+      if (parseFloat(highestYield.yield_percentage) > 100) {
+        observations += `Order <strong>#${highestYield.order_no.slice(-5)}</strong> recorded an anomalous over-yield of ${highestYield.yield_percentage}% &mdash; data verification recommended. `;
+      }
+      if (parseFloat(lowestYield.yield_percentage) < 97) {
+        observations += `Order <strong>#${lowestYield.order_no.slice(-5)}</strong> fell below the 97% threshold (${lowestYield.yield_percentage}%); root cause analysis advised.`;
+      }
+    }
+
+    const htmlContent = \`
 <!DOCTYPE html>
 <html>
 <head>
@@ -84,223 +159,293 @@ export default {
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     
     body {
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 0;
       font-family: 'Inter', sans-serif;
-      background-color: #F3F4F6;
+      background-color: #F8FAF9; /* Very light gray/green */
       color: #1F2937;
       width: 1400px;
-      min-height: 800px;
-      height: auto;
+      min-height: 900px;
       box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
     }
     
-    .header {
-      background: linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 100%);
-      color: white;
-      padding: 30px 50px;
+    .header-bg {
+      background-color: #0D5C46; /* Deep Teal */
+      height: 110px;
+      padding: 0 50px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 6px solid #F59E0B;
+      position: relative;
+    }
+    .header-bg::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 6px;
+      background-color: #D4AF37; /* Gold */
     }
     
     .logo-container {
+      background: white;
+      padding: 15px 25px;
+      border-radius: 4px;
+      margin-top: 40px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      display: inline-block;
+      height: 40px;
       display: flex;
       align-items: center;
-      gap: 20px;
+      justify-content: center;
     }
+    .logo-container img { height: 40px; max-width: 120px; object-fit: contain; }
     
-    .logo-container img {
-      height: 60px;
+    .header-text {
+      text-align: right;
+      color: white;
+      margin-top: 20px;
     }
-    
-    .title-block h1 {
+    .header-text .subtitle {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #A7F3D0;
+      margin-bottom: 5px;
+    }
+    .header-text h1 {
       margin: 0;
-      font-size: 36px;
-      font-weight: 800;
+      font-size: 32px;
+      font-weight: 300;
       letter-spacing: -0.5px;
     }
-    
-    .title-block p {
-      margin: 5px 0 0 0;
-      font-size: 18px;
-      color: #93C5FD;
+    .header-text h1 strong { font-weight: 700; }
+    .header-text .date {
+      font-size: 13px;
+      color: #D1FAE5;
+      margin-top: 8px;
     }
     
-    .date-badge {
-      background: rgba(255, 255, 255, 0.2);
-      padding: 10px 20px;
-      border-radius: 8px;
-      text-align: right;
-    }
+    .content { padding: 50px; }
     
-    .date-badge .label {
-      font-size: 12px;
+    .kpi-row {
+      display: flex; gap: 20px;
+      margin-bottom: 40px;
+    }
+    .kpi-card {
+      flex: 1;
+      background: white;
+      border-top: 3px solid #0D5C46;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .kpi-card.highlight {
+      background: #0D5C46;
+      color: white;
+      border-top-color: #D4AF37;
+    }
+    .kpi-title {
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 1px;
-      color: #DBEAFE;
-      margin-bottom: 4px;
+      color: #6B7280;
+      margin-bottom: 15px;
     }
-    
-    .date-badge .value {
-      font-size: 20px;
-      font-weight: 700;
+    .kpi-card.highlight .kpi-title { color: #A7F3D0; }
+    .kpi-value {
+      font-size: 36px;
+      font-weight: 300;
+      color: #111827;
+      margin-bottom: 5px;
     }
-    
-    .main-content {
-      padding: 40px 50px;
-      flex: 1;
+    .kpi-card.highlight .kpi-value { color: white; font-weight: 600; }
+    .kpi-desc {
+      font-size: 11px;
+      color: #9CA3AF;
     }
+    .kpi-card.highlight .kpi-desc { color: #D1FAE5; }
     
-    .summary-cards {
-      display: flex;
-      gap: 20px;
-      margin-bottom: 30px;
+    .section-title {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 15px;
     }
-    
-    .card {
-      flex: 1;
-      background: white;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-      border-left: 5px solid #3B82F6;
+    .section-title h2 {
+      margin: 0;
+      font-size: 18px;
+      color: #0D5C46;
+      font-weight: 600;
+      border-left: 5px solid #0D5C46;
+      padding-left: 10px;
     }
-    
-    .card:nth-child(2) { border-left-color: #10B981; }
-    .card:nth-child(3) { border-left-color: #F59E0B; }
-    
-    .card-title {
-      font-size: 14px;
+    .section-title .records {
+      font-size: 11px;
       color: #6B7280;
       text-transform: uppercase;
-      font-weight: 600;
-      margin-bottom: 10px;
-    }
-    
-    .card-value {
-      font-size: 32px;
-      font-weight: 800;
-      color: #111827;
-    }
-    
-    .table-container {
-      background: white;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+      letter-spacing: 1px;
     }
     
     table {
-      width: 100%;
-      border-collapse: collapse;
+      width: 100%; border-collapse: collapse;
+      background: white; margin-bottom: 40px;
+      font-size: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    
     th {
-      background: #F9FAFB;
-      padding: 16px 20px;
+      background: #0D5C46;
+      color: white;
+      padding: 12px 15px;
       text-align: left;
-      font-size: 13px;
-      font-weight: 700;
-      color: #4B5563;
+      font-weight: 600;
       text-transform: uppercase;
-      border-bottom: 1px solid #E5E7EB;
+      font-size: 10px;
+      letter-spacing: 0.5px;
     }
-    
     td {
-      padding: 16px 20px;
-      font-size: 15px;
+      padding: 12px 15px;
       border-bottom: 1px solid #E5E7EB;
-      color: #1F2937;
+      color: #374151;
+    }
+    tr:nth-child(even) { background: #F9FAFB; }
+    
+    .charts-row {
+      display: flex; gap: 30px; margin-bottom: 30px;
+    }
+    .chart-card {
+      flex: 1; background: white;
+      border: 1px solid #E5E7EB;
+      padding: 25px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .chart-title {
+      font-size: 14px; color: #0D5C46; font-weight: 600;
+      margin-bottom: 25px;
     }
     
-    tr:last-child td {
-      border-bottom: none;
+    .observations {
+      background: #ECFDF5;
+      border-left: 4px solid #10B981;
+      padding: 20px;
+      display: flex; gap: 15px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    
-    tr:nth-child(even) {
-      background: #F9FAFB;
+    .obs-icon { font-size: 24px; }
+    .obs-text {
+      font-size: 12px; color: #065F46; line-height: 1.6;
     }
     
     .footer {
-      background: #1F2937;
-      color: #9CA3AF;
+      background: #0D5C46;
+      color: #A7F3D0;
       padding: 20px 50px;
-      display: flex;
-      justify-content: space-between;
-      font-size: 14px;
+      display: flex; justify-content: space-between;
+      font-size: 10px;
     }
+    .footer-left strong { color: #D4AF37; }
     
   </style>
 </head>
 <body>
 
-  <div class="header">
+  <div class="header-bg">
     <div class="logo-container">
-      ${logoBase64 ? `<img src="${logoBase64}" alt="Logo" />` : '<div style="font-size: 24px; font-weight: bold;">GYS</div>'}
-      <div class="title-block">
-        <h1>L2 Production Report</h1>
-        <p>OpenClaw Automated System</p>
-      </div>
+      \${logoBase64 ? \`<img src="\${logoBase64}" alt="Logo" />\` : '<div style="font-size: 20px; font-weight: bold; color: #0D5C46;">GYS</div>'}
     </div>
-    
-    <div class="date-badge">
-      <div class="label">Periode</div>
-      <div class="value">${fromDate} to ${toDate}</div>
+    <div class="header-text">
+      <div class="subtitle">OPERATIONS INTELLIGENCE &middot; STEEL DIVISION</div>
+      <h1>L2 Production <strong>Report</strong></h1>
+      <div class="date">Rolling Mill Performance &middot; \${dateRangeLabel}</div>
     </div>
   </div>
 
-  <div class="main-content">
-    
-    <div class="summary-cards">
-      <div class="card">
-        <div class="card-title">Total Orders</div>
-        <div class="card-value">${items.length}</div>
+  <div class="content">
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-title">TOTAL INPUT</div>
+        <div class="kpi-value">\${totalRawTon.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+        <div class="kpi-desc">Metric Tons Raw Material</div>
       </div>
-      <div class="card">
-        <div class="card-title">Total Raw Material (Ton)</div>
-        <div class="card-value">${totalRawTon.toFixed(2)}</div>
+      <div class="kpi-card">
+        <div class="kpi-title">TOTAL OUTPUT</div>
+        <div class="kpi-value">\${totalProdTon.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+        <div class="kpi-desc">Metric Tons Produced</div>
       </div>
-      <div class="card">
-        <div class="card-title">Total Production (Ton)</div>
-        <div class="card-value">${totalProdTon.toFixed(2)}</div>
+      <div class="kpi-card highlight">
+        <div class="kpi-title">AVG. YIELD</div>
+        <div class="kpi-value">\${avgYield.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}%</div>
+        <div class="kpi-desc">Weighted Production Yield</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">TOTAL PIECES</div>
+        <div class="kpi-value">\${totalPieces.toLocaleString()}</div>
+        <div class="kpi-desc">Finished Pieces Produced</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">TOTAL CONSUMPTION</div>
+        <div class="kpi-value">\${totalConsumption.toLocaleString()}</div>
+        <div class="kpi-desc">Energy / Fuel Units</div>
       </div>
     </div>
 
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>Order No</th>
-            <th>Description</th>
-            <th style="text-align: right;">Raw (Pcs)</th>
-            <th style="text-align: right;">Raw (Ton)</th>
-            <th style="text-align: right;">Prod (Pcs)</th>
-            <th style="text-align: right;">Prod (Ton)</th>
-            <th style="text-align: right;">Yield</th>
-            <th style="text-align: center;">Delay</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${tableRowsHtml}
-        </tbody>
-      </table>
+    <div class="section-title">
+      <h2>Production Order Detail</h2>
+      <div class="records">\${items.length} RECORDS &middot; \${dateRangeLabel.toUpperCase()}</div>
     </div>
     
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:center;">#</th>
+          <th>ORDER NO.</th>
+          <th>PRODUCT DESCRIPTION</th>
+          <th style="text-align: right;">RM (PCS)</th>
+          <th style="text-align: right;">RM (TON)</th>
+          <th style="text-align: right;">OUTPUT (TON)</th>
+          <th style="text-align: right;">OUTPUT (PCS)</th>
+          <th style="text-align: right;">YIELD %</th>
+          <th style="text-align: right;">DELAY (S)</th>
+          <th style="text-align: right;">CONSUMPTION</th>
+        </tr>
+      </thead>
+      <tbody>
+        \${tableRowsHtml}
+      </tbody>
+    </table>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Production Output by Order (Metric Tons)</div>
+        \${barChartHtml || '<div style="color:#9CA3AF; font-size:12px;">No data</div>'}
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Yield Performance vs. 100% Benchmark</div>
+        <div style="margin-bottom:10px; font-size:10px; color:#6B7280; text-align:right;">Target &ge; 97.0% (Red line marks 100%)</div>
+        \${yieldChartHtml || '<div style="color:#9CA3AF; font-size:12px;">No data</div>'}
+      </div>
+    </div>
+
+    <div class="observations">
+      <div class="obs-icon">📋</div>
+      <div class="obs-text">
+        <strong>Key Observations:</strong> \${observations}
+      </div>
+    </div>
+
   </div>
 
   <div class="footer">
-    <div>Generated by <strong>GYS Portal AI Chatbot</strong></div>
-    <div>Timestamp: ${generatedTime}</div>
+    <div class="footer-left">
+      PT Garuda Yamato Steel &middot; L2 Production System<br>
+      Report Generated: \${generatedTime} &middot; Data: \${dateRangeLabel}<br>
+      <strong>PRIVATE &amp; CONFIDENTIAL</strong>
+    </div>
+    <div style="text-align: right;">
+      Page 1 of 1 &middot; \${items.length} Records<br>
+      Source: L2 Production API &middot; /production-report<br>
+      Member of Yamato Group
+    </div>
   </div>
 
 </body>
 </html>
-    `;
+    \`;
 
     const browser = await puppeteer.launch({
       headless: 'new',

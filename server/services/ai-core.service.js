@@ -1912,13 +1912,48 @@ class AICoreService {
       
       console.log('[OPENCLAW] Generating Production Report Image...');
       
-      // Basic date parsing from message if needed, or default to yesterday & today
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      
-      const fromDate = yesterday.toISOString().split('T')[0];
-      const toDate = today.toISOString().split('T')[0];
+      // Basic date parsing from message using AI
+      let fromDate, toDate;
+      try {
+        const datePrompt = `Extract the requested date range for the production report from this message: "${message}".
+Today's date is ${new Date().toISOString().split('T')[0]} (Asia/Jakarta timezone).
+If no specific dates are mentioned, use yesterday for fromDate and today for toDate.
+If only one date is mentioned, use it for both fromDate and toDate.
+Respond ONLY with a raw JSON object in this exact format: {"fromDate": "YYYY-MM-DD", "toDate": "YYYY-MM-DD"}`;
+
+        const dateResponse = await AIProviderService.generateCompletion({
+          providerConfig: bot.aiProvider || { provider: 'openai', model: 'gpt-4o' },
+          systemPrompt: "You are a date extraction assistant. You output ONLY valid raw JSON.",
+          messages: [],
+          userContent: datePrompt,
+          timeout: 15000,
+          maxTokens: 100,
+        });
+
+        let rawJson = dateResponse.text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+        const jsonStart = rawJson.indexOf('{');
+        const jsonEnd = rawJson.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          rawJson = rawJson.substring(jsonStart, jsonEnd + 1);
+        }
+        const parsedDates = JSON.parse(rawJson);
+        if (parsedDates.fromDate && parsedDates.toDate) {
+          fromDate = parsedDates.fromDate;
+          toDate = parsedDates.toDate;
+        }
+      } catch (parseError) {
+        console.error('[OPENCLAW] Date parsing failed, using defaults:', parseError.message);
+      }
+
+      // Fallback
+      if (!fromDate || !toDate) {
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        fromDate = yesterday.toISOString().split('T')[0];
+        toDate = today.toISOString().split('T')[0];
+      }
 
       // Fetch data
       const data = await OpenClawService.fetchProductionReport(fromDate, toDate);
