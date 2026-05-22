@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import AICoreService from '../services/ai-core.service.js';
+import AICoreService, { isContractReviewGenerationCommand } from '../services/ai-core.service.js';
 import { generateImage } from '../services/image.service.js';
 import { requireAuth } from '../middleware/auth.js';
 import User from '../models/User.js';
@@ -259,9 +259,10 @@ router.post('/message/stream', requireAuth, async (req, res) => {
     const hasSmartsheet   = bot.smartsheetConfig?.enabled;
     const hasAttachment   = !!attachedFile;
     const hasKnowledge    = bot.knowledgeFiles?.length > 0 && bot.knowledgeMode !== 'disabled';
+    const isContractReview = isContractReviewGenerationCommand(message, history, bot);
 
     // ✅ FIX: Route through processMessage for ANY complex pipeline requirement
-    if (isSpecial || hasSmartsheet || hasAttachment || hasKnowledge ||
+    if (isSpecial || hasSmartsheet || hasAttachment || hasKnowledge || isContractReview ||
         hasPptPattern || hasDocPattern || hasPdfPattern || hasExcelPattern ||
         hasNewsletterPattern || hasOpenClawPattern || hasImageGenPattern) {
       const result = await AICoreService.processMessage({
