@@ -1832,7 +1832,7 @@ class AICoreService {
         systemPrompt: safeSystemPrompt,
         messages: history,
         userContent: summaryMsg,
-        timeout: 120000,
+        timeout: 240000,
         maxTokens: 4000,
       });
 
@@ -1843,7 +1843,7 @@ class AICoreService {
         systemPrompt: safeSystemPrompt,
         messages: history,
         userContent: reviewMsg,
-        timeout: 120000,
+        timeout: 300000,
         maxTokens: 8000, // May need high tokens for full contract
       });
 
