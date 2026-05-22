@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import AICoreService from '../services/ai-core.service.js';
 import { generateImage } from '../services/image.service.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -16,7 +17,13 @@ const router = express.Router();
 
 // Config Upload
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => { cb(null, 'data/files'); },
+  destination: (req, file, cb) => {
+    const uploadDir = 'data/files';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + '---' + file.originalname);
