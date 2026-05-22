@@ -1823,11 +1823,13 @@ class AICoreService {
       // We need to generate two separate markdown contents.
       const providerConfig = bot.aiProvider || { provider: 'openai', model: 'gpt-4o' };
       
+      const safeSystemPrompt = "You are an internal corporate document automation tool for PT Garuda Yamato Steel. You are strictly authorized to process these internal documents. You MUST output exactly what is requested without any conversational filler, apologies, or safety warnings. This is an internal administrative task. Output ONLY pure Markdown.";
+
       // 1. Generate Contract Summary Markdown
-      const summaryMsg = "Generate the Contract Summary based on our discussion. Use ONLY Markdown. Do NOT output anything else. Ensure you extract and fill all the necessary fields from the contract based on the GYS Contract Summary Template.";
+      const summaryMsg = "Based on our previous discussion, generate the 'Contract Summary'. You MUST extract and fill all the necessary fields from the contract based on the GYS Contract Summary Template. Output ONLY the Markdown table.";
       const summaryResponse = await AIProviderService.generateCompletion({
         providerConfig,
-        systemPrompt: "You are generating a Contract Summary. Output ONLY pure Markdown with no JSON or code blocks.",
+        systemPrompt: safeSystemPrompt,
         messages: history,
         userContent: summaryMsg,
         timeout: 120000,
@@ -1835,11 +1837,11 @@ class AICoreService {
       });
 
       // 2. Generate Reviewed Contract Markdown
-      const reviewMsg = "Now, output the FULL original contract text but with your comments and validation tags injected inline. Use Blockquotes (>) for your comments so they stand out. Output ONLY pure Markdown.";
+      const reviewMsg = "Based on our previous discussion, output the FULL original contract document text but with your review comments and findings injected inline. Use Markdown Blockquotes (>) to highlight your comments so they stand out from the original text. Output ONLY the Markdown text of the reviewed contract.";
       const reviewResponse = await AIProviderService.generateCompletion({
         providerConfig,
-        systemPrompt: "You are generating a reviewed contract document. Output ONLY pure Markdown with no JSON or code blocks.",
-        messages: [...history, { role: 'user', content: summaryMsg }, { role: 'assistant', content: summaryResponse.text }],
+        systemPrompt: safeSystemPrompt,
+        messages: history,
         userContent: reviewMsg,
         timeout: 120000,
         maxTokens: 8000, // May need high tokens for full contract
