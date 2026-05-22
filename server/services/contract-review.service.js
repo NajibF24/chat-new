@@ -23,7 +23,7 @@ export default {
       <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #1F2937;">
         <h2 style="color: #064E3B; text-align: center;">Contract Summary</h2>
         ${htmlContent}
-        <br/><br/>
+        <p>&nbsp;</p>
         <p><em>Disclaimer: This review is based on the contract summary provided by the user and may not reflect the full terms and conditions of the complete contract document. Any discrepancies in wording, interpretation, or details between the summary and the full contract remain the responsibility of the user.</em></p>
       </div>
     `;
@@ -31,8 +31,7 @@ export default {
     const buffer = await HTMLToDOCX(styledHtml, null, {
       table: { row: { cantSplit: true } },
       footer: true,
-      pageNumber: true,
-      margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 } // 1 inch
+      pageNumber: true
     });
 
     fs.writeFileSync(filepath, buffer);
@@ -58,7 +57,7 @@ export default {
       <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #1F2937; line-height: 1.5;">
         <h2 style="color: #064E3B;">Reviewed Contract Document</h2>
         <p style="color: #6B7280; font-style: italic;">Note: This document contains the original text along with AI-generated review comments and findings.</p>
-        <hr style="margin-bottom: 20px;"/>
+        <p>___________________________________________________</p>
         ${htmlContent}
       </div>
     `;
@@ -66,8 +65,7 @@ export default {
     const buffer = await HTMLToDOCX(styledHtml, null, {
       table: { row: { cantSplit: true } },
       footer: true,
-      pageNumber: true,
-      margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+      pageNumber: true
     });
 
     fs.writeFileSync(filepath, buffer);
