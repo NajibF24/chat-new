@@ -30,6 +30,7 @@ import DocService             from './doc.service.js';
 import ExcelService           from './excel.service.js';
 import NewsletterService      from './newsletter.service.js';
 import OpenClawService        from './openclaw.service.js';
+import ContractReviewService  from './contract-review.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // PPT SYSTEM PROMPTS
@@ -558,7 +559,23 @@ export function isOpenClawCommand(text) {
   return lower.includes('/openclaw') || lower.includes('production report') || lower.includes('l2 report') || lower.includes('report produksi');
 }
 
+export function isContractReviewGenerationCommand(message, history, bot) {
+  if (!message) return false;
+  const isLegalBot = (bot.name && bot.name.toLowerCase().includes('contract')) || 
+                     (bot.systemPrompt && bot.systemPrompt.toLowerCase().includes('contract summary assistant'));
+  if (!isLegalBot) return false;
 
+  const msgLower = message.toLowerCase().trim();
+  const isYes = ['yes', 'ya', 'y', 'please', 'generate', 'create', 'buatkan', 'boleh', 'yes please', 'ya silakan'].includes(msgLower);
+
+  if (history && history.length > 0) {
+    const lastMsg = history[history.length - 1];
+    if (lastMsg.role === 'assistant' && lastMsg.content && lastMsg.content.includes('do you want to create a downloadable .doxc files')) {
+      return isYes;
+    }
+  }
+  return false;
+}
 
 // ─────────────────────────────────────────────────────────────
 // ✅ NEW: IMAGE GENERATION DETECTOR
@@ -1198,6 +1215,10 @@ class AICoreService {
         return this._handleOpenClawCommand({ userId, botId, bot, message, threadId, history });
       }
 
+      if (isContractReviewGenerationCommand(message, history, bot)) {
+        return this._handleContractReviewCommand({ userId, botId, bot, message, threadId, history });
+      }
+
     // ── ✅ NEW: Image Generation Handler ───────────────────────
     // Skip if user attached a file — they want to analyze it, not generate a new image
     if (isImageGenerationRequest(message) && !attachedFile) {
@@ -1780,6 +1801,83 @@ class AICoreService {
     } catch (error) {
       console.error('❌ [DOC Command]', error);
       throw new Error(`Gagal membuat dokumen ${isPdf ? 'PDF' : 'Word'}: ${error.message}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // CONTRACT REVIEW COMMAND HANDLER
+  // Generates 2 .docx files: Contract Summary & Reviewed Contract
+  // ─────────────────────────────────────────────────────────
+  async _handleContractReviewCommand({ userId, botId, bot, message, threadId, history = [] }) {
+    try {
+      await new Chat({ userId, botId, threadId, role: 'user', content: message }).save();
+      console.log(`[CONTRACT REVIEW] Generating Contract Summary and Reviewed Contract...`);
+
+      // We need to generate two separate markdown contents.
+      const providerConfig = bot.aiProvider || { provider: 'openai', model: 'gpt-4o' };
+      
+      // 1. Generate Contract Summary Markdown
+      const summaryMsg = "Generate the Contract Summary based on our discussion. Use ONLY Markdown. Do NOT output anything else. Ensure you extract and fill all the necessary fields from the contract based on the GYS Contract Summary Template.";
+      const summaryResponse = await AIProviderService.generateCompletion({
+        providerConfig,
+        systemPrompt: "You are generating a Contract Summary. Output ONLY pure Markdown with no JSON or code blocks.",
+        messages: history,
+        userContent: summaryMsg,
+        timeout: 120000,
+        maxTokens: 4000,
+      });
+
+      // 2. Generate Reviewed Contract Markdown
+      const reviewMsg = "Now, output the FULL original contract text but with your comments and validation tags injected inline. Use Blockquotes (>) for your comments so they stand out. Output ONLY pure Markdown.";
+      const reviewResponse = await AIProviderService.generateCompletion({
+        providerConfig,
+        systemPrompt: "You are generating a reviewed contract document. Output ONLY pure Markdown with no JSON or code blocks.",
+        messages: [...history, { role: 'user', content: summaryMsg }, { role: 'assistant', content: summaryResponse.text }],
+        userContent: reviewMsg,
+        timeout: 120000,
+        maxTokens: 8000, // May need high tokens for full contract
+      });
+
+      const outputDir = path.join(process.cwd(), 'data', 'files');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      const summaryResult = await ContractReviewService.generateContractSummary({
+        markdownContent: summaryResponse.text,
+        title: "Contract-Summary",
+        outputDir
+      });
+
+      const reviewResult = await ContractReviewService.generateReviewedContract({
+        markdownContent: reviewResponse.text,
+        title: "Reviewed-Contract",
+        outputDir
+      });
+
+      const responseMarkdown = `✅ **Contract Review Documents Generated Successfully!**\n\nI have prepared the two requested documents:\n\n1. **Contract Summary:** Extracted fields based on the GYS template.\n2. **Reviewed Contract:** The full contract text with my inline comments and risk findings.\n\n---\n### [⬇️ Download Contract Summary](${summaryResult.fileUrl})\n### [⬇️ Download Reviewed Contract](${reviewResult.fileUrl})`;
+
+      const attachedFiles = [
+        { name: summaryResult.fileName, path: summaryResult.fileUrl, type: 'file', size: '0' },
+        { name: reviewResult.fileName, path: reviewResult.fileUrl, type: 'file', size: '0' }
+      ];
+
+      await new Chat({
+        userId, botId, threadId, role: 'assistant', content: responseMarkdown,
+        attachedFiles: attachedFiles,
+      }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+
+      return {
+        response: responseMarkdown, threadId,
+        attachedFiles: attachedFiles,
+      };
+    } catch (error) {
+      console.error('❌ [CONTRACT REVIEW Command]', error);
+      const errMsg = `❌ **Gagal membuat dokumen contract review.**\n\n${error.message}`;
+      await new Chat({ userId, botId, threadId, role: 'assistant', content: errMsg }).save();
+      await Thread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
+      return { response: errMsg, threadId };
     }
   }
 
