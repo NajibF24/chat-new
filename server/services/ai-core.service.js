@@ -566,12 +566,19 @@ export function isContractReviewGenerationCommand(message, history, bot) {
   if (!isLegalBot) return false;
 
   const msgLower = message.toLowerCase().trim();
-  const isYes = ['yes', 'ya', 'y', 'please', 'generate', 'create', 'buatkan', 'boleh', 'yes please', 'ya silakan'].includes(msgLower);
+  // Gunakan regex agar lebih fleksibel menangkap kata "iya", "ya", "ok", dsb dalam kalimat
+  const isYes = /\b(yes|ya|iya|y|please|generate|create|buatkan|boleh|ok|oke|sure)\b/i.test(msgLower);
 
   if (history && history.length > 0) {
-    const lastMsg = history[history.length - 1];
-    if (lastMsg.role === 'assistant' && lastMsg.content && lastMsg.content.includes('do you want to create a downloadable .doxc files')) {
-      return isYes;
+    // Cek 3 pesan terakhir dari assistant (berjaga-jaga jika AI sudah membalas "I will prepare...")
+    for (let i = history.length - 1; i >= Math.max(0, history.length - 3); i--) {
+      const msg = history[i];
+      if (msg.role === 'assistant' && msg.content) {
+        const contentLower = msg.content.toLowerCase();
+        if (contentLower.includes('downloadable') && (contentLower.includes('doxc') || contentLower.includes('docx'))) {
+          return isYes;
+        }
+      }
     }
   }
   return false;
